@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "mock": "tsx src/mock-server.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",
