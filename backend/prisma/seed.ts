@@ -4,9 +4,11 @@ import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
 
-// Rail car makes and models
-const carMakes = ['Trinity', 'Greenbrier', 'FreightCar', 'NSC', 'Gunderson', 'ARI'];
-const carModels = ['Hopper', 'Tank', 'Gondola', 'Boxcar', 'Flatcar', 'Covered Hopper'];
+// Railcar types and data
+const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
+const commodities = ['Crude Oil', 'Ethanol', 'Corn', 'Wheat', 'Coal', 'Lumber', 'Steel', 'Chemicals', 'Fertilizer', 'Plastics'];
+const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
+const reasonsShopped = ['Annual Inspection', 'Wheel Repair', 'Tank Cleaning', 'Valve Replacement', 'Frame Repair', 'Safety Retrofit', 'DOT Compliance', 'Corrosion Repair', 'Coupler Replacement', 'Brake System'];
 const carStatuses = ['available', 'in_service', 'scheduled', 'retired'];
 
 // Shop locations
@@ -123,12 +125,13 @@ async function main() {
 
   console.log(`✓ Created ${shops.length} shops`);
 
-  // Create 200 cars
+  // Create 200 railcars
   const cars = await Promise.all(
     Array.from({ length: 200 }, (_, i) => {
-      const make = carMakes[Math.floor(Math.random() * carMakes.length)];
-      const model = carModels[Math.floor(Math.random() * carModels.length)];
-      const year = 2010 + Math.floor(Math.random() * 15);
+      const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
+      const commodity = commodities[Math.floor(Math.random() * commodities.length)];
+      const customer = customers[Math.floor(Math.random() * customers.length)];
+      const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
       const statusWeights = [0.6, 0.15, 0.2, 0.05]; // available, in_service, scheduled, retired
       const rand = Math.random();
       let statusIndex = 0;
@@ -145,20 +148,22 @@ async function main() {
         data: {
           id: uuidv4(),
           vehicleNumber: `AITX${String(100000 + i).slice(1)}`,
-          make,
-          model,
-          year,
-          mileage: Math.floor(Math.random() * 500000) + 50000,
+          carType,
+          commodity,
+          customer,
+          projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
+          reasonShopped,
           status: carStatuses[statusIndex],
           lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
           nextServiceDue: new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000),
+          notes: Math.random() > 0.7 ? 'Priority service required' : '',
           companyId: company.id,
         },
       });
     })
   );
 
-  console.log(`✓ Created ${cars.length} cars`);
+  console.log(`✓ Created ${cars.length} railcars`);
 
   // Create 2 plans
   const plan2024 = await prisma.plan.create({

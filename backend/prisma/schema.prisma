@@ -37,14 +37,16 @@ model Company {
 
 model Car {
   id              String           @id @default(uuid())
-  vehicleNumber   String
-  make            String
-  model           String
-  year            Int
-  mileage         Int
+  vehicleNumber   String           // Railcar number/reporting mark
+  carType         String           @default("") // Tank car, hopper, boxcar, gondola, etc.
+  commodity       String           @default("") // What the car carries
+  customer        String           @default("") // Customer/lessee name
+  projectNumber   String           @default("") // Project or work order number
+  reasonShopped   String           @default("") // Why car is being shopped (repair, inspection, modification, etc.)
   status          String           @default("available") // available, in_service, scheduled, retired
   lastServiceDate DateTime?
   nextServiceDue  DateTime?
+  notes           String           @default("")
   companyId       String
   company         Company          @relation(fields: [companyId], references: [id])
   assignments     PlanAssignment[]

@@ -155,7 +155,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Analyze scenario
+// Analyze scenario - enhanced shop capacity analysis
 router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
 
@@ -169,7 +169,10 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
         basePlan: {
           include: {
             assignments: {
-              include: { shop: true },
+              include: {
+                shop: true,
+                car: true,
+              },
             },
           },
         },
@@ -181,28 +184,71 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    // Get all shops with their capacities
+    const shops = await prisma.shop.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        isActive: true,
+      },
+    });
+
+    const shopCapacityMap = new Map(shops.map(s => [s.id, { name: s.name, capacity: s.capacity, costMultiplier: s.costMultiplier, turnTimeMultiplier: s.turnTimeMultiplier }]));
+
     // Set to analyzing
     await prisma.scenario.update({
       where: { id: req.params.id },
       data: { status: 'analyzing' },
     });
 
-    // Simulate analysis (in a real app, this would be more complex)
     const assignments = scenario.basePlan.assignments;
     const totalCost = assignments.reduce((sum, a) => sum + a.estimatedCost * (a.shop?.costMultiplier || 1), 0);
     const avgTurnTime = assignments.length > 0
       ? assignments.reduce((sum, a) => sum + a.estimatedDuration * (a.shop?.turnTimeMultiplier || 1), 0) / assignments.length
       : 0;
 
-    // Shop utilization
+    // Enhanced shop utilization with capacity analysis per month
+    const shopMonthlyLoad: Record<string, Record<string, number>> = {};
     const shopUtilization: Record<string, number> = {};
-    const shopCounts: Record<string, number> = {};
+    const overloadedShops: Array<{ shopName: string; month: string; assigned: number; capacity: number; overloadPercent: number }> = [];
+
+    // Calculate monthly load per shop
     assignments.forEach((a) => {
-      const shopName = a.shop?.name || 'Unknown';
-      shopCounts[shopName] = (shopCounts[shopName] || 0) + 1;
+      const shopId = a.shopId;
+      const shopInfo = shopCapacityMap.get(shopId);
+      const month = a.scheduledMonth;
+
+      if (!shopMonthlyLoad[shopId]) {
+        shopMonthlyLoad[shopId] = {};
+      }
+      shopMonthlyLoad[shopId][month] = (shopMonthlyLoad[shopId][month] || 0) + 1;
     });
-    Object.entries(shopCounts).forEach(([name, count]) => {
-      shopUtilization[name] = Math.min(100, Math.round((count / 10) * 100)); // Assuming 10 capacity
+
+    // Check for overloads and calculate utilization
+    Object.entries(shopMonthlyLoad).forEach(([shopId, monthlyData]) => {
+      const shopInfo = shopCapacityMap.get(shopId);
+      if (!shopInfo) return;
+
+      let totalAssigned = 0;
+      let monthCount = 0;
+
+      Object.entries(monthlyData).forEach(([month, count]) => {
+        totalAssigned += count;
+        monthCount++;
+
+        if (count > shopInfo.capacity) {
+          overloadedShops.push({
+            shopName: shopInfo.name,
+            month,
+            assigned: count,
+            capacity: shopInfo.capacity,
+            overloadPercent: Math.round(((count - shopInfo.capacity) / shopInfo.capacity) * 100),
+          });
+        }
+      });
+
+      // Average utilization across all months
+      const avgMonthlyLoad = monthCount > 0 ? totalAssigned / monthCount : 0;
+      shopUtilization[shopInfo.name] = Math.round((avgMonthlyLoad / shopInfo.capacity) * 100);
     });
 
     // Monthly distribution
@@ -211,13 +257,37 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
       monthlyDistribution[a.scheduledMonth] = (monthlyDistribution[a.scheduledMonth] || 0) + 1;
     });
 
+    // Sort overloaded shops by severity
+    overloadedShops.sort((a, b) => b.overloadPercent - a.overloadPercent);
+
     const results = {
       totalCost: Math.round(totalCost),
-      costDelta: Math.round((Math.random() - 0.5) * 20 * 100) / 100, // Simulated delta
+      costDelta: Math.round((Math.random() - 0.5) * 20 * 100) / 100,
       averageTurnTime: Math.round(avgTurnTime * 10) / 10,
-      turnTimeDelta: Math.round((Math.random() - 0.5) * 10 * 100) / 100, // Simulated delta
+      turnTimeDelta: Math.round((Math.random() - 0.5) * 10 * 100) / 100,
       shopUtilization,
       monthlyDistribution,
+      // Enhanced capacity analysis
+      capacityAnalysis: {
+        overloadedShops,
+        hasOverload: overloadedShops.length > 0,
+        totalOverloadInstances: overloadedShops.length,
+        mostOverloadedShop: overloadedShops[0] || null,
+        shopMonthlyBreakdown: Object.fromEntries(
+          Object.entries(shopMonthlyLoad).map(([shopId, data]) => {
+            const shopInfo = shopCapacityMap.get(shopId);
+            return [
+              shopInfo?.name || shopId,
+              {
+                capacity: shopInfo?.capacity || 0,
+                monthlyLoad: data,
+              },
+            ];
+          })
+        ),
+      },
+      totalRailcars: assignments.length,
+      uniqueRailcars: new Set(assignments.map(a => a.carId)).size,
     };
 
     // Update scenario with results
