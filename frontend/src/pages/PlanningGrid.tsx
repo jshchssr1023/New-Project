@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownTrayIcon,
-  PlusIcon,
+  DocumentTextIcon,
   XMarkIcon,
   FunnelIcon,
   ChevronLeftIcon,
@@ -12,10 +12,16 @@ import {
   MagnifyingGlassIcon,
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
+  NoSymbolIcon,
 } from '@heroicons/react/24/outline';
 import { plansApi, shopsApi, carsApi } from '../services/api';
-import type { Plan, Shop, PlanAssignment, Car } from '../types';
-import { getCellColorClasses, getBorderColorClass, isCapacityWarning, getUtilizationPercent } from '../utils/utilizationColors';
+import type { Plan, Shop, PlanAssignment, Car, ReportGenerationConfig, ReportData, RecipientType } from '../types';
+import { getCellColorClasses, getBorderColorClass, getUtilizationLevel } from '../utils/utilizationColors';
+import ReportGenerationModal from '../components/ReportGenerationModal';
+import PrintPreview, { PrintPreviewRef } from '../components/PrintPreview';
+
+// Drag item type constant for consistency
+const DRAG_ITEM_TYPE = 'application/x-railcar-ids';
 
 const months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -75,7 +81,15 @@ export default function PlanningGrid() {
   // Drag-and-drop state
   const [isDragging, setIsDragging] = useState(false);
   const [dragOverCell, setDragOverCell] = useState<{ shopId: string; monthIndex: number } | null>(null);
+  const [dragValidation, setDragValidation] = useState<{ isValid: boolean; level: string; canDrop: boolean } | null>(null);
   const dragGhostRef = useRef<HTMLDivElement>(null);
+  const draggedCarIdsRef = useRef<string[]>([]);
+
+  // Report generation state
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [reportRecipientType, setReportRecipientType] = useState<RecipientType>('internal');
+  const printPreviewRef = useRef<PrintPreviewRef>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -193,39 +207,38 @@ export default function PlanningGrid() {
   // Use centralized utilization color utilities
   const getCellColor = getCellColorClasses;
 
-  // Get utilization percentage
-  const getUtilization = (count: number, capacity: number): number => {
-    if (capacity === 0) return 0;
-    return Math.round((count / capacity) * 100);
-  };
-
   // Validate assignment - check tank car to tank-qualified shop
-  const validateAssignment = (carIds: Set<string>, shopId: string): { valid: boolean; errors: string[] } => {
+  const validateAssignment = (carIds: Set<string> | string[], shopId: string, monthIndex?: number): { valid: boolean; errors: string[]; canDrop: boolean; projectedUtilization: number } => {
+    const carIdSet = carIds instanceof Set ? carIds : new Set(carIds);
     const shop = shops.find(s => s.id === shopId);
     const errors: string[] = [];
+    let canDrop = true;
 
     if (!shop) {
       errors.push('Shop not found');
-      return { valid: false, errors };
+      return { valid: false, errors, canDrop: false, projectedUtilization: 0 };
     }
 
-    // Check tank car qualification
-    const selectedCars = cars.filter(c => carIds.has(c.id));
+    // Check tank car qualification - HARD BLOCK
+    const selectedCars = cars.filter(c => carIdSet.has(c.id));
     const tankCars = selectedCars.filter(c => c.isTankCar);
 
     if (tankCars.length > 0 && !shop.tankQualified) {
       errors.push(`${tankCars.length} tank car(s) cannot be assigned to non-tank-qualified shop`);
+      canDrop = false; // Hard block
     }
 
     // Check capacity
-    if (selectedMonth !== null) {
-      const monthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+    const targetMonth = monthIndex !== undefined ? monthIndex : selectedMonth;
+    if (targetMonth !== null) {
+      const monthKey = `${selectedYear}-${String(targetMonth + 1).padStart(2, '0')}`;
       const existingCount = assignments.filter(a => a.shopId === shopId && a.scheduledMonth === monthKey).length;
-      const newTotal = existingCount + carIds.size;
+      const newTotal = existingCount + carIdSet.size;
+
       if (newTotal > shop.capacity) {
         errors.push(`Assignment would exceed capacity (${newTotal}/${shop.capacity})`);
-      }
-      if (newTotal > shop.capacity * 0.95 && newTotal <= shop.capacity) {
+        canDrop = false; // Hard block - capacity exceeded
+      } else if (newTotal > shop.capacity * 0.95) {
         errors.push(`Warning: Utilization will be above 95%`);
       }
     }
@@ -235,8 +248,39 @@ export default function PlanningGrid() {
       errors.push('Warning: Shop is on probation status');
     }
 
-    return { valid: errors.filter(e => !e.startsWith('Warning')).length === 0, errors };
+    // Calculate projected utilization
+    const targetMonthIdx = monthIndex !== undefined ? monthIndex : selectedMonth;
+    let projectedUtilization = 0;
+    if (targetMonthIdx !== null && shop.capacity > 0) {
+      const monthKey = `${selectedYear}-${String(targetMonthIdx + 1).padStart(2, '0')}`;
+      const existingCount = assignments.filter(a => a.shopId === shopId && a.scheduledMonth === monthKey).length;
+      projectedUtilization = ((existingCount + carIdSet.size) / shop.capacity) * 100;
+    }
+
+    return {
+      valid: errors.filter(e => !e.startsWith('Warning')).length === 0,
+      errors,
+      canDrop,
+      projectedUtilization,
+    };
   };
+
+  // Real-time drag validation for hover feedback
+  const validateDragHover = useCallback((carIds: string[], shopId: string, monthIndex: number) => {
+    const validation = validateAssignment(carIds, shopId, monthIndex);
+    const level = getUtilizationLevel(
+      getCellAssignments(shopId, monthIndex).length + carIds.length,
+      shops.find(s => s.id === shopId)?.capacity || 0
+    );
+
+    return {
+      isValid: validation.valid,
+      level,
+      canDrop: validation.canDrop,
+      projectedUtilization: validation.projectedUtilization,
+      errors: validation.errors,
+    };
+  }, [assignments, cars, shops, selectedYear]);
 
   // Handle cell click for selection
   const handleCellClick = (shopId: string, monthIndex: number) => {
@@ -274,11 +318,11 @@ export default function PlanningGrid() {
     if (!selectedPlan || !selectedShopId || selectedMonth === null || selectedCarIds.size === 0) return;
 
     // Validate before assignment
-    const validation = validateAssignment(selectedCarIds, selectedShopId);
+    const validation = validateAssignment(selectedCarIds, selectedShopId, selectedMonth);
     setValidationErrors(validation.errors);
 
-    if (!validation.valid) {
-      // Show hard-block errors
+    if (!validation.canDrop) {
+      // Show hard-block errors - cannot proceed
       return;
     }
 
@@ -292,26 +336,56 @@ export default function PlanningGrid() {
     setIsAssigning(true);
     const scheduledMonth = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
     const shop = shops.find(s => s.id === selectedShopId);
+    const carIdsArray = Array.from(selectedCarIds);
+
+    // Optimistic UI update - immediately show the new count
+    const optimisticAssignments = carIdsArray.map(carId => ({
+      id: `temp-${carId}`,
+      planId: selectedPlan.id,
+      carId,
+      shopId: selectedShopId,
+      scheduledMonth,
+      estimatedCost: shop?.baseCostPerCar || 15000,
+      estimatedDuration: shop?.baseTurnTime || 14,
+      status: 'pending' as const,
+      car: cars.find(c => c.id === carId),
+    }));
+
+    // Store original assignments for rollback
+    const originalAssignments = [...assignments];
+    setAssignments(prev => [...prev, ...optimisticAssignments]);
 
     try {
-      for (const carId of selectedCarIds) {
-        await plansApi.addAssignment(selectedPlan.id, {
-          carId,
-          shopId: selectedShopId,
-          scheduledMonth,
-          estimatedCost: shop?.baseCostPerCar || 15000,
-          estimatedDuration: shop?.baseTurnTime || 14,
-          status: 'pending',
-        });
+      // Use bulk API for efficiency
+      const assignmentsData = carIdsArray.map(carId => ({
+        carId,
+        shopId: selectedShopId,
+        scheduledMonth,
+        estimatedCost: shop?.baseCostPerCar || 15000,
+        estimatedDuration: shop?.baseTurnTime || 14,
+        status: 'pending',
+      }));
+
+      const result = await plansApi.bulkAddAssignments(selectedPlan.id, assignmentsData);
+
+      if (result.failed > 0) {
+        // Some assignments failed - show error toast and reload
+        const errorMessages = result.errors.map(e => e.error).join(', ');
+        alert(`${result.success} assignments created, ${result.failed} failed: ${errorMessages}`);
       }
 
-      // Reload assignments and clear selection
+      // Reload actual assignments from server
       await loadPlanAssignments();
       setSelectedCarIds(new Set());
       setValidationErrors([]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to assign cars:', error);
-      alert('Failed to assign some cars. Please try again.');
+      // Rollback optimistic update
+      setAssignments(originalAssignments);
+
+      // Show detailed error message
+      const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to assign cars: ${errorMessage}`);
     } finally {
       setIsAssigning(false);
     }
@@ -344,20 +418,25 @@ export default function PlanningGrid() {
   // Drag-and-drop handlers
   const handleDragStart = useCallback((e: React.DragEvent, carId: string) => {
     // If the dragged car is not selected, add it to selection
+    const carIdsToUse = selectedCarIds.has(carId) ? Array.from(selectedCarIds) : [carId];
+
     if (!selectedCarIds.has(carId)) {
       setSelectedCarIds(new Set([carId]));
     }
 
-    // Set drag data
+    // Store dragged car IDs for validation during hover
+    draggedCarIdsRef.current = carIdsToUse;
+
+    // Set drag data with proper MIME type
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', JSON.stringify({
-      carIds: selectedCarIds.has(carId) ? Array.from(selectedCarIds) : [carId]
-    }));
+    e.dataTransfer.setData(DRAG_ITEM_TYPE, JSON.stringify({ carIds: carIdsToUse }));
+    // Also set text/plain for fallback
+    e.dataTransfer.setData('text/plain', JSON.stringify({ carIds: carIdsToUse }));
 
     // Create custom drag ghost
     const ghost = dragGhostRef.current;
     if (ghost) {
-      const count = selectedCarIds.has(carId) ? selectedCarIds.size : 1;
+      const count = carIdsToUse.length;
       ghost.textContent = `${count} railcar${count > 1 ? 's' : ''}`;
       ghost.style.display = 'block';
       e.dataTransfer.setDragImage(ghost, 50, 20);
@@ -373,25 +452,68 @@ export default function PlanningGrid() {
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
     setDragOverCell(null);
+    setDragValidation(null);
+    draggedCarIdsRef.current = [];
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent, shopId: string, monthIndex: number) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverCell({ shopId, monthIndex });
-  }, []);
 
-  const handleDragLeave = useCallback(() => {
-    setDragOverCell(null);
+    // Perform real-time validation during hover
+    const carIds = draggedCarIdsRef.current;
+    if (carIds.length > 0) {
+      const validation = validateDragHover(carIds, shopId, monthIndex);
+
+      // Set drop effect based on validation
+      if (!validation.canDrop) {
+        e.dataTransfer.dropEffect = 'none';
+      } else {
+        e.dataTransfer.dropEffect = 'move';
+      }
+
+      // Update drag validation state for visual feedback
+      setDragValidation({
+        isValid: validation.isValid,
+        level: validation.level,
+        canDrop: validation.canDrop,
+      });
+    } else {
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    setDragOverCell({ shopId, monthIndex });
+  }, [validateDragHover]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if we're actually leaving the cell (not entering a child)
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    const currentTarget = e.currentTarget as HTMLElement;
+
+    if (!currentTarget.contains(relatedTarget)) {
+      setDragOverCell(null);
+      setDragValidation(null);
+    }
   }, []);
 
   const handleDrop = useCallback(async (e: React.DragEvent, shopId: string, monthIndex: number) => {
     e.preventDefault();
     setDragOverCell(null);
+    setDragValidation(null);
     setIsDragging(false);
 
     try {
-      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      // Try to get data from custom MIME type first, then fallback to text/plain
+      let dataStr = e.dataTransfer.getData(DRAG_ITEM_TYPE);
+      if (!dataStr) {
+        dataStr = e.dataTransfer.getData('text/plain');
+      }
+
+      if (!dataStr) {
+        console.error('No drag data found');
+        return;
+      }
+
+      const data = JSON.parse(dataStr);
       const carIds = data.carIds as string[];
 
       if (!selectedPlan || carIds.length === 0) return;
@@ -401,10 +523,9 @@ export default function PlanningGrid() {
       setSelectedMonth(monthIndex);
 
       // Validate before assignment
-      const carIdSet = new Set(carIds);
-      const validation = validateAssignment(carIdSet, shopId);
+      const validation = validateAssignment(carIds, shopId, monthIndex);
 
-      if (!validation.valid) {
+      if (!validation.canDrop) {
         setValidationErrors(validation.errors);
         return;
       }
@@ -420,27 +541,75 @@ export default function PlanningGrid() {
       const scheduledMonth = `${selectedYear}-${String(monthIndex + 1).padStart(2, '0')}`;
       const shop = shops.find(s => s.id === shopId);
 
-      for (const carId of carIds) {
-        await plansApi.addAssignment(selectedPlan.id, {
+      // Optimistic UI update
+      const optimisticAssignments = carIds.map(carId => ({
+        id: `temp-${carId}`,
+        planId: selectedPlan.id,
+        carId,
+        shopId,
+        scheduledMonth,
+        estimatedCost: shop?.baseCostPerCar || 15000,
+        estimatedDuration: shop?.baseTurnTime || 14,
+        status: 'pending' as const,
+        car: cars.find(c => c.id === carId),
+      }));
+
+      const originalAssignments = [...assignments];
+      setAssignments(prev => [...prev, ...optimisticAssignments]);
+
+      try {
+        // Use bulk API for efficiency
+        const assignmentsData = carIds.map(carId => ({
           carId,
           shopId,
           scheduledMonth,
           estimatedCost: shop?.baseCostPerCar || 15000,
           estimatedDuration: shop?.baseTurnTime || 14,
           status: 'pending',
-        });
-      }
+        }));
 
-      // Reload and clear selection
-      await loadPlanAssignments();
-      setSelectedCarIds(new Set());
-      setValidationErrors([]);
+        const result = await plansApi.bulkAddAssignments(selectedPlan.id, assignmentsData);
+
+        if (result.failed > 0) {
+          const errorMessages = result.errors.map(err => err.error).join(', ');
+          alert(`${result.success} assignments created, ${result.failed} failed: ${errorMessages}`);
+        }
+
+        // Reload actual assignments from server
+        await loadPlanAssignments();
+        setSelectedCarIds(new Set());
+        setValidationErrors([]);
+        draggedCarIdsRef.current = [];
+      } catch (error: any) {
+        // Rollback optimistic update
+        setAssignments(originalAssignments);
+        const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
+        alert(`Failed to assign cars: ${errorMessage}`);
+      }
     } catch (error) {
       console.error('Drop assignment failed:', error);
+      alert('Failed to process drop. Please try again.');
     } finally {
       setIsAssigning(false);
     }
-  }, [selectedPlan, selectedYear, shops, validateAssignment]);
+  }, [selectedPlan, selectedYear, shops, cars, assignments, validateAssignment]);
+
+  // Report generation handler
+  const handleGenerateReport = async (config: ReportGenerationConfig) => {
+    try {
+      const data = await plansApi.generateReport(config);
+      setReportData(data);
+      setReportRecipientType(config.recipientType);
+
+      // Auto-trigger print after a short delay
+      setTimeout(() => {
+        printPreviewRef.current?.print();
+      }, 100);
+    } catch (error) {
+      console.error('Failed to generate report:', error);
+      alert('Failed to generate report. Please try again.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -692,13 +861,22 @@ export default function PlanningGrid() {
                 ))}
               </select>
               {selectedPlan && (
-                <button
-                  onClick={() => plansApi.exportToExcel(selectedPlan.id)}
-                  className="btn-primary flex items-center"
-                >
-                  <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
-                  Export
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowReportModal(true)}
+                    className="btn-secondary flex items-center"
+                  >
+                    <DocumentTextIcon className="w-4 h-4 mr-2" />
+                    Generate Document
+                  </button>
+                  <button
+                    onClick={() => plansApi.exportToExcel(selectedPlan.id)}
+                    className="btn-primary flex items-center"
+                  >
+                    <ArrowDownTrayIcon className="w-4 h-4 mr-2" />
+                    Export CSV
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -830,14 +1008,32 @@ export default function PlanningGrid() {
                         const count = cellAssignments.length;
                         const isSelected = selectedShopId === shop.id && selectedMonth === idx;
                         const isDragOver = dragOverCell?.shopId === shop.id && dragOverCell?.monthIndex === idx;
-                        const newCount = isDragging ? count + selectedCarIds.size : count;
+                        const dragCarCount = draggedCarIdsRef.current.length || selectedCarIds.size;
+                        const projectedCount = isDragOver ? count + dragCarCount : count;
+
+                        // Determine border color based on validation during drag
+                        const getDragOverBorderClass = () => {
+                          if (!isDragOver) return '';
+                          if (dragValidation && !dragValidation.canDrop) {
+                            return 'border-red-500 bg-red-100';
+                          }
+                          return getUtilizationBorderColor(projectedCount, shop.capacity);
+                        };
+
+                        // Determine cursor style based on drop validity
+                        const getCursorClass = () => {
+                          if (isDragOver && dragValidation && !dragValidation.canDrop) {
+                            return 'cursor-not-allowed';
+                          }
+                          return 'cursor-pointer';
+                        };
 
                         return (
                           <td
                             key={idx}
-                            className={`px-2 py-3 text-center cursor-pointer transition-all ${
+                            className={`px-2 py-3 text-center transition-all relative ${getCursorClass()} ${
                               isDragOver
-                                ? `border-4 ${getUtilizationBorderColor(newCount, shop.capacity)} bg-opacity-50`
+                                ? `border-4 ${getDragOverBorderClass()} ${dragValidation?.canDrop === false ? 'bg-red-50' : 'bg-opacity-50'}`
                                 : isSelected
                                   ? 'ring-2 ring-rail-500 ring-inset bg-rail-100 border'
                                   : `border ${getCellColor(count, shop.capacity)}`
@@ -847,10 +1043,32 @@ export default function PlanningGrid() {
                             onDragLeave={handleDragLeave}
                             onDrop={(e) => handleDrop(e, shop.id, idx)}
                           >
-                            {count > 0 ? (
-                              <div className="text-sm font-medium text-steel-900">{count}</div>
-                            ) : (
-                              <div className="text-sm text-steel-400">-</div>
+                            {/* No-drop indicator */}
+                            {isDragOver && dragValidation && !dragValidation.canDrop && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-red-100 bg-opacity-90">
+                                <NoSymbolIcon className="w-6 h-6 text-red-500" />
+                              </div>
+                            )}
+
+                            {/* Projected count during drag */}
+                            {isDragOver && dragValidation?.canDrop && (
+                              <div className="text-sm font-bold text-rail-600">
+                                {count} → {projectedCount}
+                              </div>
+                            )}
+
+                            {/* Normal display */}
+                            {!isDragOver && (
+                              count > 0 ? (
+                                <div className="text-sm font-medium text-steel-900">{count}</div>
+                              ) : (
+                                <div className="text-sm text-steel-400">-</div>
+                              )
+                            )}
+
+                            {/* No-drop display when dragging over invalid target */}
+                            {isDragOver && !dragValidation?.canDrop && (
+                              <span className="sr-only">Cannot drop here</span>
                             )}
                           </td>
                         );
@@ -939,6 +1157,28 @@ export default function PlanningGrid() {
           </div>
         )}
       </div>
+
+      {/* Report Generation Modal */}
+      {selectedPlan && (
+        <ReportGenerationModal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          plan={selectedPlan}
+          onGenerate={handleGenerateReport}
+        />
+      )}
+
+      {/* Hidden Print Preview - used for generating the print output */}
+      {reportData && (
+        <div className="hidden">
+          <PrintPreview
+            ref={printPreviewRef}
+            data={reportData}
+            recipientType={reportRecipientType}
+            includeConfidentialStatement={true}
+          />
+        </div>
+      )}
     </div>
   );
 }

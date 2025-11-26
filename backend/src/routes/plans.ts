@@ -518,6 +518,138 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Generate report with recipient type configuration
+router.post('/:id/generate-report', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { recipientType, dateRange, includeConfidentialStatement, hideCostData } = req.body;
+
+  try {
+    const plan = await prisma.plan.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        assignments: {
+          include: {
+            car: true,
+            shop: true,
+          },
+          orderBy: [
+            { scheduledMonth: 'asc' },
+            { shop: { name: 'asc' } },
+          ],
+        },
+      },
+    });
+
+    if (!plan) {
+      res.status(404).json({ message: 'Plan not found' });
+      return;
+    }
+
+    // Format report data based on recipient type
+    const reportData = {
+      planInfo: {
+        name: plan.name,
+        description: plan.description,
+        startDate: plan.startDate.toISOString(),
+        endDate: plan.endDate.toISOString(),
+        status: plan.status,
+        totalAssignments: plan.assignments.length,
+      },
+      assignments: plan.assignments.map((a) => ({
+        scheduledMonth: a.scheduledMonth,
+        railcarNumber: a.car?.railcarNumber || a.car?.vehicleNumber || '',
+        carType: a.car?.carType || '',
+        customer: a.car?.customer || '',
+        projectNumber: a.car?.projectNumber || '',
+        reasonShopped: a.car?.reasonShopped || '',
+        shopName: a.shop?.name || '',
+        shopCode: a.shop?.code || '',
+        shopLocation: a.shop?.location || '',
+        // Hide cost data for external recipients
+        estimatedCost: hideCostData ? 0 : a.estimatedCost,
+        estimatedDuration: a.estimatedDuration,
+        status: a.status,
+      })),
+      recipientType: recipientType || 'internal',
+      generatedAt: new Date().toISOString(),
+    };
+
+    res.json(reportData);
+  } catch (error) {
+    console.error('Generate report error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get report data for printing
+router.get('/:id/report-data', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const recipientType = req.query.recipientType as string || 'internal';
+
+  try {
+    const plan = await prisma.plan.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        assignments: {
+          include: {
+            car: true,
+            shop: true,
+          },
+          orderBy: [
+            { scheduledMonth: 'asc' },
+            { shop: { name: 'asc' } },
+          ],
+        },
+      },
+    });
+
+    if (!plan) {
+      res.status(404).json({ message: 'Plan not found' });
+      return;
+    }
+
+    const hideCostData = recipientType === 'external';
+
+    const reportData = {
+      planInfo: {
+        name: plan.name,
+        description: plan.description,
+        startDate: plan.startDate.toISOString(),
+        endDate: plan.endDate.toISOString(),
+        status: plan.status,
+        totalAssignments: plan.assignments.length,
+      },
+      assignments: plan.assignments.map((a) => ({
+        scheduledMonth: a.scheduledMonth,
+        railcarNumber: a.car?.railcarNumber || a.car?.vehicleNumber || '',
+        carType: a.car?.carType || '',
+        customer: a.car?.customer || '',
+        projectNumber: a.car?.projectNumber || '',
+        reasonShopped: a.car?.reasonShopped || '',
+        shopName: a.shop?.name || '',
+        shopCode: a.shop?.code || '',
+        shopLocation: a.shop?.location || '',
+        estimatedCost: hideCostData ? 0 : a.estimatedCost,
+        estimatedDuration: a.estimatedDuration,
+        status: a.status,
+      })),
+      recipientType,
+      generatedAt: new Date().toISOString(),
+    };
+
+    res.json(reportData);
+  } catch (error) {
+    console.error('Get report data error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Export plan to Excel (JSON data for frontend Excel generation)
 router.get('/:id/export-data', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;

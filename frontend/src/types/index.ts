@@ -238,3 +238,44 @@ export interface ApiError {
   code: string;
   details?: Record<string, unknown>;
 }
+
+// Report generation types
+export type RecipientType = 'internal' | 'external';
+
+export interface ReportGenerationConfig {
+  planId: string;
+  dateRange: {
+    start: string;
+    end: string;
+  };
+  recipientType: RecipientType;
+  includeConfidentialStatement: boolean;
+  hideCostData?: boolean;
+}
+
+export interface ReportData {
+  planInfo: {
+    name: string;
+    description: string;
+    startDate: string;
+    endDate: string;
+    status: string;
+    totalAssignments: number;
+  };
+  assignments: Array<{
+    scheduledMonth: string;
+    railcarNumber: string;
+    carType: string;
+    customer: string;
+    projectNumber: string;
+    reasonShopped: string;
+    shopName: string;
+    shopCode: string;
+    shopLocation: string;
+    estimatedCost: number;
+    estimatedDuration: number;
+    status: string;
+  }>;
+  recipientType: RecipientType;
+  generatedAt: string;
+}
