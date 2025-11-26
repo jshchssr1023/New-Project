@@ -43,6 +43,8 @@ export interface Shop {
   city: string;
   state: string;
   region: string;
+  network: string;
+  servingRailroad: string;
   capacity: number;
   currentLoad?: number;
   availableCapacity?: number;
@@ -62,6 +64,12 @@ export interface Shop {
   monthlyCapacity?: MonthlyCapacity[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ShopFilters {
+  regions: string[];
+  networks: string[];
+  railroads: string[];
 }
 
 export interface MonthlyCapacity {

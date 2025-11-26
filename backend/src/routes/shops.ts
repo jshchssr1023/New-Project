@@ -9,13 +9,15 @@ router.use(authenticate);
 // Get all shops with optional filters
 router.get('/', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { region, isActive, hasCapacity, month } = req.query;
+  const { region, network, servingRailroad, isActive, hasCapacity, month } = req.query;
 
   try {
     let shops = await prisma.shop.findMany({
       where: {
         companyId: req.user!.companyId,
         ...(region && { region: region as string }),
+        ...(network && { network: network as string }),
+        ...(servingRailroad && { servingRailroad: servingRailroad as string }),
         ...(isActive !== undefined && { isActive: isActive === 'true' }),
       },
       orderBy: { name: 'asc' },
@@ -220,7 +222,7 @@ router.get('/capacity/summary', async (req: AuthRequest, res: Response) => {
 router.post('/', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
   const {
-    name, code, location, city, state, region,
+    name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
     capabilities, certifications, preferredCustomers,
     contactName, contactEmail, contactPhone, notes, isActive
@@ -235,6 +237,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         city: city || '',
         state: state || '',
         region: region || '',
+        network: network || '',
+        servingRailroad: servingRailroad || '',
         capacity: capacity || 10,
         baseCostPerCar: baseCostPerCar || 15000,
         costMultiplier: costMultiplier || 1.0,
@@ -294,6 +298,8 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
               city: shopData.city || existing.city,
               state: shopData.state || existing.state,
               region: shopData.region || existing.region,
+              network: shopData.network || existing.network,
+              servingRailroad: shopData.servingRailroad || existing.servingRailroad,
               capacity: shopData.capacity || existing.capacity,
               baseCostPerCar: shopData.baseCostPerCar || existing.baseCostPerCar,
               baseTurnTime: shopData.baseTurnTime || existing.baseTurnTime,
@@ -316,6 +322,8 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
               city: shopData.city || '',
               state: shopData.state || '',
               region: shopData.region || '',
+              network: shopData.network || '',
+              servingRailroad: shopData.servingRailroad || '',
               capacity: shopData.capacity || 10,
               baseCostPerCar: shopData.baseCostPerCar || 15000,
               baseTurnTime: shopData.baseTurnTime || 14,
@@ -347,7 +355,7 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
   const {
-    name, code, location, city, state, region,
+    name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
     capabilities, certifications, preferredCustomers,
     contactName, contactEmail, contactPhone, notes, isActive
@@ -366,6 +374,8 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
         city,
         state,
         region,
+        network,
+        servingRailroad,
         capacity,
         baseCostPerCar,
         costMultiplier,
@@ -450,6 +460,65 @@ router.get('/meta/regions', async (req: AuthRequest, res: Response) => {
     res.json(regions);
   } catch (error) {
     console.error('Get regions error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get unique networks
+router.get('/meta/networks', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+
+  try {
+    const shops = await prisma.shop.findMany({
+      where: { companyId: req.user!.companyId },
+      select: { network: true },
+      distinct: ['network'],
+    });
+
+    const networks = shops.map(s => s.network).filter(n => n);
+    res.json(networks);
+  } catch (error) {
+    console.error('Get networks error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get unique serving railroads
+router.get('/meta/railroads', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+
+  try {
+    const shops = await prisma.shop.findMany({
+      where: { companyId: req.user!.companyId },
+      select: { servingRailroad: true },
+      distinct: ['servingRailroad'],
+    });
+
+    const railroads = shops.map(s => s.servingRailroad).filter(r => r);
+    res.json(railroads);
+  } catch (error) {
+    console.error('Get railroads error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get all filter options (regions, networks, railroads) in one call
+router.get('/meta/filters', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+
+  try {
+    const shops = await prisma.shop.findMany({
+      where: { companyId: req.user!.companyId },
+      select: { region: true, network: true, servingRailroad: true },
+    });
+
+    const regions = [...new Set(shops.map(s => s.region).filter(r => r))];
+    const networks = [...new Set(shops.map(s => s.network).filter(n => n))];
+    const railroads = [...new Set(shops.map(s => s.servingRailroad).filter(r => r))];
+
+    res.json({ regions, networks, railroads });
+  } catch (error) {
+    console.error('Get filter options error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

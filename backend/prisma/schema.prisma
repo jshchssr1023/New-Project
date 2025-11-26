@@ -87,6 +87,8 @@ model Shop {
   city               String           @default("")
   state              String           @default("")
   region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
+  network            String           @default("") // Shop network: e.g., "Trinity", "GATX", "Greenbrier"
+  servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
   capacity           Int              @default(10) // Cars per month
   currentLoad        Int              @default(0) // Current month's assignments
   baseCostPerCar     Float            @default(15000) // Base cost per car

@@ -121,8 +121,8 @@ export const carsApi = {
 
 // Shops API
 export const shopsApi = {
-  getAll: async (): Promise<Shop[]> => {
-    const response = await apiClient.get<Shop[]>('/shops');
+  getAll: async (params?: { region?: string; network?: string; servingRailroad?: string; isActive?: boolean }): Promise<Shop[]> => {
+    const response = await apiClient.get<Shop[]>('/shops', { params });
     return response.data;
   },
 
@@ -150,6 +150,18 @@ export const shopsApi = {
       `/shops/${id}/capacity`,
       { params: { month } }
     );
+    return response.data;
+  },
+
+  // Get filter options (regions, networks, railroads)
+  getFilters: async (): Promise<{ regions: string[]; networks: string[]; railroads: string[] }> => {
+    const response = await apiClient.get<{ regions: string[]; networks: string[]; railroads: string[] }>('/shops/meta/filters');
+    return response.data;
+  },
+
+  // Bulk import shops
+  bulkImport: async (shops: Partial<Shop>[]): Promise<{ created: number; updated: number; errors: string[] }> => {
+    const response = await apiClient.post<{ created: number; updated: number; errors: string[] }>('/shops/bulk-import', { shops });
     return response.data;
   },
 };
