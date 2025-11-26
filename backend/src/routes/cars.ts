@@ -40,7 +40,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         where,
         skip: (pageNum - 1) * pageSizeNum,
         take: pageSizeNum,
-        orderBy: { vehicleNumber: 'asc' },
+        orderBy: { railcarNumber: 'asc' },
       }),
       prisma.car.count({ where }),
     ]);
@@ -80,19 +80,19 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
 
     const cars = await prisma.car.findMany({
       where,
-      orderBy: { vehicleNumber: 'asc' },
+      orderBy: { railcarNumber: 'asc' },
     });
 
     // Generate CSV content
     const headers = [
-      'Vehicle Number', 'Car Type', 'Is Tank Car', 'Commodity', 'Customer',
+      'Railcar Number', 'Car Type', 'Is Tank Car', 'Commodity', 'Customer',
       'Project Number', 'Reason Shopped', 'Status', 'Current Location',
       'Home Region', 'Origin Region', 'Days In Shop', 'Projected Cost',
       'Last Service Date', 'Next Service Due', 'Notes'
     ];
 
     const rows = cars.map(car => [
-      car.vehicleNumber,
+      car.railcarNumber,
       car.carType,
       car.isTankCar ? 'Yes' : 'No',
       car.commodity,
@@ -161,12 +161,12 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 // Create railcar
 router.post('/', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
+  const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
     const car = await prisma.car.create({
       data: {
-        vehicleNumber,
+        railcarNumber: railcarNumber || vehicleNumber,
         carType: carType || '',
         commodity: commodity || '',
         customer: customer || '',
@@ -190,7 +190,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 // Update railcar
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
+  const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
     const car = await prisma.car.updateMany({
@@ -199,7 +199,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
         companyId: req.user!.companyId,
       },
       data: {
-        vehicleNumber,
+        railcarNumber: railcarNumber || vehicleNumber,
         carType,
         commodity,
         customer,
@@ -412,17 +412,18 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 
         const carData = transformed.data;
 
-        // Validate required fields after transformation
-        if (!carData.vehicleNumber) {
-          results.errors.push({ row: rowNum, reason: 'Missing required field: vehicleNumber' });
+        // Validate required fields after transformation - support both railcarNumber and vehicleNumber
+        const railcarNum = carData.railcarNumber || carData.vehicleNumber;
+        if (!railcarNum) {
+          results.errors.push({ row: rowNum, reason: 'Missing required field: railcarNumber (or railcar_number)' });
           results.failedRows++;
           continue;
         }
 
-        // Validate vehicle number format (basic check)
-        const vehicleNum = String(carData.vehicleNumber);
-        if (vehicleNum.length < 4) {
-          results.errors.push({ row: rowNum, reason: `Invalid vehicle number: "${vehicleNum}" (too short, minimum 4 characters)` });
+        // Validate railcar number format (basic check)
+        const railcarNumStr = String(railcarNum);
+        if (railcarNumStr.length < 4) {
+          results.errors.push({ row: rowNum, reason: `Invalid railcar number: "${railcarNumStr}" (too short, minimum 4 characters)` });
           results.failedRows++;
           continue;
         }
@@ -438,14 +439,14 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
         // Check if car already exists
         const existingCar = await prisma.car.findFirst({
           where: {
-            vehicleNumber: vehicleNum,
+            railcarNumber: railcarNumStr,
             companyId: req.user!.companyId,
           },
         });
 
         // Prepare final data for database
         const dbCarData = {
-          vehicleNumber: vehicleNum,
+          railcarNumber: railcarNumStr,
           carType: String(carData.carType || ''),
           isTankCar: Boolean(carData.isTankCar),
           commodity: String(carData.commodity || ''),

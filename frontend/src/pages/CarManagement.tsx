@@ -42,7 +42,7 @@ export default function CarManagement() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [formData, setFormData] = useState({
-    vehicleNumber: '',
+    railcarNumber: '',
     carType: '',
     commodity: '',
     customer: '',
@@ -76,7 +76,7 @@ export default function CarManagement() {
     if (car) {
       setEditingCar(car);
       setFormData({
-        vehicleNumber: car.vehicleNumber,
+        railcarNumber: car.railcarNumber,
         carType: car.carType,
         commodity: car.commodity,
         customer: car.customer,
@@ -88,7 +88,7 @@ export default function CarManagement() {
     } else {
       setEditingCar(null);
       setFormData({
-        vehicleNumber: '',
+        railcarNumber: '',
         carType: '',
         commodity: '',
         customer: '',
@@ -198,11 +198,12 @@ export default function CarManagement() {
       headers.forEach((header, index) => {
         const value = values[index] || '';
         switch (header) {
+          case 'railcar_number':
+          case 'railcarnumber':
+          case 'railcar':
           case 'vehicle_number':
           case 'vehiclenumber':
-          case 'railcar_number':
-          case 'railcar':
-            carObj.vehicleNumber = value;
+            carObj.railcarNumber = value;
             break;
           case 'car_type':
           case 'cartype':
@@ -267,7 +268,7 @@ export default function CarManagement() {
         }
       });
 
-      if (carObj.vehicleNumber) {
+      if (carObj.railcarNumber) {
         carList.push(carObj as Partial<Car>);
       }
     }
@@ -290,7 +291,7 @@ export default function CarManagement() {
           newCarsAdded: 0,
           existingCarsUpdated: 0,
           failedRows: 0,
-          errors: [{ row: 0, reason: 'No valid railcars found in CSV. Ensure headers include "vehicle_number" or "vehicleNumber".' }]
+          errors: [{ row: 0, reason: 'No valid railcars found in CSV. Ensure headers include "railcar_number" or "railcarNumber".' }]
         });
         setIsImportResultsOpen(true);
         setIsImportModalOpen(false);
@@ -351,7 +352,7 @@ export default function CarManagement() {
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     return (
-      car.vehicleNumber.toLowerCase().includes(term) ||
+      car.railcarNumber.toLowerCase().includes(term) ||
       car.customer.toLowerCase().includes(term) ||
       car.projectNumber.toLowerCase().includes(term) ||
       car.commodity.toLowerCase().includes(term) ||
@@ -574,7 +575,7 @@ export default function CarManagement() {
                       </td>
                       <td className="px-4 py-4 whitespace-nowrap">
                         <div className="flex items-center">
-                          <span className="text-sm font-medium text-steel-900">{car.vehicleNumber}</span>
+                          <span className="text-sm font-medium text-steel-900">{car.railcarNumber}</span>
                           {isTankCar && (
                             <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
                               TANK
@@ -662,8 +663,8 @@ export default function CarManagement() {
                     <label className="label">Railcar Number</label>
                     <input
                       type="text"
-                      value={formData.vehicleNumber}
-                      onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
+                      value={formData.railcarNumber}
+                      onChange={(e) => setFormData({ ...formData, railcarNumber: e.target.value })}
                       className="input"
                       placeholder="e.g., AITX123456"
                       required
@@ -792,7 +793,7 @@ export default function CarManagement() {
                     Upload a CSV file with railcar data
                   </p>
                   <p className="text-sm text-steel-500 mb-4">
-                    Required column: vehicle_number<br />
+                    Required column: railcar_number<br />
                     Optional: car_type, customer, commodity, status, reason_shopped, etc.
                   </p>
                   <input
@@ -825,7 +826,7 @@ export default function CarManagement() {
                 <div className="bg-steel-50 rounded-lg p-4">
                   <h3 className="text-sm font-medium text-steel-900 mb-2">CSV Format Example:</h3>
                   <code className="text-xs text-steel-600 block whitespace-pre-wrap">
-                    vehicle_number,car_type,customer,status,reason_shopped{'\n'}
+                    railcar_number,car_type,customer,status,reason_shopped{'\n'}
                     AITX123456,Tank Car,Shell Energy,available,Annual Inspection{'\n'}
                     AITX789012,Covered Hopper,Cargill,scheduled,Wheel Repair
                   </code>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
   PlayIcon,
@@ -10,9 +11,12 @@ import {
   CheckCircleIcon,
   UserGroupIcon,
   XMarkIcon,
+  ArrowRightIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 import { scenariosApi, plansApi, carsApi, shopsApi } from '../services/api';
 import type { Scenario, Plan, Car, Shop, ScenarioCar, ShopRecommendation, OverloadedShop } from '../types';
+import { getUtilizationBadgeClasses, getUtilizationPercent, isCapacityWarning } from '../utils/utilizationColors';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-steel-100 text-steel-800',
@@ -21,6 +25,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function ScenarioManager() {
+  const navigate = useNavigate();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [cars, setCars] = useState<Car[]>([]);
@@ -30,9 +35,12 @@ export default function ScenarioManager() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isAddCarsModalOpen, setIsAddCarsModalOpen] = useState(false);
   const [isRecommendationsModalOpen, setIsRecommendationsModalOpen] = useState(false);
+  const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [selectedScenarioCar, setSelectedScenarioCar] = useState<ScenarioCar | null>(null);
   const [recommendations, setRecommendations] = useState<ShopRecommendation[]>([]);
+  const [commitPlanId, setCommitPlanId] = useState<string>('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -188,15 +196,58 @@ export default function ScenarioManager() {
     }
   };
 
-  const handleApplyToPlan = async (scenarioId: string) => {
-    const planId = prompt('Enter the plan ID to apply this scenario to:');
-    if (!planId) return;
-    try {
-      await scenariosApi.applyToPlan(scenarioId, planId);
-      alert('Scenario applied successfully!');
-    } catch (error) {
-      console.error('Failed to apply scenario:', error);
+  const handleOpenCommitModal = () => {
+    if (!selectedScenario || !selectedScenario.cars || selectedScenario.cars.length === 0) {
+      alert('No cars in scenario to commit');
+      return;
     }
+
+    // Check if all cars have assigned shops
+    const unassignedCars = selectedScenario.cars.filter(sc => !sc.assignedShopId && !sc.suggestedShopId);
+    if (unassignedCars.length > 0) {
+      alert(`${unassignedCars.length} car(s) have no assigned or suggested shop. Please assign shops before committing.`);
+      return;
+    }
+
+    setIsCommitModalOpen(true);
+  };
+
+  const handleCommitToPlan = async () => {
+    if (!selectedScenario || !commitPlanId) return;
+
+    setIsCommitting(true);
+    try {
+      // Build assignments from scenario cars
+      const assignments = selectedScenario.cars.map(sc => ({
+        carId: sc.carId,
+        shopId: sc.assignedShopId || sc.suggestedShopId || '',
+        scheduledMonth: sc.scheduledMonth,
+        estimatedCost: sc.estimatedCost,
+        estimatedDuration: sc.estimatedDays,
+        status: 'pending' as const,
+      })).filter(a => a.shopId); // Only include cars with shops
+
+      const result = await plansApi.bulkAddAssignments(commitPlanId, assignments);
+
+      if (result.failed > 0) {
+        alert(`Committed ${result.success} assignments. ${result.failed} failed.`);
+      } else {
+        alert(`Successfully committed ${result.success} assignments to the plan!`);
+      }
+
+      setIsCommitModalOpen(false);
+      setCommitPlanId('');
+    } catch (error) {
+      console.error('Failed to commit to plan:', error);
+      alert('Failed to commit assignments to plan');
+    } finally {
+      setIsCommitting(false);
+    }
+  };
+
+  // Navigate to car details with filter
+  const handleRailcarClick = (railcarNumber: string) => {
+    navigate(`/cars?search=${encodeURIComponent(railcarNumber)}`);
   };
 
   const getNextMonths = () => {
@@ -323,11 +374,11 @@ export default function ScenarioManager() {
                       )}
                       {selectedScenario.status === 'completed' && (
                         <button
-                          onClick={() => handleApplyToPlan(selectedScenario.id)}
-                          className="btn-primary py-2 px-3 text-sm flex items-center"
+                          onClick={handleOpenCommitModal}
+                          className="btn-primary py-2 px-4 text-sm flex items-center font-medium"
                         >
-                          <DocumentDuplicateIcon className="mr-1 h-4 w-4" />
-                          Apply to Plan
+                          <CheckIcon className="mr-2 h-4 w-4" />
+                          Commit Plan
                         </button>
                       )}
                       <button
@@ -469,7 +520,12 @@ export default function ScenarioManager() {
                           {selectedScenario.cars.map((sc) => (
                             <tr key={sc.id} className="hover:bg-steel-50">
                               <td className="px-4 py-3 whitespace-nowrap">
-                                <span className="font-medium text-steel-900">{sc.car?.vehicleNumber}</span>
+                                <button
+                                onClick={() => sc.car?.railcarNumber && handleRailcarClick(sc.car.railcarNumber)}
+                                className="font-medium text-rail-600 hover:text-rail-800 hover:underline"
+                              >
+                                {sc.car?.railcarNumber}
+                              </button>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="text-sm text-steel-900">{sc.car?.carType}</div>
@@ -689,7 +745,7 @@ export default function ScenarioManager() {
                               className="rounded border-steel-300"
                             />
                           </td>
-                          <td className="px-4 py-2 font-medium text-steel-900">{car.vehicleNumber}</td>
+                          <td className="px-4 py-2 font-medium text-steel-900">{car.railcarNumber}</td>
                           <td className="px-4 py-2 text-sm text-steel-600">{car.carType}</td>
                           <td className="px-4 py-2 text-sm text-steel-600">{car.customer}</td>
                           <td className="px-4 py-2 text-sm text-steel-600">{car.reasonShopped}</td>
@@ -726,7 +782,7 @@ export default function ScenarioManager() {
             <div className="relative w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl">
               <h2 className="text-xl font-semibold text-steel-900 mb-2">Shop Recommendations</h2>
               <p className="text-sm text-steel-500 mb-4">
-                For: {selectedScenarioCar.car?.vehicleNumber} ({selectedScenarioCar.car?.carType})
+                For: {selectedScenarioCar.car?.railcarNumber} ({selectedScenarioCar.car?.carType})
               </p>
 
               <div className="space-y-3 max-h-96 overflow-y-auto">
@@ -783,6 +839,102 @@ export default function ScenarioManager() {
               <div className="flex justify-end mt-4">
                 <button onClick={() => setIsRecommendationsModalOpen(false)} className="btn-secondary">
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Commit to Plan Modal */}
+      {isCommitModalOpen && selectedScenario && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsCommitModalOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <h2 className="text-xl font-semibold text-steel-900 mb-4">Commit Scenario to Plan</h2>
+
+              {/* Scenario Summary */}
+              <div className="bg-steel-50 rounded-lg p-4 mb-4">
+                <h3 className="font-medium text-steel-900 mb-2">{selectedScenario.name}</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <p className="text-steel-600">
+                    <span className="text-steel-500">Total Cars:</span> {selectedScenario.cars?.length || 0}
+                  </p>
+                  <p className="text-steel-600">
+                    <span className="text-steel-500">Assigned:</span>{' '}
+                    {selectedScenario.cars?.filter(c => c.assignedShopId || c.suggestedShopId).length || 0}
+                  </p>
+                  {selectedScenario.results && (
+                    <>
+                      <p className="text-steel-600">
+                        <span className="text-steel-500">Est. Cost:</span> ${selectedScenario.results.totalCost?.toLocaleString() || 0}
+                      </p>
+                      <p className="text-steel-600">
+                        <span className="text-steel-500">Avg Time:</span> {selectedScenario.results.averageTurnTime?.toFixed(0) || 0} days
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {/* Capacity Warning */}
+                {selectedScenario.results?.capacityAnalysis?.hasOverload && (
+                  <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded p-2">
+                    <ExclamationTriangleIcon className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm">
+                      <p className="font-medium text-red-800">Capacity Warning</p>
+                      <p className="text-red-700">
+                        {selectedScenario.results.capacityAnalysis.totalOverloadInstances} shop(s) will exceed capacity
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Plan Selection */}
+              <div className="mb-6">
+                <label className="label">Select Target Plan</label>
+                <select
+                  value={commitPlanId}
+                  onChange={(e) => setCommitPlanId(e.target.value)}
+                  className="input"
+                >
+                  <option value="">Choose a plan...</option>
+                  {plans.filter(p => p.status === 'active' || p.status === 'draft').map(plan => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.name} ({plan.status})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setIsCommitModalOpen(false);
+                    setCommitPlanId('');
+                  }}
+                  className="btn-secondary"
+                  disabled={isCommitting}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCommitToPlan}
+                  disabled={!commitPlanId || isCommitting}
+                  className="btn-primary disabled:opacity-50 flex items-center"
+                >
+                  {isCommitting ? (
+                    <>
+                      <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
+                      Committing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckIcon className="mr-2 h-4 w-4" />
+                      Commit {selectedScenario.cars?.length || 0} Assignments
+                    </>
+                  )}
                 </button>
               </div>
             </div>

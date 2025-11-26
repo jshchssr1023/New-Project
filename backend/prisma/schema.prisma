@@ -58,7 +58,7 @@ model Customer {
 
 model Car {
   id                      String           @id @default(uuid())
-  vehicleNumber           String           // Railcar number/reporting mark
+  railcarNumber           String           // Railcar number/reporting mark
   carType                 String           @default("") // Tank car, hopper, boxcar, gondola, etc.
   isTankCar               Boolean          @default(false) // Critical for shop qualification validation
   commodity               String           @default("") // What the car carries
@@ -84,7 +84,7 @@ model Car {
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
 
-  @@unique([vehicleNumber, companyId])
+  @@unique([railcarNumber, companyId])
 }
 
 model Shop {

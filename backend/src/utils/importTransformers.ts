@@ -14,25 +14,27 @@
  * Keys are lowercase normalized header names, values are the target system field.
  */
 export const HEADER_SYNONYMS: Record<string, string> = {
-  // vehicleNumber synonyms
-  'vehiclenumber': 'vehicleNumber',
-  'vehicle_number': 'vehicleNumber',
-  'vehicle number': 'vehicleNumber',
-  'carid': 'vehicleNumber',
-  'car_id': 'vehicleNumber',
-  'car id': 'vehicleNumber',
-  'vin': 'vehicleNumber',
-  'railcar#': 'vehicleNumber',
-  'railcar #': 'vehicleNumber',
-  'railcar_number': 'vehicleNumber',
-  'railcar number': 'vehicleNumber',
-  'railcar': 'vehicleNumber',
-  'car number': 'vehicleNumber',
-  'carnumber': 'vehicleNumber',
-  'car_number': 'vehicleNumber',
-  'reporting mark': 'vehicleNumber',
-  'reportingmark': 'vehicleNumber',
-  'reporting_mark': 'vehicleNumber',
+  // railcarNumber synonyms (primary identifier for railcars)
+  'railcarnumber': 'railcarNumber',
+  'railcar_number': 'railcarNumber',
+  'railcar number': 'railcarNumber',
+  'railcar#': 'railcarNumber',
+  'railcar #': 'railcarNumber',
+  'railcar': 'railcarNumber',
+  // Legacy vehicleNumber synonyms - map to railcarNumber
+  'vehiclenumber': 'railcarNumber',
+  'vehicle_number': 'railcarNumber',
+  'vehicle number': 'railcarNumber',
+  'carid': 'railcarNumber',
+  'car_id': 'railcarNumber',
+  'car id': 'railcarNumber',
+  'vin': 'railcarNumber',
+  'car number': 'railcarNumber',
+  'carnumber': 'railcarNumber',
+  'car_number': 'railcarNumber',
+  'reporting mark': 'railcarNumber',
+  'reportingmark': 'railcarNumber',
+  'reporting_mark': 'railcarNumber',
 
   // customer synonyms
   'customer': 'customer',
@@ -183,11 +185,11 @@ export const HEADER_SYNONYMS: Record<string, string> = {
 };
 
 // Required fields that must be present (or mappable) for import
-export const REQUIRED_FIELDS = ['vehicleNumber'];
+export const REQUIRED_FIELDS = ['railcarNumber'];
 
 // All valid system fields for car import
 export const VALID_SYSTEM_FIELDS = [
-  'vehicleNumber',
+  'railcarNumber',
   'carType',
   'isTankCar',
   'commodity',
@@ -517,7 +519,7 @@ function generateFieldSuggestions(header: string): string[] {
 
   // If no suggestions, return top 3 most common fields as hints
   if (suggestions.length === 0) {
-    return ['vehicleNumber', 'customer', 'status'];
+    return ['railcarNumber', 'customer', 'status'];
   }
 
   return suggestions.slice(0, 3);
@@ -553,10 +555,12 @@ export function transformCarRecord(
   }
 
   // Transform each field
-  // vehicleNumber (required)
-  data.vehicleNumber = normalizedRecord.vehicleNumber || '';
-  if (!data.vehicleNumber) {
-    errors.push('Missing required field: vehicleNumber');
+  // railcarNumber (required) - also support legacy vehicleNumber
+  data.railcarNumber = normalizedRecord.railcarNumber || normalizedRecord.vehicleNumber || '';
+  // Keep vehicleNumber for backward compatibility
+  data.vehicleNumber = data.railcarNumber;
+  if (!data.railcarNumber) {
+    errors.push('Missing required field: railcarNumber (or railcar_number)');
   }
 
   // carType
