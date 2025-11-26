@@ -20,13 +20,15 @@ export interface Company {
 export interface Car {
   id: string;
   vehicleNumber: string;
-  make: string;
-  model: string;
-  year: number;
-  mileage: number;
+  carType: string;
+  commodity: string;
+  customer: string;
+  projectNumber: string;
+  reasonShopped: string;
   status: 'available' | 'in_service' | 'scheduled' | 'retired';
   lastServiceDate: string | null;
   nextServiceDue: string | null;
+  notes: string;
   companyId: string;
   createdAt: string;
   updatedAt: string;

@@ -66,35 +66,39 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Create car
+// Create railcar
 router.post('/', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { vehicleNumber, make, model, year, mileage, status } = req.body;
+  const { vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
     const car = await prisma.car.create({
       data: {
         vehicleNumber,
-        make,
-        model,
-        year,
-        mileage,
+        carType: carType || '',
+        commodity: commodity || '',
+        customer: customer || '',
+        projectNumber: projectNumber || '',
+        reasonShopped: reasonShopped || '',
         status: status || 'available',
+        notes: notes || '',
+        lastServiceDate: lastServiceDate ? new Date(lastServiceDate) : null,
+        nextServiceDue: nextServiceDue ? new Date(nextServiceDue) : null,
         companyId: req.user!.companyId,
       },
     });
 
     res.status(201).json(car);
   } catch (error) {
-    console.error('Create car error:', error);
+    console.error('Create railcar error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
-// Update car
+// Update railcar
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { vehicleNumber, make, model, year, mileage, status } = req.body;
+  const { vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
     const car = await prisma.car.updateMany({
@@ -104,11 +108,15 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
       },
       data: {
         vehicleNumber,
-        make,
-        model,
-        year,
-        mileage,
+        carType,
+        commodity,
+        customer,
+        projectNumber,
+        reasonShopped,
         status,
+        notes,
+        lastServiceDate: lastServiceDate ? new Date(lastServiceDate) : null,
+        nextServiceDue: nextServiceDue ? new Date(nextServiceDue) : null,
       },
     });
 

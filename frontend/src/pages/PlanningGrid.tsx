@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { plansApi, shopsApi } from '../services/api';
 import type { Plan, Shop, PlanAssignment } from '../types';
 
@@ -97,7 +98,7 @@ export default function PlanningGrid() {
         <div>
           <h1 className="text-2xl font-bold text-steel-900">Planning Grid</h1>
           <p className="mt-1 text-sm text-steel-500">
-            Shop × Month matrix for service scheduling
+            Shop × Month matrix for railcar service scheduling
           </p>
         </div>
         <div className="flex items-center space-x-4">
@@ -124,6 +125,15 @@ export default function PlanningGrid() {
               </option>
             ))}
           </select>
+          {selectedPlan && (
+            <button
+              onClick={() => plansApi.exportToExcel(selectedPlan.id)}
+              className="btn-primary flex items-center"
+            >
+              <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
+              Export to Excel
+            </button>
+          )}
         </div>
       </div>
 
@@ -156,19 +166,19 @@ export default function PlanningGrid() {
       <div className="card overflow-x-auto p-0">
         <table className="min-w-full">
           <thead>
-            <tr className="bg-steel-50">
-              <th className="sticky left-0 z-10 bg-steel-50 px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase tracking-wider border-r border-steel-200">
+            <tr className="bg-steel-800 text-white">
+              <th className="sticky left-0 z-10 bg-steel-800 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-r border-steel-700">
                 Shop
               </th>
-              {months.map((month, index) => (
+              {months.map((month) => (
                 <th
                   key={month}
-                  className="px-2 py-3 text-center text-xs font-medium text-steel-500 uppercase tracking-wider min-w-[80px]"
+                  className="px-2 py-3 text-center text-xs font-medium uppercase tracking-wider min-w-[80px]"
                 >
                   {month}
                 </th>
               ))}
-              <th className="px-4 py-3 text-center text-xs font-medium text-steel-500 uppercase tracking-wider">
+              <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider">
                 Total
               </th>
             </tr>

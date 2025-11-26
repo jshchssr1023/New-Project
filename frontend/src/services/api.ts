@@ -216,6 +216,25 @@ export const plansApi = {
     const response = await apiClient.post<Plan>(`/plans/${id}/archive`);
     return response.data;
   },
+
+  exportToExcel: async (id: string): Promise<void> => {
+    const response = await apiClient.get(`/plans/${id}/export`, {
+      responseType: 'blob',
+    });
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const contentDisposition = response.headers['content-disposition'];
+    const filename = contentDisposition
+      ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+      : `plan_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 // Scenarios API
