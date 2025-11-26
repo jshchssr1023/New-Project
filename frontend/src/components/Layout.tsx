@@ -18,10 +18,10 @@ import { useAuth } from '../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Car Pool', href: '/cars', icon: TruckIcon },
-  { name: 'Shops', href: '/shops', icon: BuildingStorefrontIcon },
+  { name: 'Railcars', href: '/cars', icon: TruckIcon },
+  { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
-  { name: 'Scenarios', href: '/scenarios', icon: BeakerIcon },
+  { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 
@@ -163,7 +163,7 @@ export default function Layout() {
 
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1 items-center">
-              <h1 className="text-lg font-semibold text-steel-900">Scheduler</h1>
+              <h1 className="text-lg font-semibold text-steel-900">Railcar Service Scheduler</h1>
             </div>
             <div className="flex items-center gap-x-4 lg:gap-x-6">
               {/* User menu */}
