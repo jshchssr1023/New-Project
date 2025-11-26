@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, EyeIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect, useRef } from 'react';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { shopsApi } from '../services/api';
 import type { Shop } from '../types';
 
@@ -7,15 +7,30 @@ const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Cana
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
 
+// Import result type matching API response
+interface ImportResults {
+  status: 'success' | 'partial_success' | 'failed';
+  newShopsAdded: number;
+  existingShopsUpdated: number;
+  failedRows: number;
+  errors: { row: number; reason: string }[];
+}
+
 export default function ShopManagement() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isImportResultsOpen, setIsImportResultsOpen] = useState(false);
+  const [importResults, setImportResults] = useState<ImportResults | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [editingShop, setEditingShop] = useState<Shop | null>(null);
   const [viewingShop, setViewingShop] = useState<Shop | null>(null);
   const [regionFilter, setRegionFilter] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -157,6 +172,188 @@ export default function ShopManagement() {
     }));
   };
 
+  // Parse CSV file and return array of shop objects
+  const parseCSV = (csvText: string): Partial<Shop>[] => {
+    const lines = csvText.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+    const shops: Partial<Shop>[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      const shop: Record<string, unknown> = {};
+
+      headers.forEach((header, index) => {
+        const value = values[index] || '';
+        // Map common CSV headers to shop fields
+        switch (header) {
+          case 'shop_code':
+          case 'code':
+            shop.code = value;
+            break;
+          case 'shop_name':
+          case 'name':
+            shop.name = value;
+            break;
+          case 'region':
+            shop.region = value;
+            break;
+          case 'network':
+            shop.network = value;
+            break;
+          case 'city':
+            shop.city = value;
+            break;
+          case 'state':
+            shop.state = value;
+            break;
+          case 'capacity':
+          case 'monthly_capacity':
+            shop.capacity = parseInt(value) || 10;
+            break;
+          case 'tank_qualified':
+          case 'tankqualified':
+            shop.tankQualified = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+            break;
+          case 'is_aitx_internal':
+          case 'aitx_internal':
+            shop.isAitxInternal = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+            break;
+          case 'network_tier':
+            shop.networkTier = parseInt(value) || 5;
+            break;
+          case 'serving_railroad':
+          case 'railroad':
+            shop.servingRailroad = value;
+            break;
+          case 'base_cost':
+          case 'base_cost_per_car':
+            shop.baseCostPerCar = parseFloat(value) || 15000;
+            break;
+          case 'labor_rate':
+            shop.laborRate = parseFloat(value) || 75;
+            break;
+          case 'cost_index':
+            shop.costIndex = parseFloat(value) || 1.0;
+            break;
+          case 'base_turn_time':
+          case 'turn_time':
+            shop.baseTurnTime = parseInt(value) || 14;
+            break;
+          case 'contact_name':
+            shop.contactName = value;
+            break;
+          case 'contact_email':
+            shop.contactEmail = value;
+            break;
+          case 'contact_phone':
+            shop.contactPhone = value;
+            break;
+          case 'notes':
+            shop.notes = value;
+            break;
+          case 'is_active':
+          case 'active':
+            shop.isActive = value.toLowerCase() !== 'false' && value !== '0' && value.toLowerCase() !== 'no';
+            break;
+        }
+      });
+
+      if (shop.code && shop.name) {
+        shops.push(shop as Partial<Shop>);
+      }
+    }
+
+    return shops;
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const parsedShops = parseCSV(text);
+
+      if (parsedShops.length === 0) {
+        setImportResults({
+          status: 'failed',
+          newShopsAdded: 0,
+          existingShopsUpdated: 0,
+          failedRows: 0,
+          errors: [{ row: 0, reason: 'No valid shops found in CSV. Ensure headers include "code" and "name".' }]
+        });
+        setIsImportResultsOpen(true);
+        setIsImportModalOpen(false);
+        return;
+      }
+
+      const results = await shopsApi.bulkImport(parsedShops);
+      setImportResults(results);
+      setIsImportResultsOpen(true);
+      setIsImportModalOpen(false);
+      loadShops();
+    } catch (error: any) {
+      setImportResults({
+        status: 'failed',
+        newShopsAdded: 0,
+        existingShopsUpdated: 0,
+        failedRows: 0,
+        errors: [{ row: 0, reason: error.response?.data?.message || 'Import failed. Please check your file format.' }]
+      });
+      setIsImportResultsOpen(true);
+      setIsImportModalOpen(false);
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await shopsApi.exportShops({
+        region: regionFilter || undefined,
+        isActive: activeFilter ? activeFilter === 'active' : undefined,
+      });
+    } catch (error) {
+      console.error('Failed to export shops:', error);
+      alert('Export failed. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircleIcon className="h-12 w-12 text-green-500" />;
+      case 'partial_success':
+        return <ExclamationTriangleIcon className="h-12 w-12 text-amber-500" />;
+      case 'failed':
+        return <XCircleIcon className="h-12 w-12 text-red-500" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusMessage = (status: string) => {
+    switch (status) {
+      case 'success':
+        return 'Import Successful';
+      case 'partial_success':
+        return 'Import Completed with Errors';
+      case 'failed':
+        return 'Import Failed';
+      default:
+        return 'Import Complete';
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -167,7 +364,18 @@ export default function ShopManagement() {
           </p>
         </div>
         <div className="flex space-x-3">
-          <button className="btn-secondary flex items-center">
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="btn-secondary flex items-center"
+          >
+            <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
+            {isExporting ? 'Exporting...' : 'Export'}
+          </button>
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="btn-secondary flex items-center"
+          >
             <ArrowUpTrayIcon className="mr-2 h-5 w-5" />
             Import Shops
           </button>
@@ -595,6 +803,131 @@ export default function ShopManagement() {
 
               <div className="flex justify-end pt-4">
                 <button onClick={() => setIsViewModalOpen(false)} className="btn-secondary">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => !isImporting && setIsImportModalOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-steel-900">Import Shops</h2>
+                <button
+                  onClick={() => setIsImportModalOpen(false)}
+                  disabled={isImporting}
+                  className="text-steel-400 hover:text-steel-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-steel-300 rounded-lg p-8 text-center">
+                  <ArrowUpTrayIcon className="h-12 w-12 text-steel-400 mx-auto mb-4" />
+                  <p className="text-steel-600 mb-2">
+                    Upload a CSV file with shop data
+                  </p>
+                  <p className="text-sm text-steel-500 mb-4">
+                    Required columns: code, name<br />
+                    Optional: region, network, city, state, capacity, tank_qualified, etc.
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileSelect}
+                    disabled={isImporting}
+                    className="hidden"
+                    id="csv-upload"
+                  />
+                  <label
+                    htmlFor="csv-upload"
+                    className={`btn-primary inline-flex items-center cursor-pointer ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isImporting ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Importing...
+                      </>
+                    ) : (
+                      'Select CSV File'
+                    )}
+                  </label>
+                </div>
+
+                <div className="bg-steel-50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-steel-900 mb-2">CSV Format Example:</h3>
+                  <code className="text-xs text-steel-600 block whitespace-pre-wrap">
+                    code,name,region,network,capacity,tank_qualified{'\n'}
+                    HSTN,Houston Railcar Services,Southwest,AITX-Own,25,true{'\n'}
+                    DALL,Dallas Tank Repair,Southwest,3rd Party,15,true
+                  </code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Results Modal */}
+      {isImportResultsOpen && importResults && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsImportResultsOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="text-center mb-6">
+                {getStatusIcon(importResults.status)}
+                <h2 className="text-xl font-semibold text-steel-900 mt-3">
+                  {getStatusMessage(importResults.status)}
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="bg-green-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-600">{importResults.newShopsAdded}</div>
+                  <div className="text-sm text-green-700">New Shops Added</div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600">{importResults.existingShopsUpdated}</div>
+                  <div className="text-sm text-blue-700">Shops Updated</div>
+                </div>
+                <div className="bg-red-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-red-600">{importResults.failedRows}</div>
+                  <div className="text-sm text-red-700">Failed Rows</div>
+                </div>
+              </div>
+
+              {importResults.errors.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-steel-900 mb-2">Errors:</h3>
+                  <div className="bg-red-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                    <ul className="space-y-1">
+                      {importResults.errors.map((error, index) => (
+                        <li key={index} className="text-sm text-red-700">
+                          {error.row > 0 && <span className="font-medium">Row {error.row}: </span>}
+                          {error.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setIsImportResultsOpen(false)}
+                  className="btn-primary"
+                >
                   Close
                 </button>
               </div>

@@ -263,10 +263,14 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Bulk import shops
+// Bulk import shops with detailed results
 router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
   const { shops } = req.body;
+
+  // Valid regions for validation
+  const validRegions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West', 'Southeast', 'Southwest'];
+  const validNetworks = ['AITX-Own', '3rd Party'];
 
   if (!Array.isArray(shops)) {
     res.status(400).json({ message: 'shops must be an array' });
@@ -275,13 +279,59 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 
   try {
     const results = {
-      created: 0,
-      updated: 0,
-      errors: [] as string[],
+      status: 'success' as 'success' | 'partial_success' | 'failed',
+      newShopsAdded: 0,
+      existingShopsUpdated: 0,
+      failedRows: 0,
+      errors: [] as { row: number; reason: string }[],
     };
 
-    for (const shopData of shops) {
+    for (let i = 0; i < shops.length; i++) {
+      const shopData = shops[i];
+      const rowNum = i + 1; // 1-indexed for user display
+
       try {
+        // Validation checks
+        if (!shopData.code) {
+          results.errors.push({ row: rowNum, reason: "Missing required 'code' field" });
+          results.failedRows++;
+          continue;
+        }
+
+        if (!shopData.name) {
+          results.errors.push({ row: rowNum, reason: "Missing required 'name' field" });
+          results.failedRows++;
+          continue;
+        }
+
+        if (shopData.region && !validRegions.includes(shopData.region)) {
+          results.errors.push({
+            row: rowNum,
+            reason: `Invalid region '${shopData.region}' (valid: ${validRegions.join(', ')})`
+          });
+          results.failedRows++;
+          continue;
+        }
+
+        if (shopData.network && !validNetworks.includes(shopData.network)) {
+          results.errors.push({
+            row: rowNum,
+            reason: `Invalid network '${shopData.network}' (valid: ${validNetworks.join(', ')})`
+          });
+          results.failedRows++;
+          continue;
+        }
+
+        if (shopData.capacity && (isNaN(shopData.capacity) || shopData.capacity < 0)) {
+          results.errors.push({ row: rowNum, reason: "Invalid capacity value (must be positive number)" });
+          results.failedRows++;
+          continue;
+        }
+
+        const isAitx = shopData.network === 'AITX-Own';
+        const tankQualified = shopData.tankQualified !== undefined ? shopData.tankQualified :
+                              shopData.certifications?.includes('Qualification') ?? true;
+
         const existing = await prisma.shop.findFirst({
           where: {
             code: shopData.code,
@@ -300,8 +350,15 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
               region: shopData.region || existing.region,
               network: shopData.network || existing.network,
               servingRailroad: shopData.servingRailroad || existing.servingRailroad,
+              isAitxInternal: shopData.network ? isAitx : existing.isAitxInternal,
+              tankQualified: shopData.tankQualified !== undefined ? shopData.tankQualified : existing.tankQualified,
+              networkTier: shopData.networkTier || existing.networkTier,
+              shopStatus: shopData.shopStatus || existing.shopStatus,
               capacity: shopData.capacity || existing.capacity,
+              utilizationTarget: shopData.utilizationTarget || existing.utilizationTarget,
               baseCostPerCar: shopData.baseCostPerCar || existing.baseCostPerCar,
+              laborRate: shopData.laborRate || existing.laborRate,
+              costIndex: shopData.costIndex || existing.costIndex,
               baseTurnTime: shopData.baseTurnTime || existing.baseTurnTime,
               capabilities: shopData.capabilities ? JSON.stringify(shopData.capabilities) : existing.capabilities,
               certifications: shopData.certifications ? JSON.stringify(shopData.certifications) : existing.certifications,
@@ -312,20 +369,27 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
               isActive: shopData.isActive !== undefined ? shopData.isActive : existing.isActive,
             },
           });
-          results.updated++;
+          results.existingShopsUpdated++;
         } else {
           await prisma.shop.create({
             data: {
               name: shopData.name,
               code: shopData.code,
-              location: shopData.location || '',
+              location: shopData.location || `${shopData.city || ''}, ${shopData.state || ''}`.trim().replace(/^,\s*/, ''),
               city: shopData.city || '',
               state: shopData.state || '',
               region: shopData.region || '',
               network: shopData.network || '',
               servingRailroad: shopData.servingRailroad || '',
+              isAitxInternal: isAitx,
+              tankQualified,
+              networkTier: shopData.networkTier || (isAitx ? 1 : 3),
+              shopStatus: shopData.shopStatus || 'active',
               capacity: shopData.capacity || 10,
-              baseCostPerCar: shopData.baseCostPerCar || 15000,
+              utilizationTarget: shopData.utilizationTarget || 0.90,
+              baseCostPerCar: shopData.baseCostPerCar || (isAitx ? 20685 : 15000),
+              laborRate: shopData.laborRate || (isAitx ? 95 : 75),
+              costIndex: shopData.costIndex || (isAitx ? 1.379 : 1.0),
               baseTurnTime: shopData.baseTurnTime || 14,
               capabilities: shopData.capabilities ? JSON.stringify(shopData.capabilities) : '[]',
               certifications: shopData.certifications ? JSON.stringify(shopData.certifications) : '[]',
@@ -337,16 +401,99 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
               companyId: req.user!.companyId,
             },
           });
-          results.created++;
+          results.newShopsAdded++;
         }
       } catch (err: any) {
-        results.errors.push(`Error with shop ${shopData.code}: ${err.message}`);
+        results.errors.push({ row: rowNum, reason: err.message || 'Unknown error' });
+        results.failedRows++;
       }
+    }
+
+    // Determine overall status
+    if (results.failedRows === shops.length) {
+      results.status = 'failed';
+    } else if (results.failedRows > 0) {
+      results.status = 'partial_success';
     }
 
     res.json(results);
   } catch (error) {
     console.error('Bulk import shops error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Export shops to CSV
+router.get('/export', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { format = 'csv', region, network, isActive } = req.query;
+
+  try {
+    const shops = await prisma.shop.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        ...(region && { region: region as string }),
+        ...(network && { network: network as string }),
+        ...(isActive !== undefined && { isActive: isActive === 'true' }),
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Generate CSV content
+    const headers = [
+      'Code', 'Name', 'Location', 'City', 'State', 'Region', 'Network',
+      'Serving Railroad', 'Is AITX Internal', 'Tank Qualified', 'Network Tier',
+      'Shop Status', 'Capacity', 'Utilization Target', 'Base Cost Per Car',
+      'Labor Rate', 'Cost Index', 'Base Turn Time', 'Contact Name',
+      'Contact Email', 'Contact Phone', 'Notes', 'Is Active'
+    ];
+
+    const rows = shops.map(shop => [
+      shop.code,
+      shop.name,
+      shop.location,
+      shop.city,
+      shop.state,
+      shop.region,
+      shop.network,
+      shop.servingRailroad,
+      shop.isAitxInternal ? 'Yes' : 'No',
+      shop.tankQualified ? 'Yes' : 'No',
+      shop.networkTier,
+      shop.shopStatus,
+      shop.capacity,
+      shop.utilizationTarget,
+      shop.baseCostPerCar,
+      shop.laborRate,
+      shop.costIndex,
+      shop.baseTurnTime,
+      shop.contactName,
+      shop.contactEmail,
+      shop.contactPhone,
+      shop.notes,
+      shop.isActive ? 'Yes' : 'No',
+    ]);
+
+    // Escape CSV values
+    const escapeCSV = (val: any): string => {
+      const str = String(val ?? '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(escapeCSV).join(','))
+    ].join('\n');
+
+    const filename = `shops_export_${new Date().toISOString().split('T')[0]}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csvContent);
+  } catch (error) {
+    console.error('Export shops error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

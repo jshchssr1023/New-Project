@@ -57,24 +57,32 @@ model Customer {
 }
 
 model Car {
-  id              String           @id @default(uuid())
-  vehicleNumber   String           // Railcar number/reporting mark
-  carType         String           @default("") // Tank car, hopper, boxcar, gondola, etc.
-  commodity       String           @default("") // What the car carries
-  customer        String           @default("") // Customer/lessee name
-  projectNumber   String           @default("") // Project or work order number
-  reasonShopped   String           @default("") // Why car is being shopped
-  status          String           @default("available") // available, in_service, scheduled, retired
-  lastServiceDate DateTime?
-  nextServiceDue  DateTime?
-  homeRegion      String           @default("") // Preferred geographic region
-  notes           String           @default("")
-  companyId       String
-  company         Company          @relation(fields: [companyId], references: [id])
-  assignments     PlanAssignment[]
-  scenarioCars    ScenarioCar[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                      String           @id @default(uuid())
+  vehicleNumber           String           // Railcar number/reporting mark
+  carType                 String           @default("") // Tank car, hopper, boxcar, gondola, etc.
+  isTankCar               Boolean          @default(false) // Critical for shop qualification validation
+  commodity               String           @default("") // What the car carries
+  customer                String           @default("") // Customer/lessee name
+  projectNumber           String           @default("") // Project or work order number
+  reasonShopped           String           @default("") // Why car is being shopped: qualification, assignment, return, repair
+  status                  String           @default("available") // available, in_service, in_shop, scheduled, retired
+  currentLocation         String           @default("") // Current physical location
+  assignedShopId          String?          // Currently assigned shop (if in_shop or scheduled)
+  projectedCompletionMonth String          @default("") // YYYY-MM format
+  projectedCost           Float            @default(0) // Estimated cost for current/next service
+  shopEntryDate           DateTime?        // When car entered current shop
+  daysInShop              Int              @default(0) // Calculated field for reporting
+  lastServiceDate         DateTime?
+  nextServiceDue          DateTime?
+  homeRegion              String           @default("") // Preferred geographic region
+  originRegion            String           @default("") // Origin region for logistics
+  notes                   String           @default("")
+  companyId               String
+  company                 Company          @relation(fields: [companyId], references: [id])
+  assignments             PlanAssignment[]
+  scenarioCars            ScenarioCar[]
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
 
   @@unique([vehicleNumber, companyId])
 }
@@ -87,12 +95,18 @@ model Shop {
   city               String           @default("")
   state              String           @default("")
   region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
-  network            String           @default("") // Shop network: e.g., "Trinity", "GATX", "Greenbrier"
+  network            String           @default("") // Shop network: e.g., "AITX-Own", "3rd Party"
   servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
+  isAitxInternal     Boolean          @default(false) // True for AITX-owned shops, false for 3P
+  tankQualified      Boolean          @default(true) // Critical: Can this shop service tank cars?
+  networkTier        Int              @default(5) // 1-5, lower = preferred (for 3P ranking)
+  shopStatus         String           @default("active") // active, probation, inactive
   capacity           Int              @default(10) // Cars per month
   currentLoad        Int              @default(0) // Current month's assignments
+  utilizationTarget  Float            @default(0.90) // Target utilization (e.g., 0.90 = 90%)
   baseCostPerCar     Float            @default(15000) // Base cost per car
-  costMultiplier     Float            @default(1.0)
+  laborRate          Float            @default(75.0) // Hourly labor rate
+  costIndex          Float            @default(1.0) // Cost index (1.0 = 3P baseline, 1.379 = AITX premium)
   baseTurnTime       Int              @default(14) // Base turn time in days
   turnTimeMultiplier Float            @default(1.0)
   capabilities       String           @default("") // JSON array of car types this shop can handle

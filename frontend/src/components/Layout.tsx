@@ -8,6 +8,7 @@ import {
   TruckIcon,
   BuildingStorefrontIcon,
   CalendarDaysIcon,
+  ArrowsRightLeftIcon,
   BeakerIcon,
   ChartBarIcon,
   UsersIcon,
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Railcars', href: '/cars', icon: TruckIcon },
   { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
+  { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];

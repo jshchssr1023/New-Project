@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import ShopManagement from './pages/ShopManagement';
 import CarManagement from './pages/CarManagement';
 import PlanningGrid from './pages/PlanningGrid';
+import CarFlowPlanning from './pages/CarFlowPlanning';
 import ScenarioManager from './pages/ScenarioManager';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import UserManagement from './pages/UserManagement';
@@ -58,6 +59,7 @@ export default function App() {
         <Route path="shops" element={<ShopManagement />} />
         <Route path="cars" element={<CarManagement />} />
         <Route path="planning" element={<PlanningGrid />} />
+        <Route path="car-flow" element={<CarFlowPlanning />} />
         <Route path="scenarios" element={<ScenarioManager />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
         <Route
