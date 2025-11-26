@@ -13,6 +13,32 @@ import type {
   ShopRecommendation,
 } from '../types';
 
+// Import result types for car bulk import
+export type CarImportStatus = 'success' | 'partial_success' | 'failed' | 'mapping_required';
+
+export interface CarImportResult {
+  status: CarImportStatus;
+  newCarsAdded: number;
+  existingCarsUpdated: number;
+  failedRows: number;
+  errors: { row: number; reason: string }[];
+  warnings: { row: number; message: string }[];
+  // Mapping fields (only present when status is 'mapping_required')
+  detected_headers?: string[];
+  missing_required_fields?: string[];
+  unmapped_headers?: string[];
+  suggested_mappings?: Record<string, string[]>;
+}
+
+export interface HeaderAnalysisResult {
+  status: 'success' | 'mapping_required';
+  mappings: Record<string, string>;
+  unmappedHeaders: string[];
+  missingRequiredFields: string[];
+  detectedHeaders: string[];
+  suggestions: Record<string, string[]>;
+}
+
 const API_BASE_URL = '/api';
 
 const apiClient: AxiosInstance = axios.create({
@@ -109,21 +135,23 @@ export const carsApi = {
     await apiClient.delete('/cars/bulk', { data: { carIds } });
   },
 
-  // Bulk import cars with detailed results
-  bulkImport: async (cars: Partial<Car>[]): Promise<{
-    status: 'success' | 'partial_success' | 'failed';
-    newCarsAdded: number;
-    existingCarsUpdated: number;
-    failedRows: number;
-    errors: { row: number; reason: string }[];
-  }> => {
-    const response = await apiClient.post<{
-      status: 'success' | 'partial_success' | 'failed';
-      newCarsAdded: number;
-      existingCarsUpdated: number;
-      failedRows: number;
-      errors: { row: number; reason: string }[];
-    }>('/cars/bulk-import', { cars });
+  // Bulk import cars with data mapping intelligence and detailed results
+  bulkImport: async (
+    cars: Partial<Car>[],
+    fieldMappings?: Record<string, string>
+  ): Promise<CarImportResult> => {
+    const response = await apiClient.post<CarImportResult>('/cars/bulk-import', {
+      cars,
+      fieldMappings,
+    });
+    return response.data;
+  },
+
+  // Analyze headers before import (pre-flight check)
+  analyzeImportHeaders: async (headers: string[]): Promise<HeaderAnalysisResult> => {
+    const response = await apiClient.post<HeaderAnalysisResult>('/cars/bulk-import/analyze', {
+      headers,
+    });
     return response.data;
   },
 
