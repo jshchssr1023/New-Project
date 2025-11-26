@@ -109,12 +109,21 @@ export const carsApi = {
     await apiClient.delete('/cars/bulk', { data: { carIds } });
   },
 
-  importCars: async (file: File): Promise<{ imported: number; errors: string[] }> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await apiClient.post<{ imported: number; errors: string[] }>('/cars/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+  // Bulk import cars with detailed results
+  bulkImport: async (cars: Partial<Car>[]): Promise<{
+    status: 'success' | 'partial_success' | 'failed';
+    newCarsAdded: number;
+    existingCarsUpdated: number;
+    failedRows: number;
+    errors: { row: number; reason: string }[];
+  }> => {
+    const response = await apiClient.post<{
+      status: 'success' | 'partial_success' | 'failed';
+      newCarsAdded: number;
+      existingCarsUpdated: number;
+      failedRows: number;
+      errors: { row: number; reason: string }[];
+    }>('/cars/bulk-import', { cars });
     return response.data;
   },
 

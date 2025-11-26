@@ -1,7 +1,16 @@
-import { useState, useEffect } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect, useRef } from 'react';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import { carsApi } from '../services/api';
 import type { Car } from '../types';
+
+// Import result type matching API response
+interface ImportResults {
+  status: 'success' | 'partial_success' | 'failed';
+  newCarsAdded: number;
+  existingCarsUpdated: number;
+  failedRows: number;
+  errors: { row: number; reason: string }[];
+}
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-100 text-green-800',
@@ -25,6 +34,11 @@ export default function CarManagement() {
   const [reasonFilter, setReasonFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isExporting, setIsExporting] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isImportResultsOpen, setIsImportResultsOpen] = useState(false);
+  const [importResults, setImportResults] = useState<ImportResults | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [formData, setFormData] = useState({
@@ -154,6 +168,184 @@ export default function CarManagement() {
     }
   };
 
+  // Parse CSV file and return array of car objects
+  const parseCSV = (csvText: string): Partial<Car>[] => {
+    const lines = csvText.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+    const carList: Partial<Car>[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      // Handle CSV with quoted values
+      const values: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (const char of lines[i]) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim().replace(/^"|"$/g, ''));
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim().replace(/^"|"$/g, ''));
+
+      const carObj: Record<string, unknown> = {};
+
+      headers.forEach((header, index) => {
+        const value = values[index] || '';
+        switch (header) {
+          case 'vehicle_number':
+          case 'vehiclenumber':
+          case 'railcar_number':
+          case 'railcar':
+            carObj.vehicleNumber = value;
+            break;
+          case 'car_type':
+          case 'cartype':
+          case 'type':
+            carObj.carType = value;
+            break;
+          case 'is_tank_car':
+          case 'istankcar':
+          case 'tank_car':
+            carObj.isTankCar = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+            break;
+          case 'commodity':
+            carObj.commodity = value;
+            break;
+          case 'customer':
+            carObj.customer = value;
+            break;
+          case 'project_number':
+          case 'projectnumber':
+          case 'project':
+            carObj.projectNumber = value;
+            break;
+          case 'reason_shopped':
+          case 'reasonshopped':
+          case 'reason':
+            carObj.reasonShopped = value;
+            break;
+          case 'status':
+            carObj.status = value.toLowerCase();
+            break;
+          case 'current_location':
+          case 'location':
+            carObj.currentLocation = value;
+            break;
+          case 'home_region':
+          case 'homeregion':
+            carObj.homeRegion = value;
+            break;
+          case 'origin_region':
+          case 'originregion':
+            carObj.originRegion = value;
+            break;
+          case 'projected_cost':
+          case 'cost':
+            carObj.projectedCost = parseFloat(value) || 0;
+            break;
+          case 'days_in_shop':
+          case 'daysinshop':
+            carObj.daysInShop = parseInt(value) || 0;
+            break;
+          case 'notes':
+            carObj.notes = value;
+            break;
+          case 'last_service_date':
+          case 'lastservicedate':
+            if (value) carObj.lastServiceDate = value;
+            break;
+          case 'next_service_due':
+          case 'nextservicedue':
+            if (value) carObj.nextServiceDue = value;
+            break;
+        }
+      });
+
+      if (carObj.vehicleNumber) {
+        carList.push(carObj as Partial<Car>);
+      }
+    }
+
+    return carList;
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const parsedCars = parseCSV(text);
+
+      if (parsedCars.length === 0) {
+        setImportResults({
+          status: 'failed',
+          newCarsAdded: 0,
+          existingCarsUpdated: 0,
+          failedRows: 0,
+          errors: [{ row: 0, reason: 'No valid railcars found in CSV. Ensure headers include "vehicle_number" or "vehicleNumber".' }]
+        });
+        setIsImportResultsOpen(true);
+        setIsImportModalOpen(false);
+        return;
+      }
+
+      const results = await carsApi.bulkImport(parsedCars);
+      setImportResults(results);
+      setIsImportResultsOpen(true);
+      setIsImportModalOpen(false);
+      loadCars();
+    } catch (error: any) {
+      setImportResults({
+        status: 'failed',
+        newCarsAdded: 0,
+        existingCarsUpdated: 0,
+        failedRows: 0,
+        errors: [{ row: 0, reason: error.response?.data?.message || 'Import failed. Please check your file format.' }]
+      });
+      setIsImportResultsOpen(true);
+      setIsImportModalOpen(false);
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'success':
+        return <CheckCircleIcon className="h-12 w-12 text-green-500" />;
+      case 'partial_success':
+        return <ExclamationTriangleIcon className="h-12 w-12 text-amber-500" />;
+      case 'failed':
+        return <XCircleIcon className="h-12 w-12 text-red-500" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusMessage = (status: string) => {
+    switch (status) {
+      case 'success':
+        return 'Import Successful';
+      case 'partial_success':
+        return 'Import Completed with Errors';
+      case 'failed':
+        return 'Import Failed';
+      default:
+        return 'Import Complete';
+    }
+  };
+
   // Filter cars by search term (client-side filtering)
   const filteredCars = cars.filter(car => {
     if (!searchTerm) return true;
@@ -206,7 +398,10 @@ export default function CarManagement() {
             <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
             {isExporting ? 'Exporting...' : 'Export All'}
           </button>
-          <button className="btn-secondary flex items-center">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="btn-secondary flex items-center"
+          >
             <ArrowUpTrayIcon className="mr-2 h-5 w-5" />
             Import
           </button>
@@ -568,6 +763,131 @@ export default function CarManagement() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => !isImporting && setIsImportModalOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-steel-900">Import Railcars</h2>
+                <button
+                  onClick={() => setIsImportModalOpen(false)}
+                  disabled={isImporting}
+                  className="text-steel-400 hover:text-steel-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="border-2 border-dashed border-steel-300 rounded-lg p-8 text-center">
+                  <ArrowUpTrayIcon className="h-12 w-12 text-steel-400 mx-auto mb-4" />
+                  <p className="text-steel-600 mb-2">
+                    Upload a CSV file with railcar data
+                  </p>
+                  <p className="text-sm text-steel-500 mb-4">
+                    Required column: vehicle_number<br />
+                    Optional: car_type, customer, commodity, status, reason_shopped, etc.
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileSelect}
+                    disabled={isImporting}
+                    className="hidden"
+                    id="csv-upload-cars"
+                  />
+                  <label
+                    htmlFor="csv-upload-cars"
+                    className={`btn-primary inline-flex items-center cursor-pointer ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isImporting ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Importing...
+                      </>
+                    ) : (
+                      'Select CSV File'
+                    )}
+                  </label>
+                </div>
+
+                <div className="bg-steel-50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-steel-900 mb-2">CSV Format Example:</h3>
+                  <code className="text-xs text-steel-600 block whitespace-pre-wrap">
+                    vehicle_number,car_type,customer,status,reason_shopped{'\n'}
+                    AITX123456,Tank Car,Shell Energy,available,Annual Inspection{'\n'}
+                    AITX789012,Covered Hopper,Cargill,scheduled,Wheel Repair
+                  </code>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Results Modal */}
+      {isImportResultsOpen && importResults && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsImportResultsOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="text-center mb-6">
+                {getStatusIcon(importResults.status)}
+                <h2 className="text-xl font-semibold text-steel-900 mt-3">
+                  {getStatusMessage(importResults.status)}
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="bg-green-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-green-600">{importResults.newCarsAdded}</div>
+                  <div className="text-sm text-green-700">New Cars Added</div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-blue-600">{importResults.existingCarsUpdated}</div>
+                  <div className="text-sm text-blue-700">Cars Updated</div>
+                </div>
+                <div className="bg-red-50 rounded-lg p-4 text-center">
+                  <div className="text-2xl font-bold text-red-600">{importResults.failedRows}</div>
+                  <div className="text-sm text-red-700">Failed Rows</div>
+                </div>
+              </div>
+
+              {importResults.errors.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-steel-900 mb-2">Errors:</h3>
+                  <div className="bg-red-50 rounded-lg p-3 max-h-48 overflow-y-auto">
+                    <ul className="space-y-1">
+                      {importResults.errors.map((error, index) => (
+                        <li key={index} className="text-sm text-red-700">
+                          {error.row > 0 && <span className="font-medium">Row {error.row}: </span>}
+                          {error.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setIsImportResultsOpen(false)}
+                  className="btn-primary"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -284,4 +284,135 @@ router.delete('/bulk', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Bulk import railcars with detailed results
+router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { cars } = req.body;
+
+  const results = {
+    status: 'success' as 'success' | 'partial_success' | 'failed',
+    newCarsAdded: 0,
+    existingCarsUpdated: 0,
+    failedRows: 0,
+    errors: [] as { row: number; reason: string }[],
+  };
+
+  if (!Array.isArray(cars) || cars.length === 0) {
+    res.status(400).json({
+      status: 'failed',
+      newCarsAdded: 0,
+      existingCarsUpdated: 0,
+      failedRows: 0,
+      errors: [{ row: 0, reason: 'No cars data provided' }],
+    });
+    return;
+  }
+
+  try {
+    for (let i = 0; i < cars.length; i++) {
+      const car = cars[i];
+      const rowNum = i + 2; // Row 1 is header, data starts at row 2
+
+      // Validate required fields
+      if (!car.vehicleNumber) {
+        results.errors.push({ row: rowNum, reason: 'Missing required field: vehicleNumber' });
+        results.failedRows++;
+        continue;
+      }
+
+      // Validate vehicle number format (basic check)
+      if (car.vehicleNumber.length < 4) {
+        results.errors.push({ row: rowNum, reason: `Invalid vehicle number: "${car.vehicleNumber}" (too short)` });
+        results.failedRows++;
+        continue;
+      }
+
+      // Validate status if provided
+      const validStatuses = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
+      if (car.status && !validStatuses.includes(car.status.toLowerCase())) {
+        results.errors.push({ row: rowNum, reason: `Invalid status: "${car.status}". Must be one of: ${validStatuses.join(', ')}` });
+        results.failedRows++;
+        continue;
+      }
+
+      try {
+        // Check if car already exists
+        const existingCar = await prisma.car.findFirst({
+          where: {
+            vehicleNumber: car.vehicleNumber,
+            companyId: req.user!.companyId,
+          },
+        });
+
+        // Determine if it's a tank car
+        const isTankCar = car.isTankCar === true ||
+                          car.isTankCar === 'true' ||
+                          car.isTankCar === 'yes' ||
+                          car.isTankCar === '1' ||
+                          (car.carType && car.carType.toLowerCase().includes('tank'));
+
+        const carData = {
+          vehicleNumber: car.vehicleNumber,
+          carType: car.carType || '',
+          isTankCar: isTankCar,
+          commodity: car.commodity || '',
+          customer: car.customer || '',
+          projectNumber: car.projectNumber || '',
+          reasonShopped: car.reasonShopped || '',
+          status: (car.status || 'available').toLowerCase(),
+          currentLocation: car.currentLocation || '',
+          homeRegion: car.homeRegion || '',
+          originRegion: car.originRegion || '',
+          projectedCost: car.projectedCost ? parseFloat(car.projectedCost) : 0,
+          daysInShop: car.daysInShop ? parseInt(car.daysInShop) : 0,
+          notes: car.notes || '',
+          lastServiceDate: car.lastServiceDate ? new Date(car.lastServiceDate) : null,
+          nextServiceDue: car.nextServiceDue ? new Date(car.nextServiceDue) : null,
+        };
+
+        if (existingCar) {
+          // Update existing car
+          await prisma.car.update({
+            where: { id: existingCar.id },
+            data: carData,
+          });
+          results.existingCarsUpdated++;
+        } else {
+          // Create new car
+          await prisma.car.create({
+            data: {
+              ...carData,
+              companyId: req.user!.companyId,
+            },
+          });
+          results.newCarsAdded++;
+        }
+      } catch (dbError: any) {
+        results.errors.push({ row: rowNum, reason: `Database error: ${dbError.message}` });
+        results.failedRows++;
+      }
+    }
+
+    // Determine overall status
+    if (results.failedRows === cars.length) {
+      results.status = 'failed';
+    } else if (results.failedRows > 0) {
+      results.status = 'partial_success';
+    } else {
+      results.status = 'success';
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error('Bulk import cars error:', error);
+    res.status(500).json({
+      status: 'failed',
+      newCarsAdded: 0,
+      existingCarsUpdated: 0,
+      failedRows: cars.length,
+      errors: [{ row: 0, reason: 'Internal server error during import' }],
+    });
+  }
+});
+
 export default router;
