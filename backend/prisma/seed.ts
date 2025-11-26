@@ -122,9 +122,14 @@ async function main() {
 
   // Create 25 shops with actual data
   const shops = await Promise.all(
-    shopData.map(async (shop) => {
+    shopData.map(async (shop, index) => {
       // Convert annual capacity to monthly (divide by 12)
       const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
+      const isAitx = shop.network === 'AITX-Own';
+      // Tank qualified based on certifications (shops with Qualification cert are tank qualified)
+      const tankQualified = shop.certifications.includes('Qualification');
+      // Network tier: AITX = 1 (preferred), 3P varies by index
+      const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
 
       return prisma.shop.create({
         data: {
@@ -136,7 +141,15 @@ async function main() {
           state: shop.state,
           region: shop.region,
           network: shop.network,
+          isAitxInternal: isAitx,
+          tankQualified,
+          networkTier,
+          shopStatus: 'active',
           capacity: monthlyCapacity,
+          utilizationTarget: 0.90,
+          baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
+          laborRate: isAitx ? 95 : 75,
+          costIndex: isAitx ? 1.379 : 1.0,
           baseTurnTime: shop.turnTime,
           certifications: JSON.stringify(shop.certifications.split(', ')),
           contactName: shop.contact.split(' (')[0],
@@ -151,14 +164,20 @@ async function main() {
 
   console.log(`✓ Created ${shops.length} shops`);
 
+  // Regions for car locations
+  const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
+  const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
+
   // Create 200 railcars
   const cars = await Promise.all(
     Array.from({ length: 200 }, (_, i) => {
       const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
+      const isTankCar = carType === 'Tank Car';
       const commodity = commodities[Math.floor(Math.random() * commodities.length)];
       const customer = customers[Math.floor(Math.random() * customers.length)];
       const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
-      const statusWeights = [0.6, 0.15, 0.2, 0.05]; // available, in_service, scheduled, retired
+      const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05]; // available, in_service, in_shop, scheduled, retired
+      const carStatuses = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
       const rand = Math.random();
       let statusIndex = 0;
       let cumulative = 0;
@@ -169,19 +188,41 @@ async function main() {
           break;
         }
       }
+      const status = carStatuses[statusIndex];
+      const region = regions[Math.floor(Math.random() * regions.length)];
+      const nextServiceDue = new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000);
+
+      // Some cars overdue (for testing red highlighting)
+      const isOverdue = Math.random() > 0.85;
+      const adjustedNextServiceDue = isOverdue
+        ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) // overdue by up to 30 days
+        : nextServiceDue;
+
+      // Days in shop for in_shop status
+      const daysInShop = status === 'in_shop' ? Math.floor(Math.random() * 20) + 1 : 0;
+      const shopEntryDate = status === 'in_shop'
+        ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000)
+        : null;
 
       return prisma.car.create({
         data: {
           id: uuidv4(),
           vehicleNumber: `AITX${String(100000 + i).slice(1)}`,
           carType,
+          isTankCar,
           commodity,
           customer,
           projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
           reasonShopped,
-          status: carStatuses[statusIndex],
+          status,
+          currentLocation: locations[Math.floor(Math.random() * locations.length)],
+          homeRegion: region,
+          originRegion: region,
+          projectedCost: 12000 + Math.floor(Math.random() * 10000),
+          daysInShop,
+          shopEntryDate,
           lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
-          nextServiceDue: new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000),
+          nextServiceDue: adjustedNextServiceDue,
           notes: Math.random() > 0.7 ? 'Priority service required' : '',
           companyId: company.id,
         },

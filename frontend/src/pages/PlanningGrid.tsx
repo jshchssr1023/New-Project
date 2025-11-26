@@ -8,6 +8,9 @@ import {
   ChevronRightIcon,
   CheckIcon,
   ArrowRightIcon,
+  MagnifyingGlassIcon,
+  ExclamationTriangleIcon,
+  ExclamationCircleIcon,
 } from '@heroicons/react/24/outline';
 import { plansApi, shopsApi, carsApi } from '../services/api';
 import type { Plan, Shop, PlanAssignment, Car } from '../types';
@@ -53,6 +56,8 @@ export default function PlanningGrid() {
   const [carAssignmentFilter, setCarAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [carShoppingTypeFilter, setCarShoppingTypeFilter] = useState('');
   const [carCustomerFilter, setCarCustomerFilter] = useState('');
+  const [carSearchQuery, setCarSearchQuery] = useState('');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   // Selection and assignment state
   const [selectedCarIds, setSelectedCarIds] = useState<Set<string>>(new Set());
@@ -128,6 +133,16 @@ export default function PlanningGrid() {
   // Filter cars based on all criteria
   const filteredCars = useMemo(() => {
     return cars.filter(car => {
+      // Search filter (car number, customer, project)
+      if (carSearchQuery) {
+        const query = carSearchQuery.toLowerCase();
+        const matchesSearch =
+          car.vehicleNumber.toLowerCase().includes(query) ||
+          car.customer?.toLowerCase().includes(query) ||
+          car.projectNumber?.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+
       // Assignment filter
       if (carAssignmentFilter === 'assigned' && !assignedCarIds.has(car.id)) return false;
       if (carAssignmentFilter === 'unassigned' && assignedCarIds.has(car.id)) return false;
@@ -142,7 +157,12 @@ export default function PlanningGrid() {
 
       return true;
     });
-  }, [cars, carAssignmentFilter, carShoppingTypeFilter, carCustomerFilter, assignedCarIds]);
+  }, [cars, carAssignmentFilter, carShoppingTypeFilter, carCustomerFilter, assignedCarIds, carSearchQuery]);
+
+  // Count of tank cars in selection
+  const selectedTankCarsCount = useMemo(() => {
+    return cars.filter(c => selectedCarIds.has(c.id) && c.isTankCar).length;
+  }, [cars, selectedCarIds]);
 
   // Filter shops based on criteria
   const filteredShops = useMemo(() => {
@@ -161,14 +181,60 @@ export default function PlanningGrid() {
     return assignments.filter(a => a.shopId === shopId && a.scheduledMonth === monthKey);
   };
 
-  // Get cell color based on utilization
+  // Get cell color based on utilization (per spec: 0-49% Blue, 50-79% Yellow, 80-95% Green, >95% Red)
   const getCellColor = (count: number, capacity: number): string => {
-    const utilization = count / capacity;
-    if (utilization === 0) return 'bg-steel-50 hover:bg-steel-100';
-    if (utilization < 0.5) return 'bg-green-100 hover:bg-green-200';
-    if (utilization < 0.8) return 'bg-amber-100 hover:bg-amber-200';
-    if (utilization < 1) return 'bg-orange-100 hover:bg-orange-200';
-    return 'bg-red-100 hover:bg-red-200';
+    if (capacity === 0) return 'bg-steel-100';
+    const utilization = (count / capacity) * 100;
+    if (count === 0) return 'bg-steel-50 hover:bg-steel-100';
+    if (utilization < 50) return 'bg-blue-100 hover:bg-blue-200 border-blue-300';
+    if (utilization < 80) return 'bg-yellow-100 hover:bg-yellow-200 border-yellow-300';
+    if (utilization <= 95) return 'bg-green-100 hover:bg-green-200 border-green-300';
+    return 'bg-red-100 hover:bg-red-200 border-red-400';
+  };
+
+  // Get utilization percentage
+  const getUtilization = (count: number, capacity: number): number => {
+    if (capacity === 0) return 0;
+    return Math.round((count / capacity) * 100);
+  };
+
+  // Validate assignment - check tank car to tank-qualified shop
+  const validateAssignment = (carIds: Set<string>, shopId: string): { valid: boolean; errors: string[] } => {
+    const shop = shops.find(s => s.id === shopId);
+    const errors: string[] = [];
+
+    if (!shop) {
+      errors.push('Shop not found');
+      return { valid: false, errors };
+    }
+
+    // Check tank car qualification
+    const selectedCars = cars.filter(c => carIds.has(c.id));
+    const tankCars = selectedCars.filter(c => c.isTankCar);
+
+    if (tankCars.length > 0 && !shop.tankQualified) {
+      errors.push(`${tankCars.length} tank car(s) cannot be assigned to non-tank-qualified shop`);
+    }
+
+    // Check capacity
+    if (selectedMonth !== null) {
+      const monthKey = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+      const existingCount = assignments.filter(a => a.shopId === shopId && a.scheduledMonth === monthKey).length;
+      const newTotal = existingCount + carIds.size;
+      if (newTotal > shop.capacity) {
+        errors.push(`Assignment would exceed capacity (${newTotal}/${shop.capacity})`);
+      }
+      if (newTotal > shop.capacity * 0.95 && newTotal <= shop.capacity) {
+        errors.push(`Warning: Utilization will be above 95%`);
+      }
+    }
+
+    // Check for probation status shop
+    if (shop.shopStatus === 'probation') {
+      errors.push('Warning: Shop is on probation status');
+    }
+
+    return { valid: errors.filter(e => !e.startsWith('Warning')).length === 0, errors };
   };
 
   // Handle cell click for selection
@@ -206,6 +272,22 @@ export default function PlanningGrid() {
   const handleAssignCars = async () => {
     if (!selectedPlan || !selectedShopId || selectedMonth === null || selectedCarIds.size === 0) return;
 
+    // Validate before assignment
+    const validation = validateAssignment(selectedCarIds, selectedShopId);
+    setValidationErrors(validation.errors);
+
+    if (!validation.valid) {
+      // Show hard-block errors
+      return;
+    }
+
+    // If there are only warnings, confirm with user
+    const warnings = validation.errors.filter(e => e.startsWith('Warning'));
+    if (warnings.length > 0) {
+      const proceed = confirm(`${warnings.join('\n')}\n\nDo you want to proceed?`);
+      if (!proceed) return;
+    }
+
     setIsAssigning(true);
     const scheduledMonth = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
     const shop = shops.find(s => s.id === selectedShopId);
@@ -225,6 +307,7 @@ export default function PlanningGrid() {
       // Reload assignments and clear selection
       await loadPlanAssignments();
       setSelectedCarIds(new Set());
+      setValidationErrors([]);
     } catch (error) {
       console.error('Failed to assign cars:', error);
       alert('Failed to assign some cars. Please try again.');
@@ -271,6 +354,18 @@ export default function PlanningGrid() {
             </span>
           </div>
 
+          {/* Search */}
+          <div className="relative mb-2">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+            <input
+              type="text"
+              placeholder="Search car #, customer, project..."
+              value={carSearchQuery}
+              onChange={(e) => setCarSearchQuery(e.target.value)}
+              className="input text-sm w-full pl-9"
+            />
+          </div>
+
           {/* Car Filters */}
           <div className="space-y-2">
             <select
@@ -309,6 +404,20 @@ export default function PlanningGrid() {
             </select>
           </div>
 
+          {/* Selection Summary */}
+          {selectedCarIds.size > 0 && (
+            <div className="mt-3 p-2 bg-rail-50 rounded-md border border-rail-200">
+              <div className="text-sm font-medium text-rail-700">
+                {selectedCarIds.size} cars selected
+              </div>
+              {selectedTankCarsCount > 0 && (
+                <div className="text-xs text-rail-600">
+                  🛢️ Tank Cars: {selectedTankCarsCount}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Select All */}
           <div className="mt-3 flex items-center justify-between">
             <button
@@ -339,6 +448,11 @@ export default function PlanningGrid() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-steel-900">{car.vehicleNumber}</span>
+                      {car.isTankCar && (
+                        <span className="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 rounded font-medium">
+                          🛢️ TANK
+                        </span>
+                      )}
                       {isAssigned && (
                         <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded">
                           Assigned
@@ -368,6 +482,28 @@ export default function PlanningGrid() {
         {/* Assign Button */}
         {selectedCarIds.size > 0 && selectedShopId && selectedMonth !== null && (
           <div className="p-4 border-t border-steel-200 bg-steel-50">
+            {/* Validation Errors */}
+            {validationErrors.length > 0 && (
+              <div className="mb-3 space-y-1">
+                {validationErrors.map((error, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex items-center gap-2 text-xs rounded-md px-2 py-1 ${
+                      error.startsWith('Warning')
+                        ? 'bg-yellow-50 text-yellow-700'
+                        : 'bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {error.startsWith('Warning') ? (
+                      <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                    ) : (
+                      <ExclamationCircleIcon className="w-4 h-4 flex-shrink-0" />
+                    )}
+                    {error}
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               onClick={handleAssignCars}
               disabled={isAssigning}
@@ -497,20 +633,20 @@ export default function PlanningGrid() {
               <span>Empty</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 bg-green-100 rounded" />
-              <span>&lt;50%</span>
+              <div className="w-4 h-4 bg-blue-100 rounded border border-blue-300" />
+              <span>0-49%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 bg-amber-100 rounded" />
-              <span>50-80%</span>
+              <div className="w-4 h-4 bg-yellow-100 rounded border border-yellow-300" />
+              <span>50-79%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 bg-orange-100 rounded" />
-              <span>80-100%</span>
+              <div className="w-4 h-4 bg-green-100 rounded border border-green-300" />
+              <span>80-95%</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-4 bg-red-100 rounded" />
-              <span>Over</span>
+              <div className="w-4 h-4 bg-red-100 rounded border border-red-400" />
+              <span>&gt;95%</span>
             </div>
             {selectedShopId && selectedMonth !== null && (
               <span className="ml-4 px-2 py-1 bg-rail-100 text-rail-700 rounded">
