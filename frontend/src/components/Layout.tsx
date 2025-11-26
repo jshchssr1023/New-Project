@@ -1,9 +1,8 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useState, useCallback } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { Dialog, Menu, Transition } from '@headlessui/react';
 import {
   Bars3Icon,
-  XMarkIcon,
   HomeIcon,
   TruckIcon,
   BuildingStorefrontIcon,
@@ -14,6 +13,7 @@ import {
   UsersIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -38,6 +38,7 @@ function classNames(...classes: string[]) {
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -46,6 +47,15 @@ export default function Layout() {
     await logout();
     navigate('/login');
   };
+
+  // Global search handler - searches across Railcar Number, Customer, Project Number
+  const handleGlobalSearch = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (globalSearch.trim()) {
+      navigate(`/cars?search=${encodeURIComponent(globalSearch.trim())}`);
+      setGlobalSearch('');
+    }
+  }, [globalSearch, navigate]);
 
   const allNavigation = user?.role === 'admin'
     ? [...navigation, ...adminNavigation]
@@ -172,9 +182,21 @@ export default function Layout() {
           <div className="h-6 w-px bg-steel-200 lg:hidden" aria-hidden="true" />
 
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-            <div className="flex flex-1 items-center">
-              {/* Empty space - logo is in sidebar */}
-            </div>
+            {/* Global Search Bar */}
+            <form onSubmit={handleGlobalSearch} className="flex flex-1 items-center max-w-lg">
+              <div className="relative w-full">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <MagnifyingGlassIcon className="h-4 w-4 text-steel-400" />
+                </div>
+                <input
+                  type="text"
+                  value={globalSearch}
+                  onChange={(e) => setGlobalSearch(e.target.value)}
+                  placeholder="Search railcar #, customer, or project..."
+                  className="block w-full pl-9 pr-3 py-1.5 text-sm border border-steel-300 rounded-lg bg-steel-50 focus:bg-white focus:ring-2 focus:ring-rail-500 focus:border-rail-500 outline-none transition-all placeholder:text-steel-400"
+                />
+              </div>
+            </form>
             <div className="flex items-center gap-x-4 lg:gap-x-6">
               {/* Logo in top right */}
               <img
@@ -242,9 +264,9 @@ export default function Layout() {
           </div>
         </div>
 
-        {/* Page content */}
-        <main className="py-6">
-          <div className="px-4 sm:px-6 lg:px-8">
+        {/* Page content - reduced padding for more real estate */}
+        <main className="py-4">
+          <div className="px-4 sm:px-5 lg:px-6">
             <Outlet />
           </div>
         </main>

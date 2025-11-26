@@ -1,7 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ChevronUpIcon, ChevronDownIcon, ChevronUpDownIcon } from '@heroicons/react/24/outline';
 import { carsApi } from '../services/api';
 import type { Car } from '../types';
+
+// Sort configuration type
+type SortField = 'railcarNumber' | 'carType' | 'customer' | 'projectNumber' | 'reasonShopped' | 'status';
+type SortDirection = 'asc' | 'desc' | null;
 
 // Import result type matching API response
 interface ImportResults {
@@ -12,17 +17,20 @@ interface ImportResults {
   errors: { row: number; reason: string }[];
 }
 
+// Softer, muted status colors for better visual comfort
 const statusColors: Record<string, string> = {
-  available: 'bg-green-100 text-green-800',
-  in_service: 'bg-amber-100 text-amber-800',
-  scheduled: 'bg-rail-100 text-rail-800',
-  retired: 'bg-steel-200 text-steel-700',
+  available: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  in_service: 'bg-amber-50 text-amber-700 border border-amber-200',
+  in_shop: 'bg-violet-50 text-violet-700 border border-violet-200',
+  scheduled: 'bg-blue-50 text-blue-700 border border-blue-200',
+  retired: 'bg-steel-100 text-steel-600 border border-steel-200',
 };
 
 const carTypeOptions = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const reasonShoppedOptions = ['Annual Inspection', 'Wheel Repair', 'Tank Cleaning', 'Valve Replacement', 'Frame Repair', 'Safety Retrofit', 'DOT Compliance', 'Corrosion Repair', 'Coupler Replacement', 'Brake System'];
 
 export default function CarManagement() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [cars, setCars] = useState<Car[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -41,6 +49,8 @@ export default function CarManagement() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const [formData, setFormData] = useState({
     railcarNumber: '',
     carType: '',
@@ -52,9 +62,24 @@ export default function CarManagement() {
     notes: '',
   });
 
+  // Handle URL query parameters on mount and when they change
+  useEffect(() => {
+    const urlStatus = searchParams.get('status');
+    const urlSearch = searchParams.get('search');
+
+    if (urlStatus) {
+      // Handle comma-separated status values (e.g., "available,scheduled")
+      setStatusFilter(urlStatus);
+    }
+    if (urlSearch) {
+      setSearchTerm(urlSearch);
+    }
+  }, [searchParams]);
+
+  // Load cars when filters or pagination change
   useEffect(() => {
     loadCars();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, carTypeFilter, customerFilter, reasonFilter]);
 
   const loadCars = async () => {
     try {
@@ -62,6 +87,9 @@ export default function CarManagement() {
         page,
         pageSize: 20,
         status: statusFilter || undefined,
+        carType: carTypeFilter || undefined,
+        customer: customerFilter || undefined,
+        reasonShopped: reasonFilter || undefined,
       });
       setCars(response.data);
       setTotalPages(response.totalPages);
@@ -70,6 +98,33 @@ export default function CarManagement() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Handle column sort
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction: asc -> desc -> null
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else if (sortDirection === 'desc') {
+        setSortField(null);
+        setSortDirection(null);
+      }
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Get sort icon for a column
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <ChevronUpDownIcon className="h-4 w-4 text-steel-400 ml-1" />;
+    }
+    if (sortDirection === 'asc') {
+      return <ChevronUpIcon className="h-4 w-4 text-rail-600 ml-1" />;
+    }
+    return <ChevronDownIcon className="h-4 w-4 text-rail-600 ml-1" />;
   };
 
   const handleOpenModal = (car?: Car) => {
@@ -347,18 +402,46 @@ export default function CarManagement() {
     }
   };
 
-  // Filter cars by search term (client-side filtering)
-  const filteredCars = cars.filter(car => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      car.railcarNumber.toLowerCase().includes(term) ||
-      car.customer.toLowerCase().includes(term) ||
-      car.projectNumber.toLowerCase().includes(term) ||
-      car.commodity.toLowerCase().includes(term) ||
-      car.carType.toLowerCase().includes(term)
-    );
-  });
+  // Filter and sort cars (client-side)
+  const filteredCars = useMemo(() => {
+    let result = cars;
+
+    // Apply search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(car =>
+        car.railcarNumber?.toLowerCase().includes(term) ||
+        car.customer?.toLowerCase().includes(term) ||
+        car.projectNumber?.toLowerCase().includes(term) ||
+        car.commodity?.toLowerCase().includes(term) ||
+        car.carType?.toLowerCase().includes(term)
+      );
+    }
+
+    // Apply client-side filters for carType, customer, reason (when API doesn't filter)
+    if (carTypeFilter && !cars.every(c => c.carType === carTypeFilter || !carTypeFilter)) {
+      result = result.filter(car => car.carType === carTypeFilter);
+    }
+    if (customerFilter) {
+      result = result.filter(car => car.customer === customerFilter);
+    }
+    if (reasonFilter) {
+      result = result.filter(car => car.reasonShopped === reasonFilter);
+    }
+
+    // Apply sorting
+    if (sortField && sortDirection) {
+      result = [...result].sort((a, b) => {
+        const aVal = (a[sortField] || '').toString().toLowerCase();
+        const bVal = (b[sortField] || '').toString().toLowerCase();
+        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [cars, searchTerm, carTypeFilter, customerFilter, reasonFilter, sortField, sortDirection]);
 
   // Get unique customers for filter dropdown
   const uniqueCustomers = [...new Set(cars.map(c => c.customer).filter(Boolean))].sort();
@@ -440,19 +523,26 @@ export default function CarManagement() {
         <div className="flex items-center space-x-4 flex-wrap gap-2">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input w-36"
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`input w-36 ${statusFilter ? 'border-rail-500 bg-rail-50' : ''}`}
           >
             <option value="">All Status</option>
             <option value="available">Available</option>
             <option value="in_service">In Service</option>
+            <option value="in_shop">In Shop</option>
             <option value="scheduled">Scheduled</option>
             <option value="retired">Retired</option>
           </select>
           <select
             value={carTypeFilter}
-            onChange={(e) => setCarTypeFilter(e.target.value)}
-            className="input w-40"
+            onChange={(e) => {
+              setCarTypeFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`input w-40 ${carTypeFilter ? 'border-rail-500 bg-rail-50' : ''}`}
           >
             <option value="">All Car Types</option>
             {carTypeOptions.map(type => (
@@ -461,8 +551,11 @@ export default function CarManagement() {
           </select>
           <select
             value={customerFilter}
-            onChange={(e) => setCustomerFilter(e.target.value)}
-            className="input w-40"
+            onChange={(e) => {
+              setCustomerFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`input w-40 ${customerFilter ? 'border-rail-500 bg-rail-50' : ''}`}
           >
             <option value="">All Customers</option>
             {uniqueCustomers.map(customer => (
@@ -471,8 +564,11 @@ export default function CarManagement() {
           </select>
           <select
             value={reasonFilter}
-            onChange={(e) => setReasonFilter(e.target.value)}
-            className="input w-44"
+            onChange={(e) => {
+              setReasonFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`input w-44 ${reasonFilter ? 'border-rail-500 bg-rail-50' : ''}`}
           >
             <option value="">All Reasons</option>
             {reasonShoppedOptions.map(reason => (
@@ -529,7 +625,7 @@ export default function CarManagement() {
             <table className="min-w-full divide-y divide-steel-200">
               <thead className="bg-steel-800 text-white">
                 <tr>
-                  <th className="px-4 py-3 text-left">
+                  <th className="px-3 py-2.5 text-left w-10">
                     <input
                       type="checkbox"
                       checked={selectedCars.size === filteredCars.length && filteredCars.length > 0}
@@ -537,35 +633,71 @@ export default function CarManagement() {
                       className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
                     />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
-                    Railcar #
+                  <th className="px-3 py-2.5 text-left">
+                    <button
+                      onClick={() => handleSort('railcarNumber')}
+                      className="flex items-center text-xs font-medium uppercase tracking-wider hover:text-rail-200 transition-colors"
+                    >
+                      Railcar #
+                      {getSortIcon('railcarNumber')}
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
-                    Type
+                  <th className="px-3 py-2.5 text-left">
+                    <button
+                      onClick={() => handleSort('carType')}
+                      className="flex items-center text-xs font-medium uppercase tracking-wider hover:text-rail-200 transition-colors"
+                    >
+                      Type
+                      {getSortIcon('carType')}
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
-                    Customer
+                  <th className="px-3 py-2.5 text-left">
+                    <button
+                      onClick={() => handleSort('customer')}
+                      className="flex items-center text-xs font-medium uppercase tracking-wider hover:text-rail-200 transition-colors"
+                    >
+                      Customer
+                      {getSortIcon('customer')}
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
-                    Project #
+                  <th className="px-3 py-2.5 text-left">
+                    <button
+                      onClick={() => handleSort('projectNumber')}
+                      className="flex items-center text-xs font-medium uppercase tracking-wider hover:text-rail-200 transition-colors"
+                    >
+                      Project #
+                      {getSortIcon('projectNumber')}
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
-                    Reason Shopped
+                  <th className="px-3 py-2.5 text-left">
+                    <button
+                      onClick={() => handleSort('reasonShopped')}
+                      className="flex items-center text-xs font-medium uppercase tracking-wider hover:text-rail-200 transition-colors"
+                    >
+                      Reason Shopped
+                      {getSortIcon('reasonShopped')}
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">
-                    Status
+                  <th className="px-3 py-2.5 text-left">
+                    <button
+                      onClick={() => handleSort('status')}
+                      className="flex items-center text-xs font-medium uppercase tracking-wider hover:text-rail-200 transition-colors"
+                    >
+                      Status
+                      {getSortIcon('status')}
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider">
+                  <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-steel-200">
+              <tbody className="bg-white divide-y divide-steel-100">
                 {filteredCars.map((car) => {
                   const isTankCar = car.carType === 'Tank Car' || car.isTankCar;
                   return (
                     <tr key={car.id} className={selectedCars.has(car.id) ? 'bg-rail-50' : 'hover:bg-steel-50'}>
-                      <td className="px-4 py-4">
+                      <td className="px-3 py-2.5">
                         <input
                           type="checkbox"
                           checked={selectedCars.has(car.id)}
@@ -573,47 +705,47 @@ export default function CarManagement() {
                           className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
                         />
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <div className="flex items-center">
                           <span className="text-sm font-medium text-steel-900">{car.railcarNumber}</span>
                           {isTankCar && (
-                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200">
                               TANK
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
+                      <td className="px-3 py-2.5 whitespace-nowrap text-sm text-steel-700">
                         {car.carType}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
-                        {car.customer}
+                      <td className="px-3 py-2.5 whitespace-nowrap text-sm text-steel-700">
+                        {car.customer || '-'}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700 font-mono">
-                        {car.projectNumber}
+                      <td className="px-3 py-2.5 whitespace-nowrap text-sm text-steel-700 font-mono">
+                        {car.projectNumber || '-'}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
-                        {car.reasonShopped}
+                      <td className="px-3 py-2.5 whitespace-nowrap text-sm text-steel-700">
+                        {car.reasonShopped || '-'}
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <span
-                          className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${statusColors[car.status]}`}
+                          className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ${statusColors[car.status] || statusColors.available}`}
                         >
                           {car.status.replace('_', ' ')}
                         </span>
                       </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-3 py-2.5 whitespace-nowrap text-right text-sm font-medium">
                         <button
                           onClick={() => handleOpenModal(car)}
-                          className="text-rail-600 hover:text-rail-900 mr-3"
+                          className="text-steel-500 hover:text-rail-600 mr-2 p-1 rounded hover:bg-steel-100"
                         >
-                          <PencilIcon className="h-5 w-5" />
+                          <PencilIcon className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(car.id)}
-                          className="text-rail-600 hover:text-rail-900"
+                          className="text-steel-500 hover:text-red-600 p-1 rounded hover:bg-steel-100"
                         >
-                          <TrashIcon className="h-5 w-5" />
+                          <TrashIcon className="h-4 w-4" />
                         </button>
                       </td>
                     </tr>

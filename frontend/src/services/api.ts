@@ -104,7 +104,14 @@ export const authApi = {
 
 // Cars API
 export const carsApi = {
-  getAll: async (params?: { page?: number; pageSize?: number; status?: string }): Promise<PaginatedResponse<Car>> => {
+  getAll: async (params?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    carType?: string;
+    customer?: string;
+    reasonShopped?: string;
+  }): Promise<PaginatedResponse<Car>> => {
     const response = await apiClient.get<PaginatedResponse<Car>>('/cars', { params });
     return response.data;
   },

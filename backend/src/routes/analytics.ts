@@ -12,14 +12,101 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
 
   try {
     const companyId = req.user!.companyId;
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentDate = new Date();
 
     // Get counts
-    const [totalCars, totalShops, activePlans, carsInService] = await Promise.all([
+    const [totalCars, totalShops, activePlans, carsInService, carsInShop, carsAvailable, carsScheduled, activeScenarios] = await Promise.all([
       prisma.car.count({ where: { companyId } }),
       prisma.shop.count({ where: { companyId, isActive: true } }),
       prisma.plan.count({ where: { companyId, status: 'active' } }),
       prisma.car.count({ where: { companyId, status: 'in_service' } }),
+      prisma.car.count({ where: { companyId, status: 'in_shop' } }),
+      prisma.car.count({ where: { companyId, status: 'available' } }),
+      prisma.car.count({ where: { companyId, status: 'scheduled' } }),
+      prisma.scenario.count({ where: { companyId, status: { in: ['draft', 'analyzing'] } } }),
     ]);
+
+    // Calculate cars in queue (available + scheduled)
+    const carsInQueue = carsAvailable + carsScheduled;
+    const totalCarsInShop = carsInService + carsInShop;
+
+    // Get shops with allocated cars this month
+    const shopsWithCarsCount = await prisma.shop.count({
+      where: {
+        companyId,
+        isActive: true,
+        assignments: {
+          some: {
+            scheduledMonth: currentMonth,
+          },
+        },
+      },
+    });
+
+    // Get "My Queue" - cars available and due for service this month
+    const myQueueCars = await prisma.car.findMany({
+      where: {
+        companyId,
+        status: 'available',
+        nextServiceDue: {
+          lte: new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString(),
+        },
+      },
+      orderBy: { nextServiceDue: 'asc' },
+      take: 10,
+    });
+
+    // Get "In Shop Status" - cars currently in service or in shop
+    const inShopCars = await prisma.car.findMany({
+      where: {
+        companyId,
+        status: { in: ['in_service', 'in_shop'] },
+      },
+      include: {
+        assignedShop: {
+          select: { name: true, code: true },
+        },
+      },
+      orderBy: { daysInShop: 'desc' },
+      take: 10,
+    });
+
+    // Get overdue cars (nextServiceDue in the past and still available)
+    const overdueCars = await prisma.car.count({
+      where: {
+        companyId,
+        status: 'available',
+        nextServiceDue: {
+          lt: currentDate.toISOString(),
+        },
+      },
+    });
+
+    // Get shops over capacity
+    const shopsOverCapacity = await prisma.shop.findMany({
+      where: {
+        companyId,
+        isActive: true,
+      },
+      include: {
+        assignments: {
+          where: {
+            scheduledMonth: currentMonth,
+          },
+        },
+      },
+    });
+
+    const capacityAlerts = shopsOverCapacity
+      .filter(shop => shop.assignments.length > shop.capacity)
+      .map(shop => ({
+        shopName: shop.name,
+        shopCode: shop.code,
+        capacity: shop.capacity,
+        currentLoad: shop.assignments.length,
+        overloadPercent: Math.round(((shop.assignments.length - shop.capacity) / shop.capacity) * 100),
+      }));
 
     // Get monthly service counts
     const assignments = await prisma.planAssignment.findMany({
@@ -76,7 +163,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         status: 'pending',
       },
       include: {
-        car: { select: { id: true, vehicleNumber: true } },
+        car: { select: { id: true, vehicleNumber: true, railcarNumber: true } },
         shop: { select: { name: true } },
       },
       take: 10,
@@ -85,7 +172,8 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
 
     const upcomingServices = upcomingAssignments.map((a) => ({
       carId: a.car.id,
-      vehicleNumber: a.car.vehicleNumber,
+      vehicleNumber: a.car.railcarNumber || a.car.vehicleNumber,
+      railcarNumber: a.car.railcarNumber || a.car.vehicleNumber,
       scheduledDate: `${a.scheduledMonth}-15`,
       shopName: a.shop.name,
     }));
@@ -95,10 +183,40 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       totalShops,
       activePlans,
       carsInService,
+      carsInQueue,
+      totalCarsInShop,
+      shopsWithCars: shopsWithCarsCount,
+      activeScenarios,
       monthlyServiceCounts,
       shopPerformance,
       costBreakdown,
       upcomingServices,
+      // Enhanced dashboard data
+      myQueue: myQueueCars.map(car => ({
+        id: car.id,
+        railcarNumber: car.railcarNumber || car.vehicleNumber,
+        customer: car.customer,
+        reasonShopped: car.reasonShopped,
+        nextServiceDue: car.nextServiceDue,
+        daysUntilDue: car.nextServiceDue
+          ? Math.ceil((new Date(car.nextServiceDue).getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24))
+          : null,
+      })),
+      inShopStatus: inShopCars.map(car => ({
+        id: car.id,
+        railcarNumber: car.railcarNumber || car.vehicleNumber,
+        customer: car.customer,
+        status: car.status,
+        shopName: car.assignedShop?.name || 'Unknown',
+        shopCode: car.assignedShop?.code || '',
+        daysInShop: car.daysInShop,
+        shopEntryDate: car.shopEntryDate,
+      })),
+      alerts: {
+        overdueCars,
+        capacityAlerts,
+        hasAlerts: overdueCars > 0 || capacityAlerts.length > 0,
+      },
     });
   } catch (error) {
     console.error('Get dashboard error:', error);
