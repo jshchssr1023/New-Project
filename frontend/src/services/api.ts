@@ -117,6 +117,43 @@ export const carsApi = {
     });
     return response.data;
   },
+
+  // Export cars to CSV
+  exportCars: async (params?: {
+    ids?: string[];
+    status?: string;
+    customer?: string;
+    reasonShopped?: string;
+    carType?: string;
+  }): Promise<void> => {
+    const queryParams: Record<string, string> = {};
+    if (params?.ids?.length) {
+      queryParams.ids = params.ids.join(',');
+    }
+    if (params?.status) queryParams.status = params.status;
+    if (params?.customer) queryParams.customer = params.customer;
+    if (params?.reasonShopped) queryParams.reasonShopped = params.reasonShopped;
+    if (params?.carType) queryParams.carType = params.carType;
+
+    const response = await apiClient.get('/cars/export', {
+      params: queryParams,
+      responseType: 'blob',
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const contentDisposition = response.headers['content-disposition'];
+    const filename = contentDisposition
+      ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+      : `cars_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 // Shops API
@@ -159,10 +196,48 @@ export const shopsApi = {
     return response.data;
   },
 
-  // Bulk import shops
-  bulkImport: async (shops: Partial<Shop>[]): Promise<{ created: number; updated: number; errors: string[] }> => {
-    const response = await apiClient.post<{ created: number; updated: number; errors: string[] }>('/shops/bulk-import', { shops });
+  // Bulk import shops with detailed results
+  bulkImport: async (shops: Partial<Shop>[]): Promise<{
+    status: 'success' | 'partial_success' | 'failed';
+    newShopsAdded: number;
+    existingShopsUpdated: number;
+    failedRows: number;
+    errors: { row: number; reason: string }[];
+  }> => {
+    const response = await apiClient.post<{
+      status: 'success' | 'partial_success' | 'failed';
+      newShopsAdded: number;
+      existingShopsUpdated: number;
+      failedRows: number;
+      errors: { row: number; reason: string }[];
+    }>('/shops/bulk-import', { shops });
     return response.data;
+  },
+
+  // Export shops to CSV
+  exportShops: async (params?: {
+    region?: string;
+    network?: string;
+    isActive?: boolean;
+  }): Promise<void> => {
+    const response = await apiClient.get('/shops/export', {
+      params,
+      responseType: 'blob',
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    const contentDisposition = response.headers['content-disposition'];
+    const filename = contentDisposition
+      ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+      : `shops_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   },
 };
 

@@ -9,7 +9,7 @@ router.use(authenticate);
 // Get all cars with pagination
 router.get('/', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { page = '1', pageSize = '20', status } = req.query;
+  const { page = '1', pageSize = '20', status, customer, reasonShopped, carType } = req.query;
   const pageNum = parseInt(page as string);
   const pageSizeNum = parseInt(pageSize as string);
 
@@ -17,6 +17,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const where = {
       companyId: req.user!.companyId,
       ...(status && { status: status as string }),
+      ...(customer && { customer: customer as string }),
+      ...(reasonShopped && { reasonShopped: reasonShopped as string }),
+      ...(carType && { carType: carType as string }),
     };
 
     const [cars, total] = await Promise.all([
@@ -38,6 +41,82 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Get cars error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Export railcars to CSV
+router.get('/export', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { ids, status, customer, reasonShopped, carType } = req.query;
+
+  try {
+    let where: any = {
+      companyId: req.user!.companyId,
+      ...(status && { status: status as string }),
+      ...(customer && { customer: customer as string }),
+      ...(reasonShopped && { reasonShopped: reasonShopped as string }),
+      ...(carType && { carType: carType as string }),
+    };
+
+    // If specific IDs are provided, filter to those
+    if (ids) {
+      const idList = (ids as string).split(',');
+      where.id = { in: idList };
+    }
+
+    const cars = await prisma.car.findMany({
+      where,
+      orderBy: { vehicleNumber: 'asc' },
+    });
+
+    // Generate CSV content
+    const headers = [
+      'Vehicle Number', 'Car Type', 'Is Tank Car', 'Commodity', 'Customer',
+      'Project Number', 'Reason Shopped', 'Status', 'Current Location',
+      'Home Region', 'Origin Region', 'Days In Shop', 'Projected Cost',
+      'Last Service Date', 'Next Service Due', 'Notes'
+    ];
+
+    const rows = cars.map(car => [
+      car.vehicleNumber,
+      car.carType,
+      car.isTankCar ? 'Yes' : 'No',
+      car.commodity,
+      car.customer,
+      car.projectNumber,
+      car.reasonShopped,
+      car.status,
+      car.currentLocation,
+      car.homeRegion,
+      car.originRegion,
+      car.daysInShop,
+      car.projectedCost,
+      car.lastServiceDate ? new Date(car.lastServiceDate).toISOString().split('T')[0] : '',
+      car.nextServiceDue ? new Date(car.nextServiceDue).toISOString().split('T')[0] : '',
+      car.notes,
+    ]);
+
+    // Escape CSV values
+    const escapeCSV = (val: any): string => {
+      const str = String(val ?? '');
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(escapeCSV).join(','))
+    ].join('\n');
+
+    const filename = `railcars_export_${new Date().toISOString().split('T')[0]}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csvContent);
+  } catch (error) {
+    console.error('Export cars error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
