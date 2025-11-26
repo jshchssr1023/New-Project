@@ -10,6 +10,7 @@ import type {
   LoginCredentials,
   PaginatedResponse,
   PlanAssignment,
+  ShopRecommendation,
 } from '../types';
 
 const API_BASE_URL = '/api';
@@ -120,8 +121,8 @@ export const carsApi = {
 
 // Shops API
 export const shopsApi = {
-  getAll: async (): Promise<Shop[]> => {
-    const response = await apiClient.get<Shop[]>('/shops');
+  getAll: async (params?: { region?: string; network?: string; servingRailroad?: string; isActive?: boolean }): Promise<Shop[]> => {
+    const response = await apiClient.get<Shop[]>('/shops', { params });
     return response.data;
   },
 
@@ -149,6 +150,18 @@ export const shopsApi = {
       `/shops/${id}/capacity`,
       { params: { month } }
     );
+    return response.data;
+  },
+
+  // Get filter options (regions, networks, railroads)
+  getFilters: async (): Promise<{ regions: string[]; networks: string[]; railroads: string[] }> => {
+    const response = await apiClient.get<{ regions: string[]; networks: string[]; railroads: string[] }>('/shops/meta/filters');
+    return response.data;
+  },
+
+  // Bulk import shops
+  bulkImport: async (shops: Partial<Shop>[]): Promise<{ created: number; updated: number; errors: string[] }> => {
+    const response = await apiClient.post<{ created: number; updated: number; errors: string[] }>('/shops/bulk-import', { shops });
     return response.data;
   },
 };
@@ -263,6 +276,37 @@ export const scenariosApi = {
     await apiClient.delete(`/scenarios/${id}`);
   },
 
+  // Add cars to scenario
+  addCars: async (id: string, carIds: string[], scheduledMonth: string): Promise<Scenario> => {
+    const response = await apiClient.post<Scenario>(`/scenarios/${id}/cars`, { carIds, scheduledMonth });
+    return response.data;
+  },
+
+  // Add cars by customer filter
+  addCarsByCustomer: async (id: string, customer: string, scheduledMonth: string): Promise<Scenario> => {
+    const response = await apiClient.post<Scenario>(`/scenarios/${id}/cars/by-customer`, { customer, scheduledMonth });
+    return response.data;
+  },
+
+  // Remove car from scenario
+  removeCar: async (id: string, scenarioCarId: string): Promise<void> => {
+    await apiClient.delete(`/scenarios/${id}/cars/${scenarioCarId}`);
+  },
+
+  // Get shop recommendations for a car
+  getRecommendations: async (id: string, scenarioCarId: string): Promise<{ recommendations: ShopRecommendation[] }> => {
+    const response = await apiClient.get<{ recommendations: ShopRecommendation[] }>(
+      `/scenarios/${id}/cars/${scenarioCarId}/recommendations`
+    );
+    return response.data;
+  },
+
+  // Assign shop to car
+  assignShop: async (id: string, scenarioCarId: string, shopId: string): Promise<Scenario> => {
+    const response = await apiClient.put<Scenario>(`/scenarios/${id}/cars/${scenarioCarId}`, { assignedShopId: shopId });
+    return response.data;
+  },
+
   analyze: async (id: string): Promise<Scenario> => {
     const response = await apiClient.post<Scenario>(`/scenarios/${id}/analyze`);
     return response.data;
@@ -278,6 +322,12 @@ export const scenariosApi = {
 
   applyToPlan: async (scenarioId: string, planId: string): Promise<Plan> => {
     const response = await apiClient.post<Plan>(`/scenarios/${scenarioId}/apply`, { planId });
+    return response.data;
+  },
+
+  // Get available customers for filtering
+  getCustomers: async (): Promise<string[]> => {
+    const response = await apiClient.get<string[]>('/scenarios/customers');
     return response.data;
   },
 };

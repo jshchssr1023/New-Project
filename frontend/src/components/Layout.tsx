@@ -18,10 +18,10 @@ import { useAuth } from '../contexts/AuthContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Car Pool', href: '/cars', icon: TruckIcon },
-  { name: 'Shops', href: '/shops', icon: BuildingStorefrontIcon },
+  { name: 'Railcars', href: '/cars', icon: TruckIcon },
+  { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
-  { name: 'Scenarios', href: '/scenarios', icon: BeakerIcon },
+  { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 
@@ -77,9 +77,13 @@ export default function Layout() {
               leaveTo="-translate-x-full"
             >
               <Dialog.Panel className="relative mr-16 flex w-full max-w-xs flex-1">
-                <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-rail-700 px-6 pb-4">
-                  <div className="flex h-16 shrink-0 items-center">
-                    <span className="text-2xl font-bold text-white">AITX Chronos</span>
+                <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-steel-800 px-6 pb-4">
+                  <div className="flex h-20 shrink-0 items-center justify-center">
+                    <img
+                      src="/images/chronos-logo.png"
+                      alt="Chronos"
+                      className="h-16 w-auto"
+                    />
                   </div>
                   <nav className="flex flex-1 flex-col">
                     <ul role="list" className="flex flex-1 flex-col gap-y-7">
@@ -92,8 +96,8 @@ export default function Layout() {
                                 onClick={() => setSidebarOpen(false)}
                                 className={classNames(
                                   location.pathname === item.href
-                                    ? 'bg-rail-800 text-white'
-                                    : 'text-rail-100 hover:bg-rail-800 hover:text-white',
+                                    ? 'bg-rail-600 text-white'
+                                    : 'text-steel-300 hover:bg-steel-700 hover:text-white',
                                   'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6'
                                 )}
                               >
@@ -115,9 +119,13 @@ export default function Layout() {
 
       {/* Desktop sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-rail-700 px-6 pb-4">
-          <div className="flex h-16 shrink-0 items-center">
-            <span className="text-2xl font-bold text-white">AITX Chronos</span>
+        <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-steel-800 px-6 pb-4">
+          <div className="flex h-20 shrink-0 items-center justify-center">
+            <img
+              src="/images/chronos-logo.png"
+              alt="Chronos"
+              className="h-16 w-auto"
+            />
           </div>
           <nav className="flex flex-1 flex-col">
             <ul role="list" className="flex flex-1 flex-col gap-y-7">
@@ -129,8 +137,8 @@ export default function Layout() {
                         to={item.href}
                         className={classNames(
                           location.pathname === item.href
-                            ? 'bg-rail-800 text-white'
-                            : 'text-rail-100 hover:bg-rail-800 hover:text-white',
+                            ? 'bg-rail-600 text-white'
+                            : 'text-steel-300 hover:bg-steel-700 hover:text-white',
                           'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6'
                         )}
                       >
@@ -163,7 +171,7 @@ export default function Layout() {
 
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
             <div className="flex flex-1 items-center">
-              <h1 className="text-lg font-semibold text-steel-900">Scheduler</h1>
+              {/* Empty space - logo is in sidebar */}
             </div>
             <div className="flex items-center gap-x-4 lg:gap-x-6">
               {/* User menu */}

@@ -23,16 +23,37 @@ model User {
 }
 
 model Company {
-  id        String     @id @default(uuid())
-  name      String
-  code      String     @unique
-  users     User[]
-  cars      Car[]
-  shops     Shop[]
-  plans     Plan[]
-  scenarios Scenario[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  id          String        @id @default(uuid())
+  name        String
+  code        String        @unique
+  users       User[]
+  cars        Car[]
+  shops       Shop[]
+  plans       Plan[]
+  scenarios   Scenario[]
+  shopRules   ShopRule[]
+  customers   Customer[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+// Customer master for tracking lessees/owners
+model Customer {
+  id           String   @id @default(uuid())
+  name         String
+  code         String   // Short code like "SHELL", "CARG"
+  contactName  String   @default("")
+  contactEmail String   @default("")
+  contactPhone String   @default("")
+  address      String   @default("")
+  notes        String   @default("")
+  isActive     Boolean  @default(true)
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([code, companyId])
 }
 
 model Car {
@@ -42,14 +63,16 @@ model Car {
   commodity       String           @default("") // What the car carries
   customer        String           @default("") // Customer/lessee name
   projectNumber   String           @default("") // Project or work order number
-  reasonShopped   String           @default("") // Why car is being shopped (repair, inspection, modification, etc.)
+  reasonShopped   String           @default("") // Why car is being shopped
   status          String           @default("available") // available, in_service, scheduled, retired
   lastServiceDate DateTime?
   nextServiceDue  DateTime?
+  homeRegion      String           @default("") // Preferred geographic region
   notes           String           @default("")
   companyId       String
   company         Company          @relation(fields: [companyId], references: [id])
   assignments     PlanAssignment[]
+  scenarioCars    ScenarioCar[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -61,9 +84,24 @@ model Shop {
   name               String
   code               String
   location           String
-  capacity           Int              @default(10)
+  city               String           @default("")
+  state              String           @default("")
+  region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
+  network            String           @default("") // Shop network: e.g., "Trinity", "GATX", "Greenbrier"
+  servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
+  capacity           Int              @default(10) // Cars per month
+  currentLoad        Int              @default(0) // Current month's assignments
+  baseCostPerCar     Float            @default(15000) // Base cost per car
   costMultiplier     Float            @default(1.0)
+  baseTurnTime       Int              @default(14) // Base turn time in days
   turnTimeMultiplier Float            @default(1.0)
+  capabilities       String           @default("") // JSON array of car types this shop can handle
+  certifications     String           @default("") // JSON array: DOT, AAR, etc.
+  preferredCustomers String           @default("") // JSON array of preferred customer codes
+  contactName        String           @default("")
+  contactEmail       String           @default("")
+  contactPhone       String           @default("")
+  notes              String           @default("")
   isActive           Boolean          @default(true)
   companyId          String
   company            Company          @relation(fields: [companyId], references: [id])
@@ -72,6 +110,22 @@ model Shop {
   updatedAt          DateTime         @updatedAt
 
   @@unique([code, companyId])
+}
+
+// Rule engine for shop recommendations
+model ShopRule {
+  id          String   @id @default(uuid())
+  name        String
+  description String   @default("")
+  ruleType    String   // capacity, region, car_type, customer, cost, turn_time
+  priority    Int      @default(50) // 1-100, higher = more important
+  isActive    Boolean  @default(true)
+  conditions  String   // JSON: conditions to match
+  actions     String   // JSON: what to do when matched (prefer_shop, exclude_shop, adjust_score)
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 model Plan {
@@ -103,6 +157,7 @@ model PlanAssignment {
   estimatedCost     Float    @default(0)
   estimatedDuration Int      @default(14) // days
   status            String   @default("pending") // pending, confirmed, in_progress, completed, cancelled
+  notes             String   @default("")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -113,9 +168,11 @@ model Scenario {
   id            String                 @id @default(uuid())
   name          String
   description   String                 @default("")
-  basePlanId    String
-  basePlan      Plan                   @relation(fields: [basePlanId], references: [id])
+  customerFilter String                @default("") // Filter by customer
+  basePlanId    String?                // Optional base plan
+  basePlan      Plan?                  @relation(fields: [basePlanId], references: [id])
   status        String                 @default("draft") // draft, analyzing, completed
+  cars          ScenarioCar[]
   modifications ScenarioModification[]
   results       String?                // JSON string for results
   companyId     String
@@ -124,6 +181,26 @@ model Scenario {
   creator       User                   @relation("ScenarioCreator", fields: [createdBy], references: [id])
   createdAt     DateTime               @default(now())
   updatedAt     DateTime               @updatedAt
+}
+
+// Cars selected for a scenario
+model ScenarioCar {
+  id              String   @id @default(uuid())
+  scenarioId      String
+  scenario        Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  carId           String
+  car             Car      @relation(fields: [carId], references: [id])
+  suggestedShopId String?  // Shop suggested by rule engine
+  assignedShopId  String?  // Shop manually assigned
+  scheduledMonth  String   // Planned month YYYY-MM
+  estimatedCost   Float    @default(0)
+  estimatedDays   Int      @default(14)
+  ruleScore       Float    @default(0) // Score from rule engine
+  ruleNotes       String   @default("") // Explanation of suggestion
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([scenarioId, carId])
 }
 
 model ScenarioModification {
