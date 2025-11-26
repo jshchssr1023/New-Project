@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      String   @default("viewer") // admin, planner, viewer
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+  plans     Plan[]   @relation("PlanCreator")
+  scenarios Scenario[] @relation("ScenarioCreator")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Company {
+  id        String     @id @default(uuid())
+  name      String
+  code      String     @unique
+  users     User[]
+  cars      Car[]
+  shops     Shop[]
+  plans     Plan[]
+  scenarios Scenario[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Car {
+  id              String           @id @default(uuid())
+  vehicleNumber   String
+  make            String
+  model           String
+  year            Int
+  mileage         Int
+  status          String           @default("available") // available, in_service, scheduled, retired
+  lastServiceDate DateTime?
+  nextServiceDue  DateTime?
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id])
+  assignments     PlanAssignment[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([vehicleNumber, companyId])
+}
+
+model Shop {
+  id                 String           @id @default(uuid())
+  name               String
+  code               String
+  location           String
+  capacity           Int              @default(10)
+  costMultiplier     Float            @default(1.0)
+  turnTimeMultiplier Float            @default(1.0)
+  isActive           Boolean          @default(true)
+  companyId          String
+  company            Company          @relation(fields: [companyId], references: [id])
+  assignments        PlanAssignment[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([code, companyId])
+}
+
+model Plan {
+  id          String           @id @default(uuid())
+  name        String
+  description String           @default("")
+  startDate   DateTime
+  endDate     DateTime
+  status      String           @default("draft") // draft, active, completed, archived
+  companyId   String
+  company     Company          @relation(fields: [companyId], references: [id])
+  createdBy   String
+  creator     User             @relation("PlanCreator", fields: [createdBy], references: [id])
+  assignments PlanAssignment[]
+  scenarios   Scenario[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model PlanAssignment {
+  id                String   @id @default(uuid())
+  planId            String
+  plan              Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+  carId             String
+  car               Car      @relation(fields: [carId], references: [id])
+  shopId            String
+  shop              Shop     @relation(fields: [shopId], references: [id])
+  scheduledMonth    String   // Format: YYYY-MM
+  estimatedCost     Float    @default(0)
+  estimatedDuration Int      @default(14) // days
+  status            String   @default("pending") // pending, confirmed, in_progress, completed, cancelled
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([planId, carId, scheduledMonth])
+}
+
+model Scenario {
+  id            String                 @id @default(uuid())
+  name          String
+  description   String                 @default("")
+  basePlanId    String
+  basePlan      Plan                   @relation(fields: [basePlanId], references: [id])
+  status        String                 @default("draft") // draft, analyzing, completed
+  modifications ScenarioModification[]
+  results       String?                // JSON string for results
+  companyId     String
+  company       Company                @relation(fields: [companyId], references: [id])
+  createdBy     String
+  creator       User                   @relation("ScenarioCreator", fields: [createdBy], references: [id])
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+}
+
+model ScenarioModification {
+  id         String   @id @default(uuid())
+  scenarioId String
+  scenario   Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  type       String   // add_assignment, remove_assignment, modify_assignment, change_shop, change_date
+  targetId   String
+  changes    String   // JSON string for changes
+  createdAt  DateTime @default(now())
+}
