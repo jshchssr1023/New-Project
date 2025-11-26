@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { carsApi } from '../services/api';
 import type { Car } from '../types';
 
@@ -20,6 +20,11 @@ export default function CarManagement() {
   const [editingCar, setEditingCar] = useState<Car | null>(null);
   const [selectedCars, setSelectedCars] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [carTypeFilter, setCarTypeFilter] = useState<string>('');
+  const [customerFilter, setCustomerFilter] = useState<string>('');
+  const [reasonFilter, setReasonFilter] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [isExporting, setIsExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [formData, setFormData] = useState({
@@ -130,6 +135,41 @@ export default function CarManagement() {
     }
   };
 
+  // Export selected cars or all cars with current filters
+  const handleExport = async (exportSelected: boolean = false) => {
+    setIsExporting(true);
+    try {
+      await carsApi.exportCars({
+        ids: exportSelected && selectedCars.size > 0 ? Array.from(selectedCars) : undefined,
+        status: statusFilter || undefined,
+        customer: customerFilter || undefined,
+        reasonShopped: reasonFilter || undefined,
+        carType: carTypeFilter || undefined,
+      });
+    } catch (error) {
+      console.error('Failed to export cars:', error);
+      alert('Export failed. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Filter cars by search term (client-side filtering)
+  const filteredCars = cars.filter(car => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      car.vehicleNumber.toLowerCase().includes(term) ||
+      car.customer.toLowerCase().includes(term) ||
+      car.projectNumber.toLowerCase().includes(term) ||
+      car.commodity.toLowerCase().includes(term) ||
+      car.carType.toLowerCase().includes(term)
+    );
+  });
+
+  // Get unique customers for filter dropdown
+  const uniqueCustomers = [...new Set(cars.map(c => c.customer).filter(Boolean))].sort();
+
   const toggleCarSelection = (id: string) => {
     const newSelected = new Set(selectedCars);
     if (newSelected.has(id)) {
@@ -141,10 +181,10 @@ export default function CarManagement() {
   };
 
   const toggleAllSelection = () => {
-    if (selectedCars.size === cars.length) {
+    if (selectedCars.size === filteredCars.length && filteredCars.length > 0) {
       setSelectedCars(new Set());
     } else {
-      setSelectedCars(new Set(cars.map((c) => c.id)));
+      setSelectedCars(new Set(filteredCars.map((c) => c.id)));
     }
   };
 
@@ -158,6 +198,14 @@ export default function CarManagement() {
           </p>
         </div>
         <div className="flex space-x-3">
+          <button
+            onClick={() => handleExport(false)}
+            disabled={isExporting}
+            className="btn-secondary flex items-center"
+          >
+            <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
+            {isExporting ? 'Exporting...' : 'Export All'}
+          </button>
           <button className="btn-secondary flex items-center">
             <ArrowUpTrayIcon className="mr-2 h-5 w-5" />
             Import
@@ -169,13 +217,35 @@ export default function CarManagement() {
         </div>
       </div>
 
+      {/* Search Bar */}
+      <div className="relative">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <MagnifyingGlassIcon className="h-5 w-5 text-steel-400" />
+        </div>
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search by railcar #, customer, project #, commodity, or car type..."
+          className="input pl-10 w-full"
+        />
+        {searchTerm && (
+          <button
+            onClick={() => setSearchTerm('')}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center"
+          >
+            <XMarkIcon className="h-5 w-5 text-steel-400 hover:text-steel-600" />
+          </button>
+        )}
+      </div>
+
       {/* Filters and bulk actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center space-x-4 flex-wrap gap-2">
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="input w-40"
+            className="input w-36"
           >
             <option value="">All Status</option>
             <option value="available">Available</option>
@@ -183,13 +253,53 @@ export default function CarManagement() {
             <option value="scheduled">Scheduled</option>
             <option value="retired">Retired</option>
           </select>
+          <select
+            value={carTypeFilter}
+            onChange={(e) => setCarTypeFilter(e.target.value)}
+            className="input w-40"
+          >
+            <option value="">All Car Types</option>
+            {carTypeOptions.map(type => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+          <select
+            value={customerFilter}
+            onChange={(e) => setCustomerFilter(e.target.value)}
+            className="input w-40"
+          >
+            <option value="">All Customers</option>
+            {uniqueCustomers.map(customer => (
+              <option key={customer} value={customer}>{customer}</option>
+            ))}
+          </select>
+          <select
+            value={reasonFilter}
+            onChange={(e) => setReasonFilter(e.target.value)}
+            className="input w-44"
+          >
+            <option value="">All Reasons</option>
+            {reasonShoppedOptions.map(reason => (
+              <option key={reason} value={reason}>{reason}</option>
+            ))}
+          </select>
+          <span className="text-sm text-steel-500">{filteredCars.length} cars</span>
         </div>
         {selectedCars.size > 0 && (
-          <div className="flex items-center space-x-3">
-            <span className="text-sm text-steel-600">{selectedCars.size} selected</span>
+          <div className="flex items-center space-x-3 bg-rail-50 px-4 py-2 rounded-lg border border-rail-200">
+            <span className="text-sm font-medium text-rail-700">{selectedCars.size} selected</span>
+            <div className="h-4 w-px bg-rail-300" />
+            <button
+              onClick={() => handleExport(true)}
+              disabled={isExporting}
+              className="text-sm text-rail-600 hover:text-rail-800 font-medium"
+            >
+              {isExporting ? 'Exporting...' : 'Export Selected'}
+            </button>
+            <div className="h-4 w-px bg-rail-300" />
             <select
               onChange={(e) => handleBulkStatusUpdate(e.target.value as Car['status'])}
-              className="input w-40"
+              className="input w-36 text-sm py-1"
               defaultValue=""
             >
               <option value="" disabled>
@@ -200,8 +310,14 @@ export default function CarManagement() {
               <option value="scheduled">Scheduled</option>
               <option value="retired">Retired</option>
             </select>
-            <button onClick={handleBulkDelete} className="btn-secondary text-rail-600">
-              Delete Selected
+            <button onClick={handleBulkDelete} className="text-sm text-rail-600 hover:text-rail-800 font-medium">
+              Delete
+            </button>
+            <button
+              onClick={() => setSelectedCars(new Set())}
+              className="text-sm text-steel-500 hover:text-steel-700"
+            >
+              Clear
             </button>
           </div>
         )}
@@ -220,7 +336,7 @@ export default function CarManagement() {
                   <th className="px-4 py-3 text-left">
                     <input
                       type="checkbox"
-                      checked={selectedCars.size === cars.length && cars.length > 0}
+                      checked={selectedCars.size === filteredCars.length && filteredCars.length > 0}
                       onChange={toggleAllSelection}
                       className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
                     />
@@ -249,54 +365,64 @@ export default function CarManagement() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-steel-200">
-                {cars.map((car) => (
-                  <tr key={car.id} className={selectedCars.has(car.id) ? 'bg-rail-50' : 'hover:bg-steel-50'}>
-                    <td className="px-4 py-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedCars.has(car.id)}
-                        onChange={() => toggleCarSelection(car.id)}
-                        className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
-                      />
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-steel-900">
-                      {car.vehicleNumber}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
-                      {car.carType}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
-                      {car.customer}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700 font-mono">
-                      {car.projectNumber}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
-                      {car.reasonShopped}
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <span
-                        className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${statusColors[car.status]}`}
-                      >
-                        {car.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => handleOpenModal(car)}
-                        className="text-rail-600 hover:text-rail-900 mr-3"
-                      >
-                        <PencilIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(car.id)}
-                        className="text-rail-600 hover:text-rail-900"
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredCars.map((car) => {
+                  const isTankCar = car.carType === 'Tank Car' || car.isTankCar;
+                  return (
+                    <tr key={car.id} className={selectedCars.has(car.id) ? 'bg-rail-50' : 'hover:bg-steel-50'}>
+                      <td className="px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedCars.has(car.id)}
+                          onChange={() => toggleCarSelection(car.id)}
+                          className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
+                        />
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <div className="flex items-center">
+                          <span className="text-sm font-medium text-steel-900">{car.vehicleNumber}</span>
+                          {isTankCar && (
+                            <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                              TANK
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
+                        {car.carType}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
+                        {car.customer}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700 font-mono">
+                        {car.projectNumber}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-steel-700">
+                        {car.reasonShopped}
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${statusColors[car.status]}`}
+                        >
+                          {car.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => handleOpenModal(car)}
+                          className="text-rail-600 hover:text-rail-900 mr-3"
+                        >
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(car.id)}
+                          className="text-rail-600 hover:text-rail-900"
+                        >
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
