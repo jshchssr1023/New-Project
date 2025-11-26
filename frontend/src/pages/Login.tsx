@@ -26,15 +26,19 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col justify-center bg-gradient-to-br from-rail-600 to-rail-800 px-6 py-12 lg:px-8">
+    <div className="flex min-h-screen flex-col justify-center bg-gradient-to-br from-steel-800 to-steel-900 px-6 py-12 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-white">AITX Chronos</h1>
-          <p className="mt-2 text-rail-200">Rail Car Service Scheduler</p>
+        <div className="flex justify-center">
+          <img
+            src="/images/chronos-logo.png"
+            alt="Chronos"
+            className="h-32 w-auto"
+          />
         </div>
+        <p className="mt-4 text-center text-steel-400">Railcar Service Scheduler</p>
       </div>
 
-      <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-md">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="card">
           <h2 className="mb-6 text-center text-2xl font-semibold text-steel-900">
             Sign in to your account
