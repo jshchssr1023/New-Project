@@ -8,32 +8,45 @@ const prisma = new PrismaClient();
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const commodities = ['Crude Oil', 'Ethanol', 'Corn', 'Wheat', 'Coal', 'Lumber', 'Steel', 'Chemicals', 'Fertilizer', 'Plastics'];
 const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
-const reasonsShopped = ['Annual Inspection', 'Wheel Repair', 'Tank Cleaning', 'Valve Replacement', 'Frame Repair', 'Safety Retrofit', 'DOT Compliance', 'Corrosion Repair', 'Coupler Replacement', 'Brake System'];
+const reasonsShopped = ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'];
 const carStatuses = ['available', 'in_service', 'scheduled', 'retired'];
 
-// Shop locations
+// Shop locations - actual shop data
 const shopData = [
-  { name: 'Houston Rail Center', code: 'HOU', location: 'Houston, TX' },
-  { name: 'Chicago Yards', code: 'CHI', location: 'Chicago, IL' },
-  { name: 'Los Angeles Terminal', code: 'LAX', location: 'Los Angeles, CA' },
-  { name: 'Atlanta Service Hub', code: 'ATL', location: 'Atlanta, GA' },
-  { name: 'Dallas Maintenance', code: 'DFW', location: 'Dallas, TX' },
-  { name: 'Seattle Pacific', code: 'SEA', location: 'Seattle, WA' },
-  { name: 'Denver Mountain', code: 'DEN', location: 'Denver, CO' },
-  { name: 'Kansas City Central', code: 'KCI', location: 'Kansas City, MO' },
-  { name: 'New Orleans Gulf', code: 'MSY', location: 'New Orleans, LA' },
-  { name: 'Phoenix Desert', code: 'PHX', location: 'Phoenix, AZ' },
-  { name: 'Memphis River', code: 'MEM', location: 'Memphis, TN' },
-  { name: 'St. Louis Gateway', code: 'STL', location: 'St. Louis, MO' },
-  { name: 'Minneapolis North', code: 'MSP', location: 'Minneapolis, MN' },
-  { name: 'Portland Pacific', code: 'PDX', location: 'Portland, OR' },
-  { name: 'San Antonio Express', code: 'SAT', location: 'San Antonio, TX' },
-  { name: 'Cleveland Lake', code: 'CLE', location: 'Cleveland, OH' },
-  { name: 'Detroit Motor', code: 'DTW', location: 'Detroit, MI' },
-  { name: 'Birmingham Steel', code: 'BHM', location: 'Birmingham, AL' },
-  { name: 'Jacksonville Port', code: 'JAX', location: 'Jacksonville, FL' },
-  { name: 'Salt Lake Mountain', code: 'SLC', location: 'Salt Lake City, UT' },
-  { name: 'Omaha Plains', code: 'OMA', location: 'Omaha, NE' },
+  // Midwest Region
+  { name: 'AITX Maumee', code: 'MAUM', city: 'Maumee', state: 'OH', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1200, turnTime: 85, contact: 'Mike Thompson (419) 555-1234', notes: 'Primary Midwest hub' },
+  { name: 'AITX East Chicago', code: 'ECHI', city: 'East Chicago', state: 'IN', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1400, turnTime: 80, contact: 'Dave Wilson (219) 555-2345', notes: 'Full service facility' },
+  { name: 'AITX Coffeyville', code: 'COFF', city: 'Coffeyville', state: 'KS', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 900, turnTime: 90, contact: 'Jim Baker (620) 555-3456', notes: '' },
+  { name: 'Watco Coffeyville', code: 'WATC', city: 'Coffeyville', state: 'KS', region: 'Midwest', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 800, turnTime: 95, contact: 'Steve Morris (620) 555-4567', notes: 'Watco partnership' },
+  { name: 'Mid-America Railcar', code: 'MARC', city: 'Kansas City', state: 'MO', region: 'Midwest', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Tom Anderson (816) 555-5678', notes: '' },
+  { name: 'GATX Danville', code: 'GATX', city: 'Danville', state: 'IL', region: 'Midwest', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1600, turnTime: 75, contact: 'Robert Lee (217) 555-6789', notes: 'High capacity facility' },
+
+  // South Region
+  { name: 'AITX Texarkana', code: 'TXRK', city: 'Texarkana', state: 'TX', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1100, turnTime: 85, contact: 'Carlos Rodriguez (903) 555-7890', notes: '' },
+  { name: 'AITX Longview', code: 'LONG', city: 'Longview', state: 'TX', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Lining', annualCapacity: 950, turnTime: 90, contact: 'Mark Johnson (903) 555-8901', notes: 'Lining specialist' },
+  { name: 'AITX Bossier City', code: 'BOSS', city: 'Bossier City', state: 'LA', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 850, turnTime: 92, contact: 'Paul Davis (318) 555-9012', notes: '' },
+  { name: 'Ennis Railcar', code: 'ENNS', city: 'Ennis', state: 'TX', region: 'South', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 700, turnTime: 95, contact: 'John Smith (972) 555-0123', notes: '' },
+  { name: 'RSI Rail Group', code: 'RSI', city: 'Longview', state: 'TX', region: 'South', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1300, turnTime: 82, contact: 'Brian Taylor (903) 555-1235', notes: 'Full fabrication capabilities' },
+
+  // Gulf Region
+  { name: 'AITX Eagle', code: 'EAGL', city: 'Eagle Pass', state: 'TX', region: 'Gulf', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Miguel Santos (830) 555-2346', notes: 'Border location' },
+  { name: 'Rescar Houston', code: 'RHOU', city: 'Houston', state: 'TX', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1500, turnTime: 78, contact: 'Greg Harris (713) 555-3457', notes: 'Major Gulf hub' },
+  { name: 'TankCar Services', code: 'TANK', city: 'Beaumont', state: 'TX', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1100, turnTime: 85, contact: 'Larry White (409) 555-4568', notes: 'Tank car specialist' },
+  { name: 'Union Tank Repair', code: 'UTCR', city: 'Lake Charles', state: 'LA', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 900, turnTime: 90, contact: 'Chris Martin (337) 555-5679', notes: '' },
+  { name: 'UTLX Alexandria', code: 'UTLX', city: 'Alexandria', state: 'LA', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1200, turnTime: 82, contact: 'James Brown (318) 555-6780', notes: '' },
+
+  // Northeast Region
+  { name: 'Midland Rail Services', code: 'MDLD', city: 'Midland', state: 'PA', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Frank Miller (412) 555-7891', notes: '' },
+  { name: 'GBW Rail Services', code: 'GBW', city: 'Hornell', state: 'NY', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1100, turnTime: 85, contact: 'Dan Clark (607) 555-8902', notes: '' },
+  { name: 'National Steel Car', code: 'NSC', city: 'Hamilton', state: 'ON', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1400, turnTime: 80, contact: 'Andrew Scott (905) 555-9013', notes: 'Canada location' },
+  { name: 'Procor Sarnia', code: 'PROC', city: 'Sarnia', state: 'ON', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 950, turnTime: 90, contact: 'Kevin Moore (519) 555-0124', notes: 'Canada location' },
+
+  // West Region
+  { name: 'Vulcan Rail Services', code: 'VULC', city: 'Los Angeles', state: 'CA', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Tony Garcia (213) 555-1236', notes: 'West coast hub' },
+  { name: 'Frontier Railcar', code: 'FRNT', city: 'Salt Lake City', state: 'UT', region: 'West', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 750, turnTime: 95, contact: 'Bill Jackson (801) 555-2347', notes: '' },
+  { name: 'CF Rail', code: 'CFR', city: 'Denver', state: 'CO', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 850, turnTime: 92, contact: 'Rick Nelson (303) 555-3458', notes: '' },
+  { name: 'Apex Rail', code: 'APEX', city: 'Phoenix', state: 'AZ', region: 'West', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 600, turnTime: 100, contact: 'Sam Adams (602) 555-4569', notes: '' },
+  { name: 'Nortrak Services', code: 'NORT', city: 'Seattle', state: 'WA', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 800, turnTime: 92, contact: 'Eric Young (206) 555-5670', notes: 'Pacific Northwest' },
 ];
 
 async function main() {
@@ -41,11 +54,14 @@ async function main() {
 
   // Clear existing data
   await prisma.scenarioModification.deleteMany();
+  await prisma.scenarioCar.deleteMany();
   await prisma.scenario.deleteMany();
   await prisma.planAssignment.deleteMany();
   await prisma.plan.deleteMany();
   await prisma.car.deleteMany();
   await prisma.shop.deleteMany();
+  await prisma.shopRule.deleteMany();
+  await prisma.customer.deleteMany();
   await prisma.user.deleteMany();
   await prisma.company.deleteMany();
 
@@ -104,19 +120,29 @@ async function main() {
 
   console.log('✓ Created users: admin, planner, viewer');
 
-  // Create 21 shops
+  // Create 25 shops with actual data
   const shops = await Promise.all(
-    shopData.map(async (shop, index) => {
+    shopData.map(async (shop) => {
+      // Convert annual capacity to monthly (divide by 12)
+      const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
+
       return prisma.shop.create({
         data: {
           id: uuidv4(),
           name: shop.name,
           code: shop.code,
-          location: shop.location,
-          capacity: 8 + Math.floor(Math.random() * 8), // 8-15 cars/month
-          costMultiplier: 0.85 + Math.random() * 0.4, // 0.85-1.25
-          turnTimeMultiplier: 0.9 + Math.random() * 0.3, // 0.9-1.2
-          isActive: index < 18, // 18 active, 3 inactive
+          location: `${shop.city}, ${shop.state}`,
+          city: shop.city,
+          state: shop.state,
+          region: shop.region,
+          network: shop.network,
+          capacity: monthlyCapacity,
+          baseTurnTime: shop.turnTime,
+          certifications: JSON.stringify(shop.certifications.split(', ')),
+          contactName: shop.contact.split(' (')[0],
+          contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
+          notes: shop.notes,
+          isActive: true,
           companyId: company.id,
         },
       });
