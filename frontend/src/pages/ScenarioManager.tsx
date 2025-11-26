@@ -42,6 +42,7 @@ export default function ScenarioManager() {
   const [recommendations, setRecommendations] = useState<ShopRecommendation[]>([]);
   const [commitPlanId, setCommitPlanId] = useState<string>('');
   const [formData, setFormData] = useState({
+    projectNumber: '',
     name: '',
     description: '',
     customerFilter: '',
@@ -96,14 +97,34 @@ export default function ScenarioManager() {
 
   const handleCreateScenario = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate projectNumber
+    if (!formData.projectNumber.trim()) {
+      alert('Project Number is required');
+      return;
+    }
+
+    if (!formData.name.trim()) {
+      alert('Scenario Name is required');
+      return;
+    }
+
     try {
-      const newScenario = await scenariosApi.create(formData);
+      const newScenario = await scenariosApi.create({
+        projectNumber: formData.projectNumber.toUpperCase(),
+        name: formData.name,
+        description: formData.description,
+        customerFilter: formData.customerFilter,
+      });
       setIsModalOpen(false);
-      setFormData({ name: '', description: '', customerFilter: '' });
+      setFormData({ projectNumber: '', name: '', description: '', customerFilter: '' });
       await loadData();
       setSelectedScenario(newScenario);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create scenario:', error);
+      if (error.response?.data?.message) {
+        alert(error.response.data.message);
+      }
     }
   };
 
@@ -314,6 +335,11 @@ export default function ScenarioManager() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-mono bg-steel-100 px-2 py-0.5 rounded text-steel-600">
+                          {scenario.projectNumber || 'NO-PROJECT'}
+                        </span>
+                      </div>
                       <h3 className="text-lg font-medium text-steel-900">{scenario.name}</h3>
                       <p className="text-sm text-steel-500 mt-1 line-clamp-2">{scenario.description}</p>
                       {scenario.customerFilter && (
@@ -593,15 +619,36 @@ export default function ScenarioManager() {
               <h2 className="text-xl font-semibold text-steel-900 mb-4">Create New Scenario</h2>
               <form onSubmit={handleCreateScenario} className="space-y-4">
                 <div>
-                  <label className="label">Scenario Name</label>
+                  <label className="label">
+                    Project Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.projectNumber}
+                    onChange={(e) => setFormData({ ...formData, projectNumber: e.target.value })}
+                    className="input"
+                    placeholder="e.g., Q4-25-001"
+                    required
+                  />
+                  <p className="text-xs text-steel-500 mt-1">
+                    Required project identifier for tracking and downstream systems
+                  </p>
+                </div>
+                <div>
+                  <label className="label">
+                    Scenario Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="input"
-                    placeholder="e.g., ACME Corp Q2 2025"
+                    placeholder="e.g., Initial Proposal, Revised Budget Plan"
                     required
                   />
+                  <p className="text-xs text-steel-500 mt-1">
+                    Human-readable name to identify this scenario
+                  </p>
                 </div>
                 <div>
                   <label className="label">Description</label>

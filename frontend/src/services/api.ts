@@ -555,4 +555,314 @@ export const usersApi = {
   },
 };
 
+// Custom Reports API
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'date' | 'boolean';
+  sortable: boolean;
+  filterable: boolean;
+  defaultVisible: boolean;
+}
+
+export interface FilterCriteria {
+  field: string;
+  operator: 'equals' | 'notEquals' | 'contains' | 'startsWith' | 'endsWith' | 'greaterThan' | 'lessThan' | 'greaterThanOrEqual' | 'lessThanOrEqual' | 'between' | 'in' | 'isNull' | 'isNotNull';
+  value: unknown;
+  value2?: unknown;
+}
+
+export interface ReportTemplate {
+  id: string;
+  name: string;
+  description: string;
+  entityType: string;
+  columns: string[];
+  filters: FilterCriteria[];
+  sortConfig: { field: string; direction: 'asc' | 'desc' } | null;
+  groupBy: string;
+  outputFormats: string[];
+  isPublic: boolean;
+  createdAt: string;
+}
+
+export interface ScheduledReport {
+  id: string;
+  name: string;
+  templateId: string;
+  schedule: string;
+  timezone: string;
+  outputFormat: 'pdf' | 'csv' | 'xlsx';
+  recipients: string[];
+  isActive: boolean;
+  lastRunAt: string | null;
+  nextRunAt: string | null;
+  lastRunStatus: string;
+  template: {
+    id: string;
+    name: string;
+    entityType: string;
+  } | null;
+}
+
+export const reportsApi = {
+  getColumns: async (entityType: string): Promise<ReportColumn[]> => {
+    const response = await apiClient.get<ReportColumn[]>(`/reports/columns/${entityType}`);
+    return response.data;
+  },
+
+  executeReport: async (config: {
+    entityType: string;
+    columns: string[];
+    filters?: FilterCriteria[];
+    sort?: { field: string; direction: 'asc' | 'desc' };
+    groupBy?: string;
+  }): Promise<{ data: Record<string, unknown>[]; total: number }> => {
+    const response = await apiClient.post('/reports/execute', config);
+    return response.data;
+  },
+
+  exportCSV: async (config: {
+    entityType: string;
+    columns: string[];
+    filters?: FilterCriteria[];
+    sort?: { field: string; direction: 'asc' | 'desc' };
+  }): Promise<Blob> => {
+    const response = await apiClient.post('/reports/export/csv', config, { responseType: 'blob' });
+    return response.data;
+  },
+
+  exportExcel: async (config: {
+    entityType: string;
+    columns: string[];
+    filters?: FilterCriteria[];
+    sort?: { field: string; direction: 'asc' | 'desc' };
+  }): Promise<{ headers: string[]; rows: unknown[][] }> => {
+    const response = await apiClient.post('/reports/export/xlsx', config);
+    return response.data;
+  },
+
+  // Templates
+  getTemplates: async (): Promise<ReportTemplate[]> => {
+    const response = await apiClient.get<ReportTemplate[]>('/reports/templates');
+    return response.data;
+  },
+
+  getTemplate: async (id: string): Promise<ReportTemplate> => {
+    const response = await apiClient.get<ReportTemplate>(`/reports/templates/${id}`);
+    return response.data;
+  },
+
+  createTemplate: async (template: Partial<ReportTemplate>): Promise<ReportTemplate> => {
+    const response = await apiClient.post<ReportTemplate>('/reports/templates', template);
+    return response.data;
+  },
+
+  updateTemplate: async (id: string, updates: Partial<ReportTemplate>): Promise<void> => {
+    await apiClient.put(`/reports/templates/${id}`, updates);
+  },
+
+  deleteTemplate: async (id: string): Promise<void> => {
+    await apiClient.delete(`/reports/templates/${id}`);
+  },
+
+  // Scheduled Reports
+  getSchedulePresets: async (): Promise<Record<string, { cron: string; label: string }>> => {
+    const response = await apiClient.get('/reports/schedules/presets');
+    return response.data;
+  },
+
+  getScheduledReports: async (): Promise<ScheduledReport[]> => {
+    const response = await apiClient.get<ScheduledReport[]>('/reports/schedules');
+    return response.data;
+  },
+
+  createScheduledReport: async (report: {
+    name: string;
+    templateId: string;
+    schedule: string;
+    timezone?: string;
+    outputFormat?: 'pdf' | 'csv' | 'xlsx';
+    recipients: string[];
+  }): Promise<ScheduledReport> => {
+    const response = await apiClient.post<ScheduledReport>('/reports/schedules', report);
+    return response.data;
+  },
+
+  toggleScheduledReport: async (id: string): Promise<ScheduledReport> => {
+    const response = await apiClient.post<ScheduledReport>(`/reports/schedules/${id}/toggle`);
+    return response.data;
+  },
+
+  deleteScheduledReport: async (id: string): Promise<void> => {
+    await apiClient.delete(`/reports/schedules/${id}`);
+  },
+};
+
+// Shop Performance API
+export interface ShopPerformanceMetrics {
+  averageTurnTime: number;
+  turnTimeByRepairType: Record<string, number>;
+  onTimeRate: number;
+  averageDwellTime: number;
+  reworkRate: number;
+  costVariance: number;
+  performanceScore: number;
+}
+
+export interface ShopScorecard {
+  shop: {
+    id: string;
+    name: string;
+    code: string;
+    network: string;
+    region: string;
+  };
+  metrics: ShopPerformanceMetrics;
+  comparison: {
+    turnTimeVsNetwork: number;
+    onTimeVsNetwork: number;
+    dwellTimeVsNetwork: number;
+    reworkVsNetwork: number;
+    costVarianceVsNetwork: number;
+  };
+  alerts: { type: 'warning' | 'critical'; message: string }[];
+  periodType: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+}
+
+export interface NetworkScorecard {
+  shops: ShopScorecard[];
+  networkAverages: {
+    avgTurnTime: number;
+    avgDwellTime: number;
+    avgOnTimeRate: number;
+    avgReworkRate: number;
+    avgCostVariance: number;
+  };
+  summary: {
+    totalShops: number;
+    averagePerformanceScore: number;
+    shopsWithWarnings: number;
+    shopsWithCriticalAlerts: number;
+  };
+}
+
+export const shopPerformanceApi = {
+  getShopScorecard: async (shopId: string): Promise<ShopScorecard> => {
+    const response = await apiClient.get<ShopScorecard>(`/shops/${shopId}/performance`);
+    return response.data;
+  },
+
+  getNetworkScorecard: async (): Promise<NetworkScorecard> => {
+    const response = await apiClient.get<NetworkScorecard>('/shops/performance/network');
+    return response.data;
+  },
+
+  calculatePerformance: async (shopId: string, periodType: 'monthly' | 'quarterly' | 'yearly' = 'monthly'): Promise<unknown> => {
+    const response = await apiClient.post(`/shops/${shopId}/performance/calculate`, { periodType });
+    return response.data;
+  },
+
+  getPerformanceConcerns: async (shopId: string): Promise<{
+    shopId: string;
+    shopName: string;
+    hasConcerns: boolean;
+    severity: 'none' | 'warning' | 'critical';
+    reasons: string[];
+    performanceScore: number;
+  }> => {
+    const response = await apiClient.get(`/shops/${shopId}/performance/concerns`);
+    return response.data;
+  },
+};
+
+// Audit Log API
+export interface AuditLogEntry {
+  id: string;
+  userId: string;
+  userEmail: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  entityName: string;
+  changes: Record<string, { old?: unknown; new?: unknown }>;
+  metadata: Record<string, unknown>;
+  ipAddress: string;
+  createdAt: string;
+}
+
+export const auditApi = {
+  getLogs: async (params?: {
+    entityType?: string;
+    entityId?: string;
+    userId?: string;
+    action?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    data: AuditLogEntry[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> => {
+    const response = await apiClient.get('/audit', { params });
+    return response.data;
+  },
+
+  getEntityHistory: async (entityType: string, entityId: string): Promise<AuditLogEntry[]> => {
+    const response = await apiClient.get<AuditLogEntry[]>(`/audit/entity/${entityType}/${entityId}`);
+    return response.data;
+  },
+
+  getSummary: async (days: number = 7): Promise<{
+    totalActions: number;
+    period: { start: string; end: string; days: number };
+    byAction: Record<string, number>;
+    byEntity: Record<string, number>;
+    topUsers: { email: string; count: number }[];
+    recentActions: AuditLogEntry[];
+  }> => {
+    const response = await apiClient.get('/audit/summary', { params: { days } });
+    return response.data;
+  },
+};
+
+// Permissions API
+export const permissionsApi = {
+  getRoles: async (): Promise<{
+    roles: string[];
+    descriptions: Record<string, string>;
+  }> => {
+    const response = await apiClient.get('/permissions/roles');
+    return response.data;
+  },
+
+  getMyPermissions: async (): Promise<{
+    role: string;
+    permissions: string[];
+  }> => {
+    const response = await apiClient.get('/permissions/my-permissions');
+    return response.data;
+  },
+
+  checkPermission: async (permission: string): Promise<{ permission: string; granted: boolean }> => {
+    const response = await apiClient.get(`/permissions/check/${permission}`);
+    return response.data;
+  },
+
+  getFieldSecurity: async (entityType: string): Promise<{
+    entityType: string;
+    role: string;
+    fields: Record<string, { visible: boolean; editable: boolean; maskType: string }>;
+  }> => {
+    const response = await apiClient.get(`/permissions/fields/${entityType}`);
+    return response.data;
+  },
+};
+
 export default apiClient;

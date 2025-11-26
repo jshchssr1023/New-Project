@@ -670,4 +670,96 @@ router.get('/meta/filters', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// ============ Performance Scorecard Endpoints ============
+
+import shopPerformanceService from '../services/shopPerformanceService';
+
+// Get performance scorecard for a specific shop
+router.get('/:id/performance', async (req: AuthRequest, res: Response) => {
+  try {
+    const scorecard = await shopPerformanceService.getShopScorecard(
+      req.params.id,
+      req.user!.companyId
+    );
+    res.json(scorecard);
+  } catch (error) {
+    console.error('Get shop performance error:', error);
+    res.status(500).json({ message: 'Failed to get shop performance' });
+  }
+});
+
+// Get performance scorecards for all shops (network overview)
+router.get('/performance/network', async (req: AuthRequest, res: Response) => {
+  try {
+    const networkScorecard = await shopPerformanceService.getNetworkScorecard(
+      req.user!.companyId
+    );
+    res.json(networkScorecard);
+  } catch (error) {
+    console.error('Get network performance error:', error);
+    res.status(500).json({ message: 'Failed to get network performance' });
+  }
+});
+
+// Calculate/refresh performance metrics for a shop
+router.post('/:id/performance/calculate', async (req: AuthRequest, res: Response) => {
+  try {
+    const { periodType = 'monthly' } = req.body;
+
+    // Calculate period dates
+    const now = new Date();
+    let periodStart: Date;
+    let periodEnd = now;
+
+    switch (periodType) {
+      case 'quarterly':
+        const quarter = Math.floor(now.getMonth() / 3);
+        periodStart = new Date(now.getFullYear(), quarter * 3, 1);
+        break;
+      case 'yearly':
+        periodStart = new Date(now.getFullYear(), 0, 1);
+        break;
+      case 'monthly':
+      default:
+        periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+    }
+
+    const performance = await shopPerformanceService.calculateShopPerformance(
+      req.params.id,
+      periodStart,
+      periodEnd,
+      periodType as 'monthly' | 'quarterly' | 'yearly',
+      req.user!.companyId
+    );
+
+    res.json(performance);
+  } catch (error) {
+    console.error('Calculate shop performance error:', error);
+    res.status(500).json({ message: 'Failed to calculate shop performance' });
+  }
+});
+
+// Check if shop has performance concerns (for planning grid alerts)
+router.get('/:id/performance/concerns', async (req: AuthRequest, res: Response) => {
+  try {
+    const scorecard = await shopPerformanceService.getShopScorecard(
+      req.params.id,
+      req.user!.companyId
+    );
+
+    const concerns = shopPerformanceService.hasPerformanceConcerns(scorecard);
+
+    res.json({
+      shopId: req.params.id,
+      shopName: scorecard.shop.name,
+      ...concerns,
+      performanceScore: scorecard.metrics.performanceScore,
+    });
+  } catch (error) {
+    console.error('Get shop performance concerns error:', error);
+    res.status(500).json({ message: 'Failed to get shop performance concerns' });
+  }
+});
+
 export default router;
