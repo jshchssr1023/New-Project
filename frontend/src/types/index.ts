@@ -19,7 +19,8 @@ export interface Company {
 
 export interface Car {
   id: string;
-  vehicleNumber: string;
+  railcarNumber: string;
+  vehicleNumber?: string; // Legacy alias for railcarNumber
   carType: string;
   isTankCar: boolean;
   commodity: string;
@@ -211,7 +212,7 @@ export interface AnalyticsData {
   monthlyServiceCounts: { month: string; count: number }[];
   shopPerformance: { shopId: string; shopName: string; utilization: number; avgTurnTime: number }[];
   costBreakdown: { category: string; amount: number }[];
-  upcomingServices: { carId: string; vehicleNumber: string; scheduledDate: string; shopName: string }[];
+  upcomingServices: { carId: string; railcarNumber: string; scheduledDate: string; shopName: string }[];
 }
 
 export interface AuthResponse {

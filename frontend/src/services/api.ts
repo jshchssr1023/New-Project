@@ -325,6 +325,27 @@ export const plansApi = {
     await apiClient.delete(`/plans/${planId}/assignments/${assignmentId}`);
   },
 
+  // Bulk add assignments (for committing scenarios to plans)
+  bulkAddAssignments: async (
+    planId: string,
+    assignments: Array<{
+      carId: string;
+      shopId: string;
+      scheduledMonth: string;
+      estimatedCost?: number;
+      estimatedDuration?: number;
+      status?: string;
+    }>
+  ): Promise<{ message: string; success: number; failed: number; errors: { carId: string; error: string }[] }> => {
+    const response = await apiClient.post<{
+      message: string;
+      success: number;
+      failed: number;
+      errors: { carId: string; error: string }[];
+    }>(`/plans/${planId}/assignments/bulk`, { assignments });
+    return response.data;
+  },
+
   getGrid: async (planId: string): Promise<{ shops: Shop[]; months: string[]; assignments: PlanAssignment[][] }> => {
     const response = await apiClient.get<{ shops: Shop[]; months: string[]; assignments: PlanAssignment[][] }>(
       `/plans/${planId}/grid`

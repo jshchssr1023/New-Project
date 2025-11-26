@@ -365,6 +365,68 @@ router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Bulk add assignments to plan
+router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { assignments } = req.body;
+
+  if (!Array.isArray(assignments) || assignments.length === 0) {
+    res.status(400).json({ message: 'No assignments provided' });
+    return;
+  }
+
+  try {
+    const plan = await prisma.plan.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+    });
+
+    if (!plan) {
+      res.status(404).json({ message: 'Plan not found' });
+      return;
+    }
+
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as { carId: string; error: string }[],
+    };
+
+    for (const assignment of assignments) {
+      try {
+        await prisma.planAssignment.create({
+          data: {
+            planId: req.params.id,
+            carId: assignment.carId,
+            shopId: assignment.shopId,
+            scheduledMonth: assignment.scheduledMonth,
+            estimatedCost: assignment.estimatedCost || 0,
+            estimatedDuration: assignment.estimatedDuration || 14,
+            status: assignment.status || 'pending',
+          },
+        });
+        results.success++;
+      } catch (error: any) {
+        results.failed++;
+        results.errors.push({
+          carId: assignment.carId,
+          error: error.message || 'Failed to create assignment',
+        });
+      }
+    }
+
+    res.json({
+      message: `Created ${results.success} assignments${results.failed > 0 ? `, ${results.failed} failed` : ''}`,
+      ...results,
+    });
+  } catch (error) {
+    console.error('Bulk assignment error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Export plan to Excel (CSV format)
 router.get('/:id/export', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;

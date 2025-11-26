@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowDownTrayIcon,
   PlusIcon,
@@ -14,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { plansApi, shopsApi, carsApi } from '../services/api';
 import type { Plan, Shop, PlanAssignment, Car } from '../types';
+import { getCellColorClasses, getBorderColorClass, isCapacityWarning, getUtilizationPercent } from '../utils/utilizationColors';
 
 const months = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -32,6 +34,8 @@ const SHOPPING_TYPES = [
 ];
 
 export default function PlanningGrid() {
+  const navigate = useNavigate();
+
   // Data state
   const [plans, setPlans] = useState<Plan[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
@@ -67,6 +71,11 @@ export default function PlanningGrid() {
   // UI state
   const [carPanelOpen, setCarPanelOpen] = useState(true);
   const [isAssigning, setIsAssigning] = useState(false);
+
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOverCell, setDragOverCell] = useState<{ shopId: string; monthIndex: number } | null>(null);
+  const dragGhostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadInitialData();
@@ -137,7 +146,7 @@ export default function PlanningGrid() {
       if (carSearchQuery) {
         const query = carSearchQuery.toLowerCase();
         const matchesSearch =
-          car.vehicleNumber.toLowerCase().includes(query) ||
+          car.railcarNumber.toLowerCase().includes(query) ||
           car.customer?.toLowerCase().includes(query) ||
           car.projectNumber?.toLowerCase().includes(query);
         if (!matchesSearch) return false;
@@ -181,16 +190,8 @@ export default function PlanningGrid() {
     return assignments.filter(a => a.shopId === shopId && a.scheduledMonth === monthKey);
   };
 
-  // Get cell color based on utilization (per spec: 0-49% Blue, 50-79% Yellow, 80-95% Green, >95% Red)
-  const getCellColor = (count: number, capacity: number): string => {
-    if (capacity === 0) return 'bg-steel-100';
-    const utilization = (count / capacity) * 100;
-    if (count === 0) return 'bg-steel-50 hover:bg-steel-100';
-    if (utilization < 50) return 'bg-blue-100 hover:bg-blue-200 border-blue-300';
-    if (utilization < 80) return 'bg-yellow-100 hover:bg-yellow-200 border-yellow-300';
-    if (utilization <= 95) return 'bg-green-100 hover:bg-green-200 border-green-300';
-    return 'bg-red-100 hover:bg-red-200 border-red-400';
-  };
+  // Use centralized utilization color utilities
+  const getCellColor = getCellColorClasses;
 
   // Get utilization percentage
   const getUtilization = (count: number, capacity: number): number => {
@@ -331,6 +332,116 @@ export default function PlanningGrid() {
     return shops.find(s => s.id === shopId)?.name || 'Unknown';
   };
 
+  // Navigate to car details with filter
+  const handleRailcarClick = (e: React.MouseEvent, railcarNumber: string) => {
+    e.stopPropagation(); // Prevent card selection
+    navigate(`/cars?search=${encodeURIComponent(railcarNumber)}`);
+  };
+
+  // Use centralized utilization border color utility
+  const getUtilizationBorderColor = getBorderColorClass;
+
+  // Drag-and-drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, carId: string) => {
+    // If the dragged car is not selected, add it to selection
+    if (!selectedCarIds.has(carId)) {
+      setSelectedCarIds(new Set([carId]));
+    }
+
+    // Set drag data
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', JSON.stringify({
+      carIds: selectedCarIds.has(carId) ? Array.from(selectedCarIds) : [carId]
+    }));
+
+    // Create custom drag ghost
+    const ghost = dragGhostRef.current;
+    if (ghost) {
+      const count = selectedCarIds.has(carId) ? selectedCarIds.size : 1;
+      ghost.textContent = `${count} railcar${count > 1 ? 's' : ''}`;
+      ghost.style.display = 'block';
+      e.dataTransfer.setDragImage(ghost, 50, 20);
+      // Hide ghost after a moment
+      setTimeout(() => {
+        ghost.style.display = 'none';
+      }, 0);
+    }
+
+    setIsDragging(true);
+  }, [selectedCarIds]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+    setDragOverCell(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, shopId: string, monthIndex: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverCell({ shopId, monthIndex });
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverCell(null);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, shopId: string, monthIndex: number) => {
+    e.preventDefault();
+    setDragOverCell(null);
+    setIsDragging(false);
+
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+      const carIds = data.carIds as string[];
+
+      if (!selectedPlan || carIds.length === 0) return;
+
+      // Use the drop target as the assignment target
+      setSelectedShopId(shopId);
+      setSelectedMonth(monthIndex);
+
+      // Validate before assignment
+      const carIdSet = new Set(carIds);
+      const validation = validateAssignment(carIdSet, shopId);
+
+      if (!validation.valid) {
+        setValidationErrors(validation.errors);
+        return;
+      }
+
+      // If there are only warnings, confirm with user
+      const warnings = validation.errors.filter(error => error.startsWith('Warning'));
+      if (warnings.length > 0) {
+        const proceed = confirm(`${warnings.join('\n')}\n\nDo you want to proceed?`);
+        if (!proceed) return;
+      }
+
+      setIsAssigning(true);
+      const scheduledMonth = `${selectedYear}-${String(monthIndex + 1).padStart(2, '0')}`;
+      const shop = shops.find(s => s.id === shopId);
+
+      for (const carId of carIds) {
+        await plansApi.addAssignment(selectedPlan.id, {
+          carId,
+          shopId,
+          scheduledMonth,
+          estimatedCost: shop?.baseCostPerCar || 15000,
+          estimatedDuration: shop?.baseTurnTime || 14,
+          status: 'pending',
+        });
+      }
+
+      // Reload and clear selection
+      await loadPlanAssignments();
+      setSelectedCarIds(new Set());
+      setValidationErrors([]);
+    } catch (error) {
+      console.error('Drop assignment failed:', error);
+    } finally {
+      setIsAssigning(false);
+    }
+  }, [selectedPlan, selectedYear, shops, validateAssignment]);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -344,6 +455,13 @@ export default function PlanningGrid() {
 
   return (
     <div className="flex h-[calc(100vh-140px)]">
+      {/* Custom Drag Ghost */}
+      <div
+        ref={dragGhostRef}
+        className="fixed -top-20 -left-20 bg-rail-600 text-white px-4 py-2 rounded-lg shadow-lg font-medium z-50 pointer-events-none"
+        style={{ display: 'none' }}
+      />
+
       {/* Cars Panel (Left) */}
       <div className={`${carPanelOpen ? 'w-96' : 'w-0'} transition-all duration-300 overflow-hidden border-r border-steel-200 bg-white flex flex-col`}>
         <div className="p-4 border-b border-steel-200 bg-steel-50">
@@ -439,15 +557,23 @@ export default function PlanningGrid() {
             return (
               <div
                 key={car.id}
-                className={`p-3 border-b border-steel-100 cursor-pointer transition-colors ${
+                draggable
+                onDragStart={(e) => handleDragStart(e, car.id)}
+                onDragEnd={handleDragEnd}
+                className={`p-3 border-b border-steel-100 cursor-grab active:cursor-grabbing transition-colors ${
                   isSelected ? 'bg-rail-50 border-l-4 border-l-rail-500' : 'hover:bg-steel-50'
-                }`}
+                } ${isDragging && isSelected ? 'opacity-50' : ''}`}
                 onClick={() => toggleCarSelection(car.id)}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-steel-900">{car.vehicleNumber}</span>
+                      <button
+                        onClick={(e) => handleRailcarClick(e, car.railcarNumber)}
+                        className="font-medium text-rail-600 hover:text-rail-800 hover:underline"
+                      >
+                        {car.railcarNumber}
+                      </button>
                       {car.isTankCar && (
                         <span className="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 rounded font-medium">
                           🛢️ TANK
@@ -659,16 +785,17 @@ export default function PlanningGrid() {
         {/* Grid */}
         <div className="flex-1 overflow-auto p-4">
           <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full">
-              <thead>
+            <table className="min-w-full border-collapse">
+              <thead className="sticky top-0 z-20">
                 <tr className="bg-steel-800 text-white">
-                  <th className="sticky left-0 z-10 bg-steel-800 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-r border-steel-700 min-w-[200px]">
+                  {/* Shop column header - sticky both top and left for corner lock */}
+                  <th className="sticky left-0 top-0 z-30 bg-steel-800 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-r border-steel-700 min-w-[200px]">
                     Shop
                   </th>
                   {months.map((month, idx) => (
                     <th
                       key={month}
-                      className={`px-2 py-3 text-center text-xs font-medium uppercase tracking-wider min-w-[80px] ${
+                      className={`px-2 py-3 text-center text-xs font-medium uppercase tracking-wider min-w-[80px] bg-steel-800 ${
                         selectedMonth === idx ? 'bg-rail-600' : ''
                       }`}
                     >
@@ -702,16 +829,23 @@ export default function PlanningGrid() {
                         const cellAssignments = getCellAssignments(shop.id, idx);
                         const count = cellAssignments.length;
                         const isSelected = selectedShopId === shop.id && selectedMonth === idx;
+                        const isDragOver = dragOverCell?.shopId === shop.id && dragOverCell?.monthIndex === idx;
+                        const newCount = isDragging ? count + selectedCarIds.size : count;
 
                         return (
                           <td
                             key={idx}
-                            className={`px-2 py-3 text-center cursor-pointer transition-all border ${
-                              isSelected
-                                ? 'ring-2 ring-rail-500 ring-inset bg-rail-100'
-                                : getCellColor(count, shop.capacity)
+                            className={`px-2 py-3 text-center cursor-pointer transition-all ${
+                              isDragOver
+                                ? `border-4 ${getUtilizationBorderColor(newCount, shop.capacity)} bg-opacity-50`
+                                : isSelected
+                                  ? 'ring-2 ring-rail-500 ring-inset bg-rail-100 border'
+                                  : `border ${getCellColor(count, shop.capacity)}`
                             }`}
                             onClick={() => handleCellClick(shop.id, idx)}
+                            onDragOver={(e) => handleDragOver(e, shop.id, idx)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, shop.id, idx)}
                           >
                             {count > 0 ? (
                               <div className="text-sm font-medium text-steel-900">{count}</div>
@@ -779,9 +913,12 @@ export default function PlanningGrid() {
                   key={assignment.id}
                   className="flex items-center gap-2 px-3 py-2 bg-steel-50 rounded-lg"
                 >
-                  <span className="font-medium text-steel-900">
-                    {assignment.car?.vehicleNumber || 'Unknown'}
-                  </span>
+                  <button
+                    onClick={() => assignment.car?.railcarNumber && navigate(`/cars?search=${encodeURIComponent(assignment.car.railcarNumber)}`)}
+                    className="font-medium text-rail-600 hover:text-rail-800 hover:underline"
+                  >
+                    {assignment.car?.railcarNumber || 'Unknown'}
+                  </button>
                   <span className="text-xs text-steel-500">
                     {assignment.car?.carType}
                   </span>
