@@ -11,6 +11,8 @@ import type {
   PaginatedResponse,
   PlanAssignment,
   ShopRecommendation,
+  ReportGenerationConfig,
+  ReportData,
 } from '../types';
 
 // Import result types for car bulk import
@@ -380,6 +382,25 @@ export const plansApi = {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  // Generate report document with recipient type configuration
+  generateReport: async (config: ReportGenerationConfig): Promise<ReportData> => {
+    const response = await apiClient.post<ReportData>(`/plans/${config.planId}/generate-report`, {
+      recipientType: config.recipientType,
+      dateRange: config.dateRange,
+      includeConfidentialStatement: config.includeConfidentialStatement,
+      hideCostData: config.hideCostData,
+    });
+    return response.data;
+  },
+
+  // Get report data for printing
+  getReportData: async (id: string, recipientType: 'internal' | 'external' = 'internal'): Promise<ReportData> => {
+    const response = await apiClient.get<ReportData>(`/plans/${id}/report-data`, {
+      params: { recipientType },
+    });
+    return response.data;
   },
 };
 
