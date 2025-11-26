@@ -125,7 +125,8 @@ export interface PlanAssignment {
 
 export interface Scenario {
   id: string;
-  name: string;
+  projectNumber: string; // Required project identifier (e.g., Q4-25-001)
+  name: string; // Scenario name (e.g., "Initial Proposal")
   description: string;
   customerFilter: string;
   basePlanId: string | null;

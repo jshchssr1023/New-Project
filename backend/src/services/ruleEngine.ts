@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import shopPerformanceService from './shopPerformanceService';
 
 interface Car {
   id: string;
@@ -9,6 +10,10 @@ interface Car {
   homeRegion: string;
   reasonShopped: string;
 }
+
+// Cache for performance scores to avoid repeated DB calls
+const performanceScoreCache = new Map<string, { score: number; concerns: { hasConcerns: boolean; severity: string; reasons: string[] }; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 interface Shop {
   id: string;
@@ -44,6 +49,7 @@ interface ShopScore {
   estimatedDays: number;
   capacityAvailable: number;
   isRecommended: boolean;
+  performanceAlertSeverity?: 'none' | 'warning' | 'critical';
 }
 
 interface RuleEngineResult {
@@ -105,7 +111,56 @@ const defaultRules: Omit<ShopRule, 'id'>[] = [
     conditions: JSON.stringify({ preferFasterTurn: true }),
     actions: JSON.stringify({ scoreWeight: 0.1 }),
   },
+  {
+    name: 'Shop Performance Score',
+    ruleType: 'performance',
+    priority: 85, // High priority - after capacity but before other factors
+    isActive: true,
+    conditions: JSON.stringify({ usePerformanceMetrics: true }),
+    actions: JSON.stringify({
+      performanceWeight: 0.25, // 25% of score from performance
+      penaltyForCritical: -30, // Penalty for shops with critical alerts
+      penaltyForWarning: -15, // Penalty for shops with warning alerts
+    }),
+  },
 ];
+
+// Helper function to get cached or fresh performance score
+async function getShopPerformanceScore(
+  shopId: string,
+  companyId: string
+): Promise<{ score: number; concerns: { hasConcerns: boolean; severity: string; reasons: string[] } }> {
+  const cacheKey = `${shopId}-${companyId}`;
+  const cached = performanceScoreCache.get(cacheKey);
+  const now = Date.now();
+
+  if (cached && (now - cached.timestamp) < CACHE_TTL) {
+    return { score: cached.score, concerns: cached.concerns };
+  }
+
+  try {
+    const scorecard = await shopPerformanceService.getShopScorecard(shopId, companyId);
+    const concerns = shopPerformanceService.hasPerformanceConcerns(scorecard);
+
+    const result = {
+      score: scorecard.metrics.performanceScore,
+      concerns,
+    };
+
+    performanceScoreCache.set(cacheKey, {
+      ...result,
+      timestamp: now,
+    });
+
+    return result;
+  } catch (error) {
+    // If performance data unavailable, return neutral score
+    return {
+      score: 50,
+      concerns: { hasConcerns: false, severity: 'none', reasons: [] },
+    };
+  }
+}
 
 export async function evaluateShopForCar(
   prisma: PrismaClient,
@@ -113,10 +168,12 @@ export async function evaluateShopForCar(
   shop: Shop,
   month: string,
   rules: ShopRule[],
-  shopCapacity: Map<string, number>
+  shopCapacity: Map<string, number>,
+  companyId?: string
 ): Promise<ShopScore> {
   let score = 50; // Base score
   const reasons: string[] = [];
+  let performanceAlertSeverity: 'none' | 'warning' | 'critical' = 'none';
 
   // Parse shop JSON fields
   const capabilities = shop.capabilities ? JSON.parse(shop.capabilities) : [];
@@ -143,6 +200,36 @@ export async function evaluateShopForCar(
           const capacityBonus = Math.min(10, capacityAvailable * 2);
           score += capacityBonus;
           reasons.push(`Capacity available: ${capacityAvailable}`);
+        }
+        break;
+
+      case 'performance':
+        if (companyId && conditions.usePerformanceMetrics) {
+          try {
+            const perfData = await getShopPerformanceScore(shop.id, companyId);
+
+            // Add weighted performance score
+            const perfWeight = actions.performanceWeight || 0.25;
+            const perfBonus = (perfData.score - 50) * perfWeight; // Normalize around 50
+            score += perfBonus;
+
+            // Apply penalties for shops with alerts
+            if (perfData.concerns.hasConcerns) {
+              if (perfData.concerns.severity === 'critical') {
+                score += actions.penaltyForCritical || -30;
+                performanceAlertSeverity = 'critical';
+                reasons.push(`⚠️ Critical performance issues: ${perfData.concerns.reasons[0]}`);
+              } else if (perfData.concerns.severity === 'warning') {
+                score += actions.penaltyForWarning || -15;
+                performanceAlertSeverity = 'warning';
+                reasons.push(`⚡ Performance warning: ${perfData.concerns.reasons[0]}`);
+              }
+            } else if (perfData.score >= 70) {
+              reasons.push(`✓ Strong performance record (${perfData.score.toFixed(0)})`);
+            }
+          } catch (error) {
+            // Performance data unavailable, continue without penalty
+          }
         }
         break;
 
@@ -200,6 +287,7 @@ export async function evaluateShopForCar(
     estimatedDays: shop.baseTurnTime,
     capacityAvailable,
     isRecommended: score > 60,
+    performanceAlertSeverity,
   };
 }
 
@@ -246,7 +334,7 @@ export async function recommendShopsForCar(
   // Score each shop
   const scores: ShopScore[] = [];
   for (const shop of shops) {
-    const score = await evaluateShopForCar(prisma, car, shop as Shop, month, rules, shopCapacity);
+    const score = await evaluateShopForCar(prisma, car, shop as Shop, month, rules, shopCapacity, companyId);
     if (score.score > -100) { // Include shops that aren't completely excluded
       scores.push(score);
     }

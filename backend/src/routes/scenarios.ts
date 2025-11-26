@@ -106,11 +106,42 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 // Create scenario
 router.post('/', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { name, description, customerFilter, basePlanId } = req.body;
+  const { projectNumber, name, description, customerFilter, basePlanId } = req.body;
+
+  // Validate required projectNumber
+  if (!projectNumber) {
+    res.status(400).json({
+      message: 'Project Number is required',
+      field: 'projectNumber',
+      hint: 'Format: Q4-25-001 or similar project identifier',
+    });
+    return;
+  }
+
+  // Validate projectNumber format (flexible pattern)
+  const projectNumberPattern = /^[A-Za-z0-9][-A-Za-z0-9_]{2,}$/;
+  if (!projectNumberPattern.test(projectNumber)) {
+    res.status(400).json({
+      message: 'Invalid Project Number format',
+      field: 'projectNumber',
+      hint: 'Must start with alphanumeric and be at least 3 characters (e.g., Q4-25-001)',
+    });
+    return;
+  }
+
+  if (!name) {
+    res.status(400).json({
+      message: 'Scenario Name is required',
+      field: 'name',
+      hint: 'E.g., "Initial Proposal" or "Revised Budget Plan"',
+    });
+    return;
+  }
 
   try {
     const scenario = await prisma.scenario.create({
       data: {
+        projectNumber: projectNumber.toUpperCase(),
         name,
         description: description || '',
         customerFilter: customerFilter || '',

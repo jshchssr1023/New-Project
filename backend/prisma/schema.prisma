@@ -179,22 +179,25 @@ model PlanAssignment {
 }
 
 model Scenario {
-  id            String                 @id @default(uuid())
-  name          String
-  description   String                 @default("")
-  customerFilter String                @default("") // Filter by customer
-  basePlanId    String?                // Optional base plan
-  basePlan      Plan?                  @relation(fields: [basePlanId], references: [id])
-  status        String                 @default("draft") // draft, analyzing, completed
-  cars          ScenarioCar[]
-  modifications ScenarioModification[]
-  results       String?                // JSON string for results
-  companyId     String
-  company       Company                @relation(fields: [companyId], references: [id])
-  createdBy     String
-  creator       User                   @relation("ScenarioCreator", fields: [createdBy], references: [id])
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
+  id             String                 @id @default(uuid())
+  projectNumber  String                 // Required: e.g., Q4-25-001 (replaces Plan ID)
+  name           String                 // Scenario Name: e.g., "Initial Proposal", "Revised Budget Plan"
+  description    String                 @default("")
+  customerFilter String                 @default("") // Filter by customer
+  basePlanId     String?                // Optional base plan
+  basePlan       Plan?                  @relation(fields: [basePlanId], references: [id])
+  status         String                 @default("draft") // draft, analyzing, completed
+  cars           ScenarioCar[]
+  modifications  ScenarioModification[]
+  results        String?                // JSON string for results
+  companyId      String
+  company        Company                @relation(fields: [companyId], references: [id])
+  createdBy      String
+  creator        User                   @relation("ScenarioCreator", fields: [createdBy], references: [id])
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  @@index([projectNumber, companyId])
 }
 
 // Cars selected for a scenario
@@ -225,4 +228,131 @@ model ScenarioModification {
   targetId   String
   changes    String   // JSON string for changes
   createdAt  DateTime @default(now())
+}
+
+// Audit log for tracking all data changes
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  userEmail   String
+  action      String   // create, update, delete, commit, assign, export
+  entityType  String   // Car, Shop, Plan, PlanAssignment, Scenario, User
+  entityId    String
+  entityName  String   @default("") // Human-readable name for the entity
+  changes     String   // JSON: { field: { old: value, new: value } }
+  metadata    String   @default("{}") // Additional context as JSON
+  ipAddress   String   @default("")
+  userAgent   String   @default("")
+  companyId   String
+  createdAt   DateTime @default(now())
+
+  @@index([companyId, entityType, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Role-based permissions configuration
+model RolePermission {
+  id           String   @id @default(uuid())
+  role         String   // admin, planner, viewer, approver, finance
+  permission   String   // entity:action format (e.g., "plan:commit", "shop:edit", "cost:view")
+  isGranted    Boolean  @default(true)
+  companyId    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([role, permission, companyId])
+}
+
+// Field-level security configuration
+model FieldSecurity {
+  id            String   @id @default(uuid())
+  entityType    String   // Shop, Car, Plan, etc.
+  fieldName     String   // laborRate, projectedCost, etc.
+  visibleRoles  String   // JSON array of roles that can view
+  editableRoles String   // JSON array of roles that can edit
+  maskType      String   @default("hidden") // hidden, masked, readonly
+  companyId     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([entityType, fieldName, companyId])
+}
+
+// Shop performance metrics (calculated periodically)
+model ShopPerformance {
+  id                   String   @id @default(uuid())
+  shopId               String
+  periodStart          DateTime // Start of measurement period
+  periodEnd            DateTime // End of measurement period
+  periodType           String   @default("monthly") // monthly, quarterly, yearly
+
+  // Turn Time / MTTR metrics
+  averageTurnTime      Float    @default(0) // Average days from arrival to release
+  turnTimeByRepairType String   @default("{}") // JSON: { "qualification": 12, "repair": 18 }
+
+  // On-Time Performance (OTP)
+  totalCompleted       Int      @default(0)
+  onTimeCompleted      Int      @default(0)
+  onTimeRate           Float    @default(0) // Percentage 0-100
+
+  // Dwell Time
+  averageDwellTime     Float    @default(0) // Days waiting before work begins
+
+  // Quality metrics
+  totalReleased        Int      @default(0)
+  reworkCount          Int      @default(0)
+  reworkRate           Float    @default(0) // Percentage of cars returning within 90 days
+
+  // Cost metrics
+  totalEstimatedCost   Float    @default(0)
+  totalActualCost      Float    @default(0)
+  costVariance         Float    @default(0) // Percentage difference (positive = over budget)
+
+  // Composite score (weighted calculation)
+  performanceScore     Float    @default(0) // 0-100 weighted score
+
+  companyId            String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([shopId, periodStart, periodEnd, periodType])
+  @@index([shopId, periodType, createdAt])
+}
+
+// Custom report templates
+model ReportTemplate {
+  id              String   @id @default(uuid())
+  name            String
+  description     String   @default("")
+  entityType      String   // Car, Shop, Plan, Assignment, Scenario
+  columns         String   // JSON array of column definitions
+  filters         String   @default("[]") // JSON array of saved filter criteria
+  sortConfig      String   @default("{}") // JSON: { field, direction }
+  groupBy         String   @default("") // Optional grouping field
+  outputFormats   String   @default("[\"csv\"]") // JSON array: ["csv", "pdf", "xlsx"]
+  isPublic        Boolean  @default(false) // Shared with all company users
+  createdById     String
+  companyId       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Scheduled report jobs
+model ScheduledReport {
+  id              String    @id @default(uuid())
+  name            String
+  templateId      String
+  schedule        String    // Cron expression: "0 8 * * 1" = 8AM every Monday
+  timezone        String    @default("America/Chicago")
+  outputFormat    String    @default("pdf") // pdf, csv, xlsx
+  recipients      String    // JSON array of email addresses
+  isActive        Boolean   @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  lastRunStatus   String    @default("pending") // pending, success, failed
+  lastRunError    String    @default("")
+  createdById     String
+  companyId       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
