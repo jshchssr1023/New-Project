@@ -27,9 +27,20 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   const pageSizeNum = parseInt(pageSize as string);
 
   try {
+    // Handle comma-separated status values (e.g., "available,scheduled")
+    let statusFilter: any = undefined;
+    if (status) {
+      const statusValues = (status as string).split(',').map(s => s.trim());
+      if (statusValues.length === 1) {
+        statusFilter = statusValues[0];
+      } else {
+        statusFilter = { in: statusValues };
+      }
+    }
+
     const where = {
       companyId: req.user!.companyId,
-      ...(status && { status: status as string }),
+      ...(statusFilter && { status: statusFilter }),
       ...(customer && { customer: customer as string }),
       ...(reasonShopped && { reasonShopped: reasonShopped as string }),
       ...(carType && { carType: carType as string }),

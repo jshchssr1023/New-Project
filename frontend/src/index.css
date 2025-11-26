@@ -2,28 +2,62 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Soft contrast: off-white background, dark gray text */
 body {
-  @apply bg-steel-50 text-steel-900 antialiased;
+  @apply antialiased;
+  background-color: #F9FAFB;
+  color: #333333;
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-rail-600 hover:bg-rail-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    @apply bg-rail-600 hover:bg-rail-700 text-white font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm;
   }
 
   .btn-secondary {
-    @apply bg-steel-200 hover:bg-steel-300 text-steel-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+    @apply bg-steel-100 hover:bg-steel-200 text-steel-700 font-medium py-1.5 px-3 rounded-md transition-colors duration-200 text-sm;
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-steel-200 p-6;
+    @apply bg-white rounded-lg shadow-sm border border-steel-200 p-4;
   }
 
   .input {
-    @apply w-full px-4 py-2 border border-steel-300 rounded-lg focus:ring-2 focus:ring-rail-500 focus:border-rail-500 outline-none transition-all duration-200;
+    @apply w-full px-3 py-1.5 text-sm border border-steel-300 rounded-md focus:ring-2 focus:ring-rail-500 focus:border-rail-500 outline-none transition-all duration-200;
   }
 
   .label {
-    @apply block text-sm font-medium text-steel-700 mb-1;
+    @apply block text-sm font-medium text-steel-600 mb-1;
+  }
+
+  /* Compact table styles */
+  .table-compact th,
+  .table-compact td {
+    @apply px-3 py-2 text-sm;
+  }
+
+  .table-compact th {
+    @apply font-medium text-xs uppercase tracking-wide;
+  }
+
+  /* Status badge styles - softer, muted colors */
+  .badge-available {
+    @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
+  }
+
+  .badge-scheduled {
+    @apply bg-blue-50 text-blue-700 border border-blue-200;
+  }
+
+  .badge-in_service {
+    @apply bg-amber-50 text-amber-700 border border-amber-200;
+  }
+
+  .badge-in_shop {
+    @apply bg-violet-50 text-violet-700 border border-violet-200;
+  }
+
+  .badge-retired {
+    @apply bg-steel-100 text-steel-600 border border-steel-200;
   }
 }

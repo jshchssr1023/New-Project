@@ -209,10 +209,43 @@ export interface AnalyticsData {
   totalShops: number;
   activePlans: number;
   carsInService: number;
+  carsInQueue: number;
+  totalCarsInShop: number;
+  shopsWithCars: number;
+  activeScenarios: number;
   monthlyServiceCounts: { month: string; count: number }[];
   shopPerformance: { shopId: string; shopName: string; utilization: number; avgTurnTime: number }[];
   costBreakdown: { category: string; amount: number }[];
   upcomingServices: { carId: string; railcarNumber: string; scheduledDate: string; shopName: string }[];
+  myQueue: {
+    id: string;
+    railcarNumber: string;
+    customer: string;
+    reasonShopped: string;
+    nextServiceDue: string | null;
+    daysUntilDue: number | null;
+  }[];
+  inShopStatus: {
+    id: string;
+    railcarNumber: string;
+    customer: string;
+    status: string;
+    shopName: string;
+    shopCode: string;
+    daysInShop: number;
+    shopEntryDate: string | null;
+  }[];
+  alerts: {
+    overdueCars: number;
+    capacityAlerts: {
+      shopName: string;
+      shopCode: string;
+      capacity: number;
+      currentLoad: number;
+      overloadPercent: number;
+    }[];
+    hasAlerts: boolean;
+  };
 }
 
 export interface AuthResponse {
