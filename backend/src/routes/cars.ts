@@ -1,6 +1,19 @@
 import { Router, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import {
+  analyzeHeaders,
+  transformCarRecord,
+  normalizeStatus,
+  convertToBoolean,
+  convertToFloat,
+  convertToInt,
+  convertToDate,
+  mapHeaderToField,
+  VALID_STATUSES,
+  REQUIRED_FIELDS,
+  VALID_SYSTEM_FIELDS,
+} from '../utils/importTransformers';
 
 const router = Router();
 
@@ -284,17 +297,51 @@ router.delete('/bulk', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Bulk import railcars with detailed results
+// Analyze headers for import mapping (pre-flight check)
+router.post('/bulk-import/analyze', async (req: AuthRequest, res: Response) => {
+  const { headers } = req.body;
+
+  if (!Array.isArray(headers) || headers.length === 0) {
+    res.status(400).json({
+      status: 'failed',
+      error: 'No headers provided for analysis',
+    });
+    return;
+  }
+
+  const analysisResult = analyzeHeaders(headers);
+  res.json(analysisResult);
+});
+
+// Bulk import railcars with data mapping intelligence and detailed results
 router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { cars } = req.body;
+  const { cars, fieldMappings } = req.body;
 
-  const results = {
-    status: 'success' as 'success' | 'partial_success' | 'failed',
+  // Extended result type to include mapping_required status
+  type ImportStatus = 'success' | 'partial_success' | 'failed' | 'mapping_required';
+
+  interface ImportResults {
+    status: ImportStatus;
+    newCarsAdded: number;
+    existingCarsUpdated: number;
+    failedRows: number;
+    errors: { row: number; reason: string }[];
+    warnings: { row: number; message: string }[];
+    // Mapping fields (only present when status is 'mapping_required')
+    detected_headers?: string[];
+    missing_required_fields?: string[];
+    unmapped_headers?: string[];
+    suggested_mappings?: Record<string, string[]>;
+  }
+
+  const results: ImportResults = {
+    status: 'success',
     newCarsAdded: 0,
     existingCarsUpdated: 0,
     failedRows: 0,
-    errors: [] as { row: number; reason: string }[],
+    errors: [],
+    warnings: [],
   };
 
   if (!Array.isArray(cars) || cars.length === 0) {
@@ -304,90 +351,137 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
       existingCarsUpdated: 0,
       failedRows: 0,
       errors: [{ row: 0, reason: 'No cars data provided' }],
+      warnings: [],
     });
     return;
   }
 
   try {
+    // Phase 1: Analyze headers from first record if no explicit mappings provided
+    const firstRecord = cars[0];
+    const detectedHeaders = Object.keys(firstRecord);
+
+    // Check if we need to return mapping_required
+    if (!fieldMappings) {
+      const headerAnalysis = analyzeHeaders(detectedHeaders);
+
+      // If there are missing required fields or unmapped headers, return mapping_required
+      if (headerAnalysis.status === 'mapping_required') {
+        // Only return mapping_required if required fields are missing
+        // Unmapped headers are OK as long as required fields are present
+        if (headerAnalysis.missingRequiredFields.length > 0) {
+          res.json({
+            status: 'mapping_required' as ImportStatus,
+            newCarsAdded: 0,
+            existingCarsUpdated: 0,
+            failedRows: 0,
+            errors: [],
+            warnings: [],
+            detected_headers: headerAnalysis.detectedHeaders,
+            missing_required_fields: headerAnalysis.missingRequiredFields,
+            unmapped_headers: headerAnalysis.unmappedHeaders,
+            suggested_mappings: headerAnalysis.suggestions,
+          });
+          return;
+        }
+      }
+    }
+
+    // Phase 2: Process each car record with transformations
     for (let i = 0; i < cars.length; i++) {
       const car = cars[i];
       const rowNum = i + 2; // Row 1 is header, data starts at row 2
 
-      // Validate required fields
-      if (!car.vehicleNumber) {
-        results.errors.push({ row: rowNum, reason: 'Missing required field: vehicleNumber' });
-        results.failedRows++;
-        continue;
-      }
-
-      // Validate vehicle number format (basic check)
-      if (car.vehicleNumber.length < 4) {
-        results.errors.push({ row: rowNum, reason: `Invalid vehicle number: "${car.vehicleNumber}" (too short)` });
-        results.failedRows++;
-        continue;
-      }
-
-      // Validate status if provided
-      const validStatuses = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
-      if (car.status && !validStatuses.includes(car.status.toLowerCase())) {
-        results.errors.push({ row: rowNum, reason: `Invalid status: "${car.status}". Must be one of: ${validStatuses.join(', ')}` });
-        results.failedRows++;
-        continue;
-      }
-
       try {
+        // Apply field mappings and transformations
+        const transformed = transformCarRecord(car, fieldMappings);
+
+        // Collect warnings
+        for (const warning of transformed.warnings) {
+          results.warnings.push({ row: rowNum, message: warning });
+        }
+
+        // Check for transformation errors
+        if (!transformed.success) {
+          for (const error of transformed.errors) {
+            results.errors.push({ row: rowNum, reason: error });
+          }
+          results.failedRows++;
+          continue;
+        }
+
+        const carData = transformed.data;
+
+        // Validate required fields after transformation
+        if (!carData.vehicleNumber) {
+          results.errors.push({ row: rowNum, reason: 'Missing required field: vehicleNumber' });
+          results.failedRows++;
+          continue;
+        }
+
+        // Validate vehicle number format (basic check)
+        const vehicleNum = String(carData.vehicleNumber);
+        if (vehicleNum.length < 4) {
+          results.errors.push({ row: rowNum, reason: `Invalid vehicle number: "${vehicleNum}" (too short, minimum 4 characters)` });
+          results.failedRows++;
+          continue;
+        }
+
+        // Validate status - the transformer already normalizes it, but double-check
+        const status = String(carData.status || 'available');
+        if (!VALID_STATUSES.includes(status)) {
+          results.errors.push({ row: rowNum, reason: `Invalid status: "${carData.status}". Must be one of: ${VALID_STATUSES.join(', ')}` });
+          results.failedRows++;
+          continue;
+        }
+
         // Check if car already exists
         const existingCar = await prisma.car.findFirst({
           where: {
-            vehicleNumber: car.vehicleNumber,
+            vehicleNumber: vehicleNum,
             companyId: req.user!.companyId,
           },
         });
 
-        // Determine if it's a tank car
-        const isTankCar = car.isTankCar === true ||
-                          car.isTankCar === 'true' ||
-                          car.isTankCar === 'yes' ||
-                          car.isTankCar === '1' ||
-                          (car.carType && car.carType.toLowerCase().includes('tank'));
-
-        const carData = {
-          vehicleNumber: car.vehicleNumber,
-          carType: car.carType || '',
-          isTankCar: isTankCar,
-          commodity: car.commodity || '',
-          customer: car.customer || '',
-          projectNumber: car.projectNumber || '',
-          reasonShopped: car.reasonShopped || '',
-          status: (car.status || 'available').toLowerCase(),
-          currentLocation: car.currentLocation || '',
-          homeRegion: car.homeRegion || '',
-          originRegion: car.originRegion || '',
-          projectedCost: car.projectedCost ? parseFloat(car.projectedCost) : 0,
-          daysInShop: car.daysInShop ? parseInt(car.daysInShop) : 0,
-          notes: car.notes || '',
-          lastServiceDate: car.lastServiceDate ? new Date(car.lastServiceDate) : null,
-          nextServiceDue: car.nextServiceDue ? new Date(car.nextServiceDue) : null,
+        // Prepare final data for database
+        const dbCarData = {
+          vehicleNumber: vehicleNum,
+          carType: String(carData.carType || ''),
+          isTankCar: Boolean(carData.isTankCar),
+          commodity: String(carData.commodity || ''),
+          customer: String(carData.customer || ''),
+          projectNumber: String(carData.projectNumber || ''),
+          reasonShopped: String(carData.reasonShopped || ''),
+          status: status,
+          currentLocation: String(carData.currentLocation || ''),
+          homeRegion: String(carData.homeRegion || ''),
+          originRegion: String(carData.originRegion || ''),
+          projectedCost: convertToFloat(carData.projectedCost),
+          daysInShop: convertToInt(carData.daysInShop),
+          notes: String(carData.notes || ''),
+          lastServiceDate: convertToDate(carData.lastServiceDate),
+          nextServiceDue: convertToDate(carData.nextServiceDue),
         };
 
         if (existingCar) {
           // Update existing car
           await prisma.car.update({
             where: { id: existingCar.id },
-            data: carData,
+            data: dbCarData,
           });
           results.existingCarsUpdated++;
         } else {
           // Create new car
           await prisma.car.create({
             data: {
-              ...carData,
+              ...dbCarData,
               companyId: req.user!.companyId,
             },
           });
           results.newCarsAdded++;
         }
       } catch (dbError: any) {
+        console.error(`Row ${rowNum} database error:`, dbError);
         results.errors.push({ row: rowNum, reason: `Database error: ${dbError.message}` });
         results.failedRows++;
       }
@@ -411,6 +505,7 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
       existingCarsUpdated: 0,
       failedRows: cars.length,
       errors: [{ row: 0, reason: 'Internal server error during import' }],
+      warnings: [],
     });
   }
 });
