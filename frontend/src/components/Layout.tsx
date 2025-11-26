@@ -176,6 +176,13 @@ export default function Layout() {
               {/* Empty space - logo is in sidebar */}
             </div>
             <div className="flex items-center gap-x-4 lg:gap-x-6">
+              {/* Logo in top right */}
+              <img
+                src="/images/chronos-logo.svg"
+                alt="Chronos"
+                className="h-8 w-auto"
+              />
+
               {/* User menu */}
               <Menu as="div" className="relative">
                 <Menu.Button className="-m-1.5 flex items-center p-1.5">
