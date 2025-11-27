@@ -70,9 +70,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 // Export railcars to CSV
+// Supports two formats: 'standard' (human-readable) and 'umler' (system abbreviations)
 router.get('/export', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
-  const { ids, status, customer, reasonShopped, carType } = req.query;
+  const { ids, status, customer, reasonShopped, carType, format = 'umler' } = req.query;
 
   try {
     let where: any = {
@@ -94,18 +95,28 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
       orderBy: { railcarNumber: 'asc' },
     });
 
-    // Generate CSV content
-    const headers = [
-      'Railcar Number', 'Car Type', 'Is Tank Car', 'Commodity', 'Customer',
-      'Project Number', 'Reason Shopped', 'Status', 'Current Location',
-      'Home Region', 'Origin Region', 'Days In Shop', 'Projected Cost',
-      'Last Service Date', 'Next Service Due', 'Notes'
-    ];
+    // Header formats: UMLER-style abbreviations vs human-readable
+    const headerFormats = {
+      umler: [
+        'car_id', 'car_typ', 'tank_ind', 'commod', 'cust_nm',
+        'proj_no', 'shoppi', 'status', 'location_nm',
+        'home_reg', 'origina', 'days_ir', 'estimat',
+        'arrival_ship_d', 'last_svc_dt', 'next_svc_dt', 'notes'
+      ],
+      standard: [
+        'Railcar Number', 'Car Type', 'Is Tank Car', 'Commodity', 'Customer',
+        'Project Number', 'Reason Shopped', 'Status', 'Current Location',
+        'Home Region', 'Origin Region', 'Days In Shop', 'Projected Cost',
+        'Shop Entry Date', 'Last Service Date', 'Next Service Due', 'Notes'
+      ]
+    };
+
+    const headers = format === 'standard' ? headerFormats.standard : headerFormats.umler;
 
     const rows = cars.map(car => [
       car.railcarNumber,
       car.carType,
-      car.isTankCar ? 'Yes' : 'No',
+      car.isTankCar ? 'Y' : 'N',
       car.commodity,
       car.customer,
       car.projectNumber,
@@ -116,6 +127,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
       car.originRegion,
       car.daysInShop,
       car.projectedCost,
+      car.shopEntryDate ? new Date(car.shopEntryDate).toISOString().split('T')[0] : '',
       car.lastServiceDate ? new Date(car.lastServiceDate).toISOString().split('T')[0] : '',
       car.nextServiceDue ? new Date(car.nextServiceDue).toISOString().split('T')[0] : '',
       car.notes,

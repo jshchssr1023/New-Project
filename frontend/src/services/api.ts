@@ -165,12 +165,14 @@ export const carsApi = {
   },
 
   // Export cars to CSV
+  // Supports two formats: 'umler' (system abbreviations - default) and 'standard' (human-readable)
   exportCars: async (params?: {
     ids?: string[];
     status?: string;
     customer?: string;
     reasonShopped?: string;
     carType?: string;
+    format?: 'umler' | 'standard';
   }): Promise<void> => {
     const queryParams: Record<string, string> = {};
     if (params?.ids?.length) {
@@ -180,6 +182,7 @@ export const carsApi = {
     if (params?.customer) queryParams.customer = params.customer;
     if (params?.reasonShopped) queryParams.reasonShopped = params.reasonShopped;
     if (params?.carType) queryParams.carType = params.carType;
+    if (params?.format) queryParams.format = params.format;
 
     const response = await apiClient.get('/cars/export', {
       params: queryParams,
