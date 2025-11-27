@@ -603,13 +603,41 @@ export function convertToDate(value: unknown): Date | null {
 
 /**
  * Normalizes a header name for lookup in the synonym dictionary.
+ * Returns multiple variations to try for flexible matching.
  */
 export function normalizeHeaderName(header: string): string {
   return header
     .toLowerCase()
     .trim()
-    .replace(/[_\-]/g, ' ')  // Replace underscores and hyphens with spaces
-    .replace(/\s+/g, ' ');    // Collapse multiple spaces
+    .replace(/\s+/g, ' ');    // Collapse multiple spaces but preserve underscores
+}
+
+/**
+ * Generate all possible variations of a header for lookup
+ */
+function getHeaderVariations(header: string): string[] {
+  const base = header.toLowerCase().trim();
+  const variations = new Set<string>();
+
+  // Original lowercase
+  variations.add(base);
+
+  // With underscores replaced by spaces
+  variations.add(base.replace(/[_\-]/g, ' ').replace(/\s+/g, ' ').trim());
+
+  // With spaces replaced by underscores
+  variations.add(base.replace(/[\s\-]/g, '_').replace(/_+/g, '_'));
+
+  // No spaces or underscores (concatenated)
+  variations.add(base.replace(/[\s_\-]/g, ''));
+
+  // With hyphens replaced by underscores
+  variations.add(base.replace(/-/g, '_'));
+
+  // With hyphens replaced by spaces
+  variations.add(base.replace(/-/g, ' '));
+
+  return Array.from(variations);
 }
 
 /**
@@ -619,22 +647,19 @@ export function normalizeHeaderName(header: string): string {
  * @returns The mapped system field name or null if not recognized
  */
 export function mapHeaderToField(header: string): string | null {
-  const normalized = normalizeHeaderName(header);
+  // Try all variations of the header
+  const variations = getHeaderVariations(header);
 
-  // Direct lookup in synonyms
-  if (HEADER_SYNONYMS[normalized]) {
-    return HEADER_SYNONYMS[normalized];
-  }
-
-  // Try without spaces
-  const noSpaces = normalized.replace(/\s/g, '');
-  if (HEADER_SYNONYMS[noSpaces]) {
-    return HEADER_SYNONYMS[noSpaces];
+  for (const variant of variations) {
+    if (HEADER_SYNONYMS[variant]) {
+      return HEADER_SYNONYMS[variant];
+    }
   }
 
   // Check if it's already a valid system field (case-insensitive)
+  const normalizedNoSpaces = header.toLowerCase().replace(/[\s_\-]/g, '');
   const matchedField = VALID_SYSTEM_FIELDS.find(
-    f => f.toLowerCase() === normalized.replace(/\s/g, '')
+    f => f.toLowerCase() === normalizedNoSpaces
   );
   if (matchedField) {
     return matchedField;
