@@ -35,6 +35,14 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'reporting mark': 'railcarNumber',
   'reportingmark': 'railcarNumber',
   'reporting_mark': 'railcarNumber',
+  // UMLER system abbreviations
+  'car_init': 'railcarNumber',
+  'car_no': 'railcarNumber',
+  'car_nbr': 'railcarNumber',
+  'umession': 'railcarNumber',
+  'equipment_id': 'railcarNumber',
+  'equip_id': 'railcarNumber',
+  'eq_id': 'railcarNumber',
 
   // customer synonyms
   'customer': 'customer',
@@ -50,6 +58,16 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'end user': 'customer',
   'lessee': 'customer',
   'owner': 'customer',
+  // UMLER system abbreviations
+  'cust_nm': 'customer',
+  'cust_name': 'customer',
+  'lessee_': 'customer',
+  'lessee_nm': 'customer',
+  'lessee_name': 'customer',
+  'shipper': 'customer',
+  'shipper_nm': 'customer',
+  'consignee': 'customer',
+  'consignee_nm': 'customer',
 
   // isTankCar synonyms
   'istankcar': 'isTankCar',
@@ -62,6 +80,9 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'tankstatus': 'isTankCar',
   'tank_status': 'isTankCar',
   'tank status': 'isTankCar',
+  // UMLER system abbreviations
+  'tank_ind': 'isTankCar',
+  'is_tank': 'isTankCar',
 
   // carType synonyms
   'cartype': 'carType',
@@ -74,6 +95,13 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'equipment type': 'carType',
   'equipmenttype': 'carType',
   'equipment_type': 'carType',
+  // UMLER system abbreviations
+  'car_typ': 'carType',
+  'car_kind': 'carType',
+  'eq_type': 'carType',
+  'equip_type': 'carType',
+  'aar_type': 'carType',
+  'aar_cd': 'carType',
 
   // commodity synonyms
   'commodity': 'commodity',
@@ -81,6 +109,16 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'cargo': 'commodity',
   'contents': 'commodity',
   'material': 'commodity',
+  // UMLER system abbreviations
+  'commod': 'commodity',
+  'commod_cd': 'commodity',
+  'commodity_cd': 'commodity',
+  'lading': 'commodity',
+  'lading_cd': 'commodity',
+  'stcc': 'commodity',
+  'stcc_cd': 'commodity',
+  'product_cd': 'commodity',
+  'prod_cd': 'commodity',
 
   // status synonyms
   'status': 'status',
@@ -91,6 +129,20 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'current_status': 'status',
   'current status': 'status',
   'state': 'status',
+  // UMLER system abbreviations
+  'car_ste': 'status',
+  'car_sta': 'status',
+  'car_stat': 'status',
+  'stat_cd': 'status',
+  'status_cd': 'status',
+  'active': 'status',
+  'in_sho': 'status',
+  'in_shop': 'status',
+  'shop_s': 'status',
+  'shop_stat': 'status',
+  'shop_status': 'status',
+  'pendin': 'status',
+  'pending': 'status',
 
   // currentLocation synonyms
   'currentlocation': 'currentLocation',
@@ -99,6 +151,18 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'location': 'currentLocation',
   'position': 'currentLocation',
   'site': 'currentLocation',
+  // UMLER system abbreviations
+  'location_nm': 'currentLocation',
+  'loc_nm': 'currentLocation',
+  'loc_name': 'currentLocation',
+  'curr_loc': 'currentLocation',
+  'cur_loc': 'currentLocation',
+  'pod_cc': 'currentLocation',
+  'station': 'currentLocation',
+  'station_nm': 'currentLocation',
+  'yard': 'currentLocation',
+  'yard_nm': 'currentLocation',
+  'city_nm': 'currentLocation',
 
   // homeRegion synonyms
   'homeregion': 'homeRegion',
@@ -106,6 +170,12 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'home region': 'homeRegion',
   'region': 'homeRegion',
   'home': 'homeRegion',
+  // UMLER system abbreviations
+  'home_reg': 'homeRegion',
+  'hm_region': 'homeRegion',
+  'home_area': 'homeRegion',
+  'district': 'homeRegion',
+  'district_nm': 'homeRegion',
 
   // originRegion synonyms
   'originregion': 'originRegion',
@@ -114,6 +184,14 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'origin': 'originRegion',
   'source region': 'originRegion',
   'sourceregion': 'originRegion',
+  // UMLER system abbreviations
+  'origina': 'originRegion',
+  'orig_region': 'originRegion',
+  'orig_reg': 'originRegion',
+  'origin_nm': 'originRegion',
+  'orig_loc': 'originRegion',
+  'from_loc': 'originRegion',
+  'ship_from': 'originRegion',
 
   // reasonShopped synonyms
   'reasonshopped': 'reasonShopped',
@@ -125,6 +203,20 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'shop reason': 'reasonShopped',
   'service reason': 'reasonShopped',
   'servicereason': 'reasonShopped',
+  // UMLER system abbreviations
+  'shoppi': 'reasonShopped',
+  'shop_typ': 'reasonShopped',
+  'shop_type': 'reasonShopped',
+  'shopping': 'reasonShopped',
+  'shopping_type': 'reasonShopped',
+  'repair_type': 'reasonShopped',
+  'repair_typ': 'reasonShopped',
+  'rep_type': 'reasonShopped',
+  'service_type': 'reasonShopped',
+  'svc_type': 'reasonShopped',
+  'maint_type': 'reasonShopped',
+  'work_type': 'reasonShopped',
+  'job_type': 'reasonShopped',
 
   // projectNumber synonyms
   'projectnumber': 'projectNumber',
@@ -136,6 +228,17 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'work order': 'projectNumber',
   'workorder': 'projectNumber',
   'work_order': 'projectNumber',
+  // UMLER system abbreviations
+  'proj_no': 'projectNumber',
+  'proj_nbr': 'projectNumber',
+  'proj_num': 'projectNumber',
+  'wo_no': 'projectNumber',
+  'wo_nbr': 'projectNumber',
+  'wo_num': 'projectNumber',
+  'job_no': 'projectNumber',
+  'job_nbr': 'projectNumber',
+  'latest_j': 'projectNumber',
+  'initial_f': 'projectNumber',
 
   // projectedCost synonyms
   'projectedcost': 'projectedCost',
@@ -146,6 +249,19 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'estimated_cost': 'projectedCost',
   'estimated cost': 'projectedCost',
   'price': 'projectedCost',
+  // UMLER system abbreviations
+  'car_prc': 'projectedCost',
+  'car_price': 'projectedCost',
+  'estimat': 'projectedCost',
+  'estimate': 'projectedCost',
+  'est_cost': 'projectedCost',
+  'est_amt': 'projectedCost',
+  'repair_cost': 'projectedCost',
+  'rep_cost': 'projectedCost',
+  'total_cost': 'projectedCost',
+  'tot_cost': 'projectedCost',
+  'econom': 'projectedCost',
+  'perfor': 'projectedCost',
 
   // daysInShop synonyms
   'daysinshop': 'daysInShop',
@@ -155,6 +271,36 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'shop_days': 'daysInShop',
   'shop days': 'daysInShop',
   'duration': 'daysInShop',
+  // UMLER system abbreviations
+  'days_ir': 'daysInShop',
+  'days_in_repair': 'daysInShop',
+  'repair_days': 'daysInShop',
+  'rep_days': 'daysInShop',
+  'max_d': 'daysInShop',
+  'max_days': 'daysInShop',
+  'turn_days': 'daysInShop',
+  'turn_time': 'daysInShop',
+  'cycle_days': 'daysInShop',
+  'dwel_days': 'daysInShop',
+  'dwell_time': 'daysInShop',
+
+  // shopEntryDate synonyms
+  'shopentrydate': 'shopEntryDate',
+  'shop_entry_date': 'shopEntryDate',
+  'shop entry date': 'shopEntryDate',
+  'entrydate': 'shopEntryDate',
+  'entry_date': 'shopEntryDate',
+  'entry date': 'shopEntryDate',
+  // UMLER system abbreviations
+  'arrival_ship_d': 'shopEntryDate',
+  'arrival_date': 'shopEntryDate',
+  'arr_date': 'shopEntryDate',
+  'arr_dt': 'shopEntryDate',
+  'in_date': 'shopEntryDate',
+  'in_dt': 'shopEntryDate',
+  'shop_in_dt': 'shopEntryDate',
+  'receive_dt': 'shopEntryDate',
+  'rcv_date': 'shopEntryDate',
 
   // lastServiceDate synonyms
   'lastservicedate': 'lastServiceDate',
@@ -163,6 +309,15 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'lastservice': 'lastServiceDate',
   'last_service': 'lastServiceDate',
   'last service': 'lastServiceDate',
+  // UMLER system abbreviations
+  'last_svc_dt': 'lastServiceDate',
+  'last_rep_dt': 'lastServiceDate',
+  'prev_svc_dt': 'lastServiceDate',
+  'prior_svc_dt': 'lastServiceDate',
+  'compl_date': 'lastServiceDate',
+  'complete_dt': 'lastServiceDate',
+  'out_date': 'lastServiceDate',
+  'release_dt': 'lastServiceDate',
 
   // nextServiceDue synonyms
   'nextservicedue': 'nextServiceDue',
@@ -173,6 +328,37 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'next service': 'nextServiceDue',
   'due date': 'nextServiceDue',
   'duedate': 'nextServiceDue',
+  // UMLER system abbreviations
+  'next_svc_dt': 'nextServiceDue',
+  'due_dt': 'nextServiceDue',
+  'due_date': 'nextServiceDue',
+  'sched_dt': 'nextServiceDue',
+  'sched_date': 'nextServiceDue',
+  'exp_date': 'nextServiceDue',
+  'expire_dt': 'nextServiceDue',
+  'cert_exp_dt': 'nextServiceDue',
+
+  // assignedShop synonyms (for shop name/code)
+  'shop_n': 'assignedShopCode',
+  'shop_nm': 'assignedShopCode',
+  'shop_name': 'assignedShopCode',
+  'shopname': 'assignedShopCode',
+  'shop name': 'assignedShopCode',
+  'shop_cd': 'assignedShopCode',
+  'shop_code': 'assignedShopCode',
+  'shopcode': 'assignedShopCode',
+  'shop code': 'assignedShopCode',
+  'repair_shop': 'assignedShopCode',
+  'assigned_shop': 'assignedShopCode',
+  'facility': 'assignedShopCode',
+  'facility_nm': 'assignedShopCode',
+  'fac_nm': 'assignedShopCode',
+
+  // onRent synonyms (maps to notes for now)
+  'on_ren': 'notes',
+  'on_rent': 'notes',
+  'rent_status': 'notes',
+  'lease_status': 'notes',
 
   // notes synonyms
   'notes': 'notes',
@@ -182,6 +368,10 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'remarks': 'notes',
   'remark': 'notes',
   'description': 'notes',
+  // UMLER system abbreviations
+  'note_txt': 'notes',
+  'comment_txt': 'notes',
+  'rmk_txt': 'notes',
 };
 
 // Required fields that must be present (or mappable) for import
@@ -202,8 +392,10 @@ export const VALID_SYSTEM_FIELDS = [
   'originRegion',
   'projectedCost',
   'daysInShop',
+  'shopEntryDate',
   'lastServiceDate',
   'nextServiceDue',
+  'assignedShopCode',
   'notes',
 ];
 
@@ -594,12 +786,15 @@ export function transformCarRecord(
   data.homeRegion = String(normalizedRecord.homeRegion || '').trim();
   data.originRegion = String(normalizedRecord.originRegion || '').trim();
   data.notes = String(normalizedRecord.notes || '').trim();
+  // Shop assignment (optional - for reference during import)
+  data.assignedShopCode = String(normalizedRecord.assignedShopCode || '').trim();
 
   // Numeric fields
   data.projectedCost = convertToFloat(normalizedRecord.projectedCost);
   data.daysInShop = convertToInt(normalizedRecord.daysInShop);
 
   // Date fields
+  data.shopEntryDate = convertToDate(normalizedRecord.shopEntryDate);
   data.lastServiceDate = convertToDate(normalizedRecord.lastServiceDate);
   data.nextServiceDue = convertToDate(normalizedRecord.nextServiceDue);
 
