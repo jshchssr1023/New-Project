@@ -11,6 +11,7 @@ import ScenarioManager from './pages/ScenarioManager';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
+import LeaseQualificationEngine from './pages/LeaseQualificationEngine';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="planning" element={<PlanningGrid />} />
         <Route path="car-flow" element={<CarFlowPlanning />} />
         <Route path="scenarios" element={<ScenarioManager />} />
+        <Route path="lease-qualification" element={<LeaseQualificationEngine />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
         <Route
           path="users"

@@ -868,4 +868,258 @@ export const permissionsApi = {
   },
 };
 
+// =============================================================================
+// LEASE QUALIFICATION ENGINE API
+// =============================================================================
+
+export interface LeaseRelease {
+  carId: string;
+  railcarNumber: string;
+  customerId: string;
+  customerName: string;
+  leaseEndDate: string;
+  plannedReleaseDate: string;
+  nextCustomerId?: string;
+  commodity: string;
+  carType: string;
+  isTankCar: boolean;
+  homeRegion: string;
+  priority: number;
+}
+
+export interface QualificationScenario {
+  id: string;
+  name: string;
+  description: string;
+  scenarioType: 'base' | 'late_release' | 'capacity_shift' | 'custom';
+  status: string;
+  planningHorizonMonths: number;
+  lateReleasePercent: number;
+  capacityAdjustment: Record<string, number>;
+  metricsJson: ScenarioMetrics | null;
+  summaryJson: { releaseCompliance: number; qualAttainment: number; backlog: number; riskScore: number } | null;
+  isApproved: boolean;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+}
+
+export interface ScenarioMetrics {
+  scenarioId: string;
+  scenarioName: string;
+  scenarioType: string;
+  totalReleases: number;
+  onTimeReleases: number;
+  lateReleases: number;
+  releaseCompliancePercent: number;
+  plannedQualifications: number;
+  completedQualifications: number;
+  qualPlanAttainmentPercent: number;
+  currentBacklog: number;
+  projectedBacklog: number;
+  backlogByMonth: Record<string, number>;
+  averageWaitDays: number;
+  longestWaitDays: number;
+  overallUtilizationPercent: number;
+  utilizationByShop: Record<string, number>;
+  riskScore: number;
+  riskFactors: string[];
+  totalEstimatedCost: number;
+  costByMonth: Record<string, number>;
+}
+
+export interface ScenarioComparison {
+  scenarios: ScenarioMetrics[];
+  comparisonTable: string;
+  recommendations: string[];
+  bestScenarioId: string;
+  bestScenarioReason: string;
+}
+
+export interface AvailableCar {
+  id: string;
+  railcarNumber: string;
+  carType: string;
+  customer: string;
+  shopAssigned: string;
+  monthKey: string;
+  workTypes: string[];
+  priority: number;
+}
+
+export interface AvailableShop {
+  id: string;
+  name: string;
+  code: string;
+  region: string;
+  assignmentCount: number;
+  tankQualified: boolean;
+}
+
+export interface AvailableCustomer {
+  id: string;
+  name: string;
+  code: string;
+  inboundCount: number;
+  outboundCount: number;
+}
+
+export interface AvailableMonth {
+  monthKey: string;
+  monthLabel: string;
+  assignmentCount: number;
+}
+
+export interface DocumentSelectionCriteria {
+  scenarioId: string;
+  carIds?: string[];
+  shopIds?: string[];
+  customerIds?: string[];
+  startMonth?: string;
+  endMonth?: string;
+  priorities?: number[];
+  workTypes?: string[];
+  bundledOnly?: boolean;
+}
+
+export interface GeneratedDocument {
+  title: string;
+  generatedAt: string;
+  scenarioId: string;
+  scenarioName: string;
+  markdownContent: string;
+  jsonContent: Record<string, unknown>;
+}
+
+export interface ShopCapacitySnapshot {
+  shopId: string;
+  shopName: string;
+  shopCode: string;
+  region: string;
+  tankQualified: boolean;
+  monthlyCapacity: Record<string, {
+    qualification: number;
+    assignment: number;
+    repair: number;
+    used: number;
+    available: number;
+    utilization: number;
+  }>;
+}
+
+export const leaseQualificationApi = {
+  // Releases
+  getReleases: async (horizonMonths: number = 6): Promise<{ data: LeaseRelease[]; count: number }> => {
+    const response = await apiClient.get('/lease-qualification/releases', { params: { horizonMonths } });
+    return response.data;
+  },
+
+  // Capacity
+  getCapacity: async (horizonMonths: number = 6): Promise<{ data: ShopCapacitySnapshot[]; count: number }> => {
+    const response = await apiClient.get('/lease-qualification/capacity', { params: { horizonMonths } });
+    return response.data;
+  },
+
+  // Scenarios
+  getScenarios: async (): Promise<{ data: QualificationScenario[]; count: number }> => {
+    const response = await apiClient.get('/lease-qualification/scenarios');
+    return response.data;
+  },
+
+  getScenario: async (id: string): Promise<{ data: QualificationScenario }> => {
+    const response = await apiClient.get(`/lease-qualification/scenarios/${id}`);
+    return response.data;
+  },
+
+  runScenario: async (params: {
+    name: string;
+    type?: 'base' | 'late_release' | 'capacity_shift' | 'custom';
+    lateReleasePercent?: number;
+    capacityAdjustments?: Record<string, number>;
+    planningHorizonMonths?: number;
+  }): Promise<{ data: ScenarioMetrics }> => {
+    const response = await apiClient.post('/lease-qualification/scenarios/run', params);
+    return response.data;
+  },
+
+  compareScenarios: async (scenarioIds: string[]): Promise<{ data: ScenarioComparison }> => {
+    const response = await apiClient.post('/lease-qualification/scenarios/compare', { scenarioIds });
+    return response.data;
+  },
+
+  approveScenario: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post(`/lease-qualification/scenarios/${id}/approve`);
+    return response.data;
+  },
+
+  getApprovedScenario: async (): Promise<{ data: QualificationScenario } | null> => {
+    try {
+      const response = await apiClient.get('/lease-qualification/scenarios/approved');
+      return response.data;
+    } catch {
+      return null;
+    }
+  },
+
+  // Selection data for documents
+  getAvailableCars: async (scenarioId: string): Promise<{ data: AvailableCar[]; count: number }> => {
+    const response = await apiClient.get(`/lease-qualification/scenarios/${scenarioId}/available-cars`);
+    return response.data;
+  },
+
+  getAvailableShops: async (scenarioId: string): Promise<{ data: AvailableShop[]; count: number }> => {
+    const response = await apiClient.get(`/lease-qualification/scenarios/${scenarioId}/available-shops`);
+    return response.data;
+  },
+
+  getAvailableCustomers: async (scenarioId: string): Promise<{ data: AvailableCustomer[]; count: number }> => {
+    const response = await apiClient.get(`/lease-qualification/scenarios/${scenarioId}/available-customers`);
+    return response.data;
+  },
+
+  getAvailableMonths: async (scenarioId: string): Promise<{ data: AvailableMonth[]; count: number }> => {
+    const response = await apiClient.get(`/lease-qualification/scenarios/${scenarioId}/available-months`);
+    return response.data;
+  },
+
+  // Document generation
+  generateTeamPlan: async (criteria: DocumentSelectionCriteria, save: boolean = false): Promise<{ data: GeneratedDocument; documentId?: string }> => {
+    const response = await apiClient.post(`/lease-qualification/documents/team-plan?save=${save}`, criteria);
+    return response.data;
+  },
+
+  generateCustomerSchedule: async (criteria: DocumentSelectionCriteria & { customerId: string }, save: boolean = false): Promise<{ data: GeneratedDocument; documentId?: string }> => {
+    const response = await apiClient.post(`/lease-qualification/documents/customer-schedule?save=${save}`, criteria);
+    return response.data;
+  },
+
+  generateShopPlan: async (criteria: DocumentSelectionCriteria & { shopId: string }, save: boolean = false): Promise<{ data: GeneratedDocument; documentId?: string }> => {
+    const response = await apiClient.post(`/lease-qualification/documents/shop-plan?save=${save}`, criteria);
+    return response.data;
+  },
+
+  // Saved documents
+  getDocuments: async (scenarioId?: string): Promise<{ data: Array<{ id: string; scenarioId: string; documentType: string; title: string; createdAt: string }>; count: number }> => {
+    const response = await apiClient.get('/lease-qualification/documents', { params: { scenarioId } });
+    return response.data;
+  },
+
+  getDocument: async (id: string): Promise<{ data: { id: string; title: string; contentMarkdown: string; contentJson: Record<string, unknown> } }> => {
+    const response = await apiClient.get(`/lease-qualification/documents/${id}`);
+    return response.data;
+  },
+
+  // Contracts
+  getContracts: async (params?: { status?: string; customerId?: string }): Promise<{ data: Array<{ id: string; contractNumber: string; car: { railcarNumber: string }; customer: { name: string }; endDate: string; status: string }>; count: number }> => {
+    const response = await apiClient.get('/lease-qualification/contracts', { params });
+    return response.data;
+  },
+
+  // Queue
+  getQueue: async (params?: { status?: string; targetMonth?: string }): Promise<{ data: Array<{ id: string; car: { railcarNumber: string }; customer: { name: string }; targetQualMonth: string; queueStatus: string; priority: number; workTypes: string[] }>; count: number }> => {
+    const response = await apiClient.get('/lease-qualification/queue', { params });
+    return response.data;
+  },
+};
+
 export default apiClient;
