@@ -342,6 +342,7 @@ async function main() {
   const scenario = await prisma.scenario.create({
     data: {
       id: uuidv4(),
+      projectNumber: 'Q2-25-001',
       name: 'High Volume Q2 2025',
       description: 'What-if analysis for increased service volume in Q2 2025',
       basePlanId: plan2025.id,
