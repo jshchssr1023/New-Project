@@ -11,6 +11,7 @@ import usersRoutes from './routes/users';
 import reportsRoutes from './routes/reports';
 import auditRoutes from './routes/audit';
 import permissionsRoutes from './routes/permissions';
+import sopRoutes from './routes/sopRoutes';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -34,6 +35,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/permissions', permissionsRoutes);
+app.use('/api/sop', sopRoutes);
 
 // Health check
 app.get('/api/health', (_, res) => {
