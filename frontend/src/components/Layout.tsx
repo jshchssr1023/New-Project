@@ -14,6 +14,7 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon,
+  ClipboardDocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
+  { name: 'Lease Qualification', href: '/lease-qualification', icon: ClipboardDocumentCheckIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
 ];
 
