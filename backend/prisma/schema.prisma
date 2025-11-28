@@ -35,6 +35,13 @@ model Company {
   customers   Customer[]
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+
+  // Lease Qualification Engine relations
+  leaseContracts          LeaseContract[]
+  qualificationEntries    LeaseQualificationEntry[]
+  qualificationEvents     QualificationPlanEvent[]
+  qualificationScenarios  QualificationScenario[]
+  qualificationDocuments  QualificationPlanDocument[]
 }
 
 // Customer master for tracking lessees/owners
@@ -52,6 +59,10 @@ model Customer {
   company      Company  @relation(fields: [companyId], references: [id])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Lease Qualification Engine relations
+  leaseContracts       LeaseContract[]
+  qualificationEntries LeaseQualificationEntry[]
 
   @@unique([code, companyId])
 }
@@ -84,6 +95,10 @@ model Car {
   sopAssignments          SOPAssignment[]  // S&OP shop assignments
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
+
+  // Lease Qualification Engine relations
+  leaseContracts          LeaseContract[]
+  qualificationEntries    LeaseQualificationEntry[]
 
   @@unique([railcarNumber, companyId])
 }
@@ -134,6 +149,9 @@ model Shop {
   // S&OP Relations
   capacitySlots      ShopCapacitySlot[]
   sopAssignments     SOPAssignment[]
+
+  // Lease Qualification Engine relations
+  qualificationEntries LeaseQualificationEntry[]
 
   @@unique([code, companyId])
 }
@@ -421,4 +439,240 @@ model SOPAssignment {
   @@index([scenarioId, shopId])
   @@index([scenarioId, monthKey])
   @@index([carId])
+}
+
+// =============================================================================
+// LEASE RELEASE + QUALIFICATION PLANNING ENGINE MODELS
+// =============================================================================
+
+// Lease contract tracking for release planning
+model LeaseContract {
+  id                  String    @id @default(uuid())
+  carId               String
+  car                 Car       @relation(fields: [carId], references: [id])
+  customerId          String
+  customer            Customer  @relation(fields: [customerId], references: [id])
+  contractNumber      String    // Unique contract reference
+  startDate           DateTime
+  endDate             DateTime  // Lease expiration date
+  releaseDate         DateTime? // Actual or planned release date
+  status              String    @default("active") // active, pending_release, released, renewed, terminated
+  commodity           String    @default("") // What the car carries
+  releaseReason       String    @default("") // qualification, assignment, return, repair
+  nextCustomerId      String?   // New customer if immediate reassignment
+  isReleaseConfirmed  Boolean   @default(false) // Customer confirmed release
+  releaseDelayDays    Int       @default(0) // Delay from planned release
+  notes               String    @default("")
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  qualificationEntries LeaseQualificationEntry[]
+
+  @@unique([contractNumber, companyId])
+  @@index([customerId, status])
+  @@index([endDate])
+  @@index([companyId, status])
+}
+
+// Qualification queue entry for planning
+model LeaseQualificationEntry {
+  id                    String    @id @default(uuid())
+  leaseContractId       String?
+  leaseContract         LeaseContract? @relation(fields: [leaseContractId], references: [id])
+  carId                 String
+  car                   Car       @relation(fields: [carId], references: [id])
+  customerId            String
+  customer              Customer  @relation(fields: [customerId], references: [id])
+
+  // Release planning
+  plannedReleaseDate    DateTime
+  actualReleaseDate     DateTime?
+  targetQualMonth       String    // YYYY-MM target qualification month
+
+  // Work bundling
+  workTypes             String    // JSON array: ["qualification", "assignment", "repair"]
+  isBundled             Boolean   @default(false) // Multiple work types bundled
+  bundleReason          String    @default("") // Why bundled (immediate reassignment, etc.)
+
+  // Shop assignment
+  assignedShopId        String?
+  assignedShop          Shop?     @relation(fields: [assignedShopId], references: [id])
+  shopAssignmentReason  String    @default("") // Why this shop was selected
+
+  // Status tracking
+  queueStatus           String    @default("pending") // pending, queued, scheduled, in_progress, completed, late, cancelled
+  priority              Int       @default(3) // 1=critical, 2=high, 3=medium, 4=low
+
+  // Next assignment (if immediate reassignment)
+  nextCustomerId        String?
+  nextCommodity         String    @default("")
+
+  // Metrics tracking
+  originalTargetMonth   String    @default("") // Original planned month
+  wasRescheduled        Boolean   @default(false)
+  rescheduleCount       Int       @default(0)
+  daysInQueue           Int       @default(0)
+
+  notes                 String    @default("")
+  companyId             String
+  company               Company   @relation(fields: [companyId], references: [id])
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  planEvents            QualificationPlanEvent[]
+
+  @@index([companyId, queueStatus])
+  @@index([targetQualMonth])
+  @@index([carId])
+  @@index([customerId])
+}
+
+// Scheduled events for qualification planning
+model QualificationPlanEvent {
+  id                    String    @id @default(uuid())
+  qualEntryId           String
+  qualEntry             LeaseQualificationEntry @relation(fields: [qualEntryId], references: [id], onDelete: Cascade)
+  scenarioId            String?   // Optional: link to scenario for what-if analysis
+
+  // Event details
+  eventType             String    // release, transport, shop_arrival, qual_start, qual_complete, assignment_start, departure
+  plannedDate           DateTime
+  actualDate            DateTime?
+  status                String    @default("planned") // planned, confirmed, completed, missed, cancelled
+
+  // Location/shop info
+  shopId                String?
+  shopName              String    @default("")
+  locationFrom          String    @default("")
+  locationTo            String    @default("")
+
+  // Duration and cost
+  estimatedDays         Int       @default(0)
+  actualDays            Int?
+  estimatedCost         Float     @default(0)
+  actualCost            Float?
+
+  notes                 String    @default("")
+  companyId             String
+  company               Company   @relation(fields: [companyId], references: [id])
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([qualEntryId, eventType])
+  @@index([scenarioId])
+  @@index([plannedDate])
+}
+
+// Qualification Planning Scenario (for what-if analysis)
+model QualificationScenario {
+  id                    String    @id @default(uuid())
+  name                  String
+  description           String    @default("")
+  scenarioType          String    // base, late_release, capacity_shift, custom
+  status                String    @default("draft") // draft, running, completed, approved, archived
+
+  // Scenario parameters
+  planningHorizonMonths Int       @default(6) // 4-6 months planning window
+  lateReleasePercent    Float     @default(0) // % of cars that slip (for late_release scenario)
+  capacityAdjustment    String    @default("{}") // JSON: shopId -> adjustment %
+
+  // Base scenario reference
+  parentScenarioId      String?
+  parentScenario        QualificationScenario? @relation("ScenarioVersions", fields: [parentScenarioId], references: [id])
+  childScenarios        QualificationScenario[] @relation("ScenarioVersions")
+
+  // Results (JSON stored metrics)
+  metricsJson           String    @default("{}") // Full metrics breakdown
+  summaryJson           String    @default("{}") // Summary for comparison
+
+  // Approval workflow
+  isApproved            Boolean   @default(false)
+  approvedBy            String?
+  approvedAt            DateTime?
+
+  companyId             String
+  company               Company   @relation(fields: [companyId], references: [id])
+  createdBy             String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  planAssignments       QualificationPlanAssignment[]
+
+  @@index([companyId, status])
+  @@index([scenarioType])
+}
+
+// Qualification Plan Assignment (car-to-shop within a scenario)
+model QualificationPlanAssignment {
+  id                    String    @id @default(uuid())
+  scenarioId            String
+  scenario              QualificationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  carId                 String
+  shopId                String
+
+  // Planning details
+  monthKey              String    // YYYY-MM
+  workTypes             String    // JSON array of work types
+  priority              Int       @default(3)
+
+  // Bundling info
+  isBundled             Boolean   @default(false)
+  bundleGroupId         String?   // Group ID for bundled assignments
+
+  // Scheduling
+  scheduledArrival      DateTime?
+  scheduledCompletion   DateTime?
+  estimatedDays         Int       @default(14)
+  estimatedCost         Float     @default(0)
+
+  // Customer info
+  currentCustomerId     String?
+  nextCustomerId        String?   // For immediate reassignment
+
+  // Status
+  status                String    @default("planned") // planned, confirmed, in_progress, completed
+  notes                 String    @default("")
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([scenarioId, monthKey])
+  @@index([scenarioId, shopId])
+  @@index([carId])
+}
+
+// Generated Plan Documents (Team Plans and Customer PDFs)
+model QualificationPlanDocument {
+  id                    String    @id @default(uuid())
+  scenarioId            String
+  documentType          String    // team_plan, customer_schedule, summary_report, comparison_report
+  title                 String
+  description           String    @default("")
+
+  // Document content
+  contentMarkdown       String    // Markdown content for rendering
+  contentJson           String    @default("{}") // Structured data for PDF generation
+
+  // PDF generation status
+  pdfGenerated          Boolean   @default(false)
+  pdfUrl                String    @default("") // Path to generated PDF
+  pdfGeneratedAt        DateTime?
+
+  // Target audience
+  targetCustomerId      String?   // For customer-specific schedules
+  targetShopId          String?   // For shop-specific plans
+
+  companyId             String
+  company               Company   @relation(fields: [companyId], references: [id])
+  createdBy             String
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([scenarioId, documentType])
+  @@index([companyId])
 }
