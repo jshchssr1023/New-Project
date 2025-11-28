@@ -207,7 +207,7 @@ async function main() {
       return prisma.car.create({
         data: {
           id: uuidv4(),
-          vehicleNumber: `AITX${String(100000 + i).slice(1)}`,
+          railcarNumber: `AITX${String(100000 + i).slice(1)}`,
           carType,
           isTankCar,
           commodity,
