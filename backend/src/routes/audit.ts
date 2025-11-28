@@ -1,12 +1,12 @@
 // Audit Log API Routes
 import { Router } from 'express';
-import { authenticateToken, requireRole } from '../middleware/auth';
+import { authenticate, requireRole } from '../middleware/auth';
 import auditService from '../services/auditService';
 
 const router = Router();
 
 // Apply auth to all routes
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Get audit logs (admin only)
 router.get('/', requireRole('admin'), async (req, res) => {

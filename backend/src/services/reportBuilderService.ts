@@ -208,7 +208,7 @@ export async function executeReport(
     : { createdAt: 'desc' };
 
   // Build select based on columns
-  const select: Record<string, boolean | Record<string, boolean>> = {};
+  const select: Record<string, any> = {};
   for (const col of columns) {
     const parts = col.split('.');
     if (parts.length === 1) {
@@ -216,7 +216,7 @@ export async function executeReport(
     } else {
       // Handle nested selections
       if (!select[parts[0]]) select[parts[0]] = { select: {} };
-      (select[parts[0]] as Record<string, Record<string, boolean>>).select[parts[1]] = true;
+      select[parts[0]].select[parts[1]] = true;
     }
   }
   // Always include id
@@ -282,7 +282,7 @@ export async function executeReport(
       // Map car count
       data = data.map(s => ({
         ...s,
-        carCount: (s as Record<string, unknown>)._count?.cars || 0,
+        carCount: ((s as any)._count?.cars) || 0,
       }));
       break;
 
