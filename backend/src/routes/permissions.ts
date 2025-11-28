@@ -1,12 +1,12 @@
 // Role-Based Permissions and Field Security API Routes
 import { Router } from 'express';
-import { authenticateToken, requireRole } from '../middleware/auth';
-import permissionsService, { ROLES, DEFAULT_PERMISSIONS } from '../services/permissionsService';
+import { authenticate, requireRole } from '../middleware/auth';
+import permissionsService, { ROLES, DEFAULT_PERMISSIONS, FIELD_SECURITY_DEFAULTS } from '../services/permissionsService';
 
 const router = Router();
 
 // Apply auth to all routes
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Get available roles
 router.get('/roles', (_, res) => {
@@ -164,7 +164,7 @@ router.post('/fields', requireRole('admin'), async (req, res) => {
 
 // Get all field security defaults
 router.get('/fields-defaults', (_, res) => {
-  res.json(permissionsService.FIELD_SECURITY_DEFAULTS);
+  res.json(FIELD_SECURITY_DEFAULTS);
 });
 
 export default router;

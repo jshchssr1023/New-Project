@@ -502,7 +502,7 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
     }> = [];
 
     Object.entries(shopMonthlyLoad).forEach(([shopId, months]) => {
-      const shop = shopMap.get(shopId);
+      const shop = shopMap.get(shopId) as any;
       if (!shop) return;
 
       Object.entries(months).forEach(([month, scenarioCount]) => {
@@ -554,7 +554,7 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
         overloadedShops,
         shopMonthlyBreakdown: Object.fromEntries(
           Object.entries(shopMonthlyLoad).map(([shopId, data]) => {
-            const shop = shopMap.get(shopId);
+            const shop = shopMap.get(shopId) as any;
             return [
               shop?.name || shopId,
               {

@@ -1,6 +1,6 @@
 // Custom Report Builder and Scheduled Reports API Routes
 import { Router } from 'express';
-import { authenticateToken, requireRole } from '../middleware/auth';
+import { authenticate, requireRole } from '../middleware/auth';
 import reportBuilderService, { FilterCriteria, SortConfig } from '../services/reportBuilderService';
 import scheduledReportService from '../services/scheduledReportService';
 import auditService from '../services/auditService';
@@ -8,7 +8,7 @@ import auditService from '../services/auditService';
 const router = Router();
 
 // Apply auth to all routes
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Get available columns for entity type
 router.get('/columns/:entityType', async (req, res) => {

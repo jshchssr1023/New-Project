@@ -35,12 +35,12 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         _count: { id: true },
       });
 
-      const assignmentMap = new Map(assignments.map(a => [a.shopId, a._count.id]));
+      const assignmentMap = new Map<string, number>(assignments.map(a => [a.shopId, a._count.id]));
 
       shops = shops.map(shop => ({
         ...shop,
         currentLoad: assignmentMap.get(shop.id) || 0,
-        availableCapacity: shop.capacity - (assignmentMap.get(shop.id) || 0),
+        availableCapacity: (shop.capacity as number) - (assignmentMap.get(shop.id) || 0),
       })) as typeof shops;
 
       // Filter to only shops with available capacity

@@ -155,7 +155,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     ];
 
     // Upcoming services
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const upcomingMonth = new Date().toISOString().slice(0, 7);
     const upcomingAssignments = await prisma.planAssignment.findMany({
       where: {
         plan: { companyId, status: 'active' },

@@ -329,7 +329,7 @@ export async function recommendShopsForCar(
     _count: { id: true },
   });
 
-  const shopCapacity = new Map(assignments.map(a => [a.shopId, a._count.id]));
+  const shopCapacity = new Map<string, number>(assignments.map(a => [a.shopId, a._count.id]));
 
   // Score each shop
   const scores: ShopScore[] = [];

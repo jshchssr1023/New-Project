@@ -302,9 +302,9 @@ export function applyFieldMasking<T extends Record<string, unknown>>(
           break;
         case 'masked':
           if (typeof masked[field] === 'number') {
-            masked[field] = 0 as T[keyof T];
+            (masked as any)[field] = 0;
           } else if (typeof masked[field] === 'string') {
-            masked[field] = '***' as T[keyof T];
+            (masked as any)[field] = '***';
           }
           break;
         case 'readonly':
