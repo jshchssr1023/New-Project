@@ -374,6 +374,133 @@ async function main() {
 
   console.log('✓ Created sample scenario');
 
+  // ==========================================================================
+  // LEASE QUALIFICATION ENGINE DATA
+  // ==========================================================================
+
+  // Create Customer master records
+  const customerRecords = await Promise.all(
+    customers.map(async (name, index) => {
+      const code = name.replace(/\s+/g, '').substring(0, 4).toUpperCase();
+      return prisma.customer.create({
+        data: {
+          id: uuidv4(),
+          name,
+          code,
+          contactName: `Contact for ${name}`,
+          contactEmail: `contact@${code.toLowerCase()}.com`,
+          contactPhone: `(555) ${100 + index}-${1000 + index}`,
+          address: `${100 + index} Industrial Blvd, Houston, TX`,
+          isActive: true,
+          companyId: company.id,
+        },
+      });
+    })
+  );
+
+  console.log(`✓ Created ${customerRecords.length} customer records`);
+
+  // Create Lease Contracts (upcoming releases within 6 months)
+  const now = new Date();
+  const leaseContracts = [];
+
+  // Create 40 lease contracts expiring over the next 6 months
+  for (let i = 0; i < 40; i++) {
+    const car = cars[i]; // Use first 40 cars
+    const customer = customerRecords[i % customerRecords.length];
+
+    // Random end date within 1-180 days from now
+    const daysUntilEnd = Math.floor(Math.random() * 180) + 1;
+    const endDate = new Date(now);
+    endDate.setDate(endDate.getDate() + daysUntilEnd);
+
+    // Start date was 1-3 years ago
+    const startDate = new Date(now);
+    startDate.setFullYear(startDate.getFullYear() - (1 + Math.floor(Math.random() * 2)));
+
+    // 30% have next customer (immediate reassignment)
+    const hasNextCustomer = Math.random() < 0.3;
+    const nextCustomer = hasNextCustomer
+      ? customerRecords[(i + 3) % customerRecords.length]
+      : null;
+
+    const contract = await prisma.leaseContract.create({
+      data: {
+        id: uuidv4(),
+        carId: car.id,
+        customerId: customer.id,
+        contractNumber: `LC-${2024}-${String(1000 + i)}`,
+        startDate,
+        endDate,
+        status: daysUntilEnd <= 30 ? 'pending_release' : 'active',
+        commodity: commodities[i % commodities.length],
+        releaseReason: ['qualification', 'assignment', 'return'][i % 3],
+        nextCustomerId: nextCustomer?.id || null,
+        isReleaseConfirmed: false,
+        companyId: company.id,
+      },
+    });
+
+    leaseContracts.push(contract);
+  }
+
+  console.log(`✓ Created ${leaseContracts.length} lease contracts`);
+
+  // Create some S&OP capacity slots for shops (next 6 months)
+  const capacityMonths = [];
+  for (let i = 0; i < 6; i++) {
+    const monthDate = new Date(now);
+    monthDate.setMonth(monthDate.getMonth() + i);
+    const year = monthDate.getFullYear();
+    const month = (monthDate.getMonth() + 1).toString().padStart(2, '0');
+    capacityMonths.push(`${year}-${month}`);
+  }
+
+  let capacitySlotCount = 0;
+  for (const shop of shops.slice(0, 10)) {
+    for (const monthKey of capacityMonths) {
+      // Qualification slots
+      await prisma.shopCapacitySlot.create({
+        data: {
+          id: uuidv4(),
+          shopId: shop.id,
+          monthKey,
+          slotType: 'qualification',
+          capacity: shop.capacity,
+          used: Math.floor(Math.random() * shop.capacity * 0.3),
+        },
+      });
+
+      // Assignment slots
+      await prisma.shopCapacitySlot.create({
+        data: {
+          id: uuidv4(),
+          shopId: shop.id,
+          monthKey,
+          slotType: 'assignment',
+          capacity: Math.floor(shop.capacity * 0.8),
+          used: Math.floor(Math.random() * shop.capacity * 0.2),
+        },
+      });
+
+      // Repair slots
+      await prisma.shopCapacitySlot.create({
+        data: {
+          id: uuidv4(),
+          shopId: shop.id,
+          monthKey,
+          slotType: 'repair',
+          capacity: Math.floor(shop.capacity * 0.4),
+          used: Math.floor(Math.random() * shop.capacity * 0.1),
+        },
+      });
+
+      capacitySlotCount += 3;
+    }
+  }
+
+  console.log(`✓ Created ${capacitySlotCount} shop capacity slots`);
+
   console.log('\n🎉 Seed completed successfully!');
   console.log('\nLogin credentials:');
   console.log('  Admin: admin@aitx.com / password123');
