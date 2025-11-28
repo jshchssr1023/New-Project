@@ -81,6 +81,7 @@ model Car {
   company                 Company          @relation(fields: [companyId], references: [id])
   assignments             PlanAssignment[]
   scenarioCars            ScenarioCar[]
+  sopAssignments          SOPAssignment[]  // S&OP shop assignments
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
 
@@ -122,6 +123,17 @@ model Shop {
   assignments        PlanAssignment[]
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
+
+  // S&OP capacity fields
+  qualCapacity       Int              @default(50)  // Monthly qualification capacity
+  assignCapacity     Int              @default(30)  // Monthly assignment capacity
+  returnCapacity     Int              @default(40)  // Monthly return capacity
+  repairCapacity     Int              @default(20)  // Monthly repair capacity
+  efficiencyRating   Float            @default(0.9) // Shop efficiency (0.0 to 1.0)
+
+  // S&OP Relations
+  capacitySlots      ShopCapacitySlot[]
+  sopAssignments     SOPAssignment[]
 
   @@unique([code, companyId])
 }
@@ -196,6 +208,13 @@ model Scenario {
   creator        User                   @relation("ScenarioCreator", fields: [createdBy], references: [id])
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
+
+  // S&OP Scenario fields
+  isBaseline     Boolean                @default(false) // Is this the baseline scenario?
+  parentId       String?                // For cloned scenarios
+  parent         Scenario?              @relation("ScenarioClones", fields: [parentId], references: [id])
+  clones         Scenario[]             @relation("ScenarioClones")
+  sopAssignments SOPAssignment[]        // S&OP shop assignments
 
   @@index([projectNumber, companyId])
 }
@@ -355,4 +374,51 @@ model ScheduledReport {
   companyId       String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+}
+
+// =============================================================================
+// S&OP SCHEDULER MODELS
+// =============================================================================
+
+// Shop capacity tracking by month and slot type
+model ShopCapacitySlot {
+  id          String @id @default(uuid())
+  shopId      String
+  shop        Shop   @relation(fields: [shopId], references: [id])
+  monthKey    String // "2026-03"
+  slotType    String // "qualification", "assignment", "return", "repair"
+  capacity    Int    // Total capacity for this slot type
+  used        Int    @default(0) // Currently used capacity
+
+  @@unique([shopId, monthKey, slotType])
+  @@index([shopId, monthKey])
+}
+
+// S&OP Shop Assignment - links railcars to shops within a scenario
+model SOPAssignment {
+  id                  String    @id @default(uuid())
+  scenarioId          String
+  scenario            Scenario  @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  carId               String
+  car                 Car       @relation(fields: [carId], references: [id])
+  shopId              String
+  shop                Shop      @relation(fields: [shopId], references: [id])
+  workTypes           String    // JSON array of work types
+  status              String    @default("DRAFT") // DRAFT, PLANNED, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
+  monthKey            String    // "2026-03"
+  scheduledArrival    DateTime?
+  scheduledCompletion DateTime?
+  actualArrival       DateTime?
+  actualDeparture     DateTime?
+  estimatedCost       Float?
+  actualCost          Float?
+  estimatedDays       Int?
+  priority            Int       @default(3) // 1=CRITICAL, 2=HIGH, 3=MEDIUM, 4=LOW
+  notes               String    @default("")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([scenarioId, shopId])
+  @@index([scenarioId, monthKey])
+  @@index([carId])
 }
