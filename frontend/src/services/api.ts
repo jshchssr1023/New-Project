@@ -239,6 +239,15 @@ export const shopsApi = {
     return response.data;
   },
 
+  // Batch capacity check for multiple shops and months
+  getBatchCapacity: async (shopIds: string[], months: string[]): Promise<{
+    shops: { id: string; name: string; code: string; capacity: number }[];
+    capacityData: Record<string, Record<string, { capacity: number; used: number; available: number }>>;
+  }> => {
+    const response = await apiClient.post('/shops/capacity/batch', { shopIds, months });
+    return response.data;
+  },
+
   // Get filter options (regions, networks, railroads)
   getFilters: async (): Promise<{ regions: string[]; networks: string[]; railroads: string[] }> => {
     const response = await apiClient.get<{ regions: string[]; networks: string[]; railroads: string[] }>('/shops/meta/filters');
@@ -441,14 +450,14 @@ export const scenariosApi = {
   },
 
   // Add cars to scenario
-  addCars: async (id: string, carIds: string[], scheduledMonth: string): Promise<Scenario> => {
-    const response = await apiClient.post<Scenario>(`/scenarios/${id}/cars`, { carIds, scheduledMonth });
+  addCars: async (id: string, carIds: string[], scheduledMonth: string, autoSuggestShops: boolean = true): Promise<Scenario> => {
+    const response = await apiClient.post<Scenario>(`/scenarios/${id}/cars`, { carIds, scheduledMonth, autoSuggestShops });
     return response.data;
   },
 
   // Add cars by customer filter
-  addCarsByCustomer: async (id: string, customer: string, scheduledMonth: string): Promise<Scenario> => {
-    const response = await apiClient.post<Scenario>(`/scenarios/${id}/cars/by-customer`, { customer, scheduledMonth });
+  addCarsByCustomer: async (id: string, customer: string, scheduledMonth: string, autoSuggestShops: boolean = true): Promise<Scenario> => {
+    const response = await apiClient.post<Scenario>(`/scenarios/${id}/cars/by-customer`, { customer, scheduledMonth, autoSuggestShops });
     return response.data;
   },
 

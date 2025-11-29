@@ -54,6 +54,66 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Batch capacity check for multiple shops and months
+router.post('/capacity/batch', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { shopIds, months } = req.body;
+
+  try {
+    if (!Array.isArray(shopIds) || !Array.isArray(months)) {
+      res.status(400).json({ message: 'shopIds and months must be arrays' });
+      return;
+    }
+
+    // Get shops
+    const shops = await prisma.shop.findMany({
+      where: {
+        id: { in: shopIds },
+        companyId: req.user!.companyId,
+      },
+    });
+
+    // Get all assignments for these shops and months
+    const assignments = await prisma.planAssignment.groupBy({
+      by: ['shopId', 'scheduledMonth'],
+      where: {
+        shopId: { in: shopIds },
+        scheduledMonth: { in: months },
+      },
+      _count: { id: true },
+    });
+
+    // Build capacity map
+    const capacityData: Record<string, Record<string, { capacity: number; used: number; available: number }>> = {};
+
+    shops.forEach(shop => {
+      capacityData[shop.id] = {};
+      months.forEach(month => {
+        const assignment = assignments.find(a => a.shopId === shop.id && a.scheduledMonth === month);
+        const used = assignment?._count.id || 0;
+        capacityData[shop.id][month] = {
+          capacity: shop.capacity,
+          used,
+          available: shop.capacity - used,
+        };
+      });
+    });
+
+    res.json({
+      shops: shops.map(s => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        capacity: s.capacity,
+      })),
+      capacityData,
+    });
+  } catch (error) {
+    console.error('Batch capacity check error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Get shop by ID with capacity info
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
