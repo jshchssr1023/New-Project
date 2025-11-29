@@ -23,7 +23,37 @@ const statusColors: Record<string, string> = {
   in_service: 'bg-amber-50 text-amber-700 border border-amber-200',
   in_shop: 'bg-violet-50 text-violet-700 border border-violet-200',
   scheduled: 'bg-blue-50 text-blue-700 border border-blue-200',
+  planned: 'bg-indigo-50 text-indigo-700 border border-indigo-200',
+  release: 'bg-orange-50 text-orange-700 border border-orange-200',
+  assignment: 'bg-cyan-50 text-cyan-700 border border-cyan-200',
+  arrived: 'bg-green-50 text-green-700 border border-green-200',
   retired: 'bg-steel-100 text-steel-600 border border-steel-200',
+};
+
+// Helper to format date for display
+const formatDate = (date: string | Date | null | undefined): string => {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+// Check if date is within X days from now
+const isDateWithinDays = (date: string | Date | null | undefined, days: number): boolean => {
+  if (!date) return false;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  const diff = d.getTime() - now.getTime();
+  return diff >= 0 && diff <= days * 24 * 60 * 60 * 1000;
+};
+
+// Check if date is past
+const isDatePast = (date: string | Date | null | undefined): boolean => {
+  if (!date) return false;
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return false;
+  return d.getTime() < Date.now();
 };
 
 const carTypeOptions = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
@@ -531,9 +561,13 @@ export default function CarManagement() {
           >
             <option value="">All Status</option>
             <option value="available">Available</option>
+            <option value="planned">Planned</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="release">Release</option>
+            <option value="assignment">Assignment</option>
+            <option value="arrived">Arrived</option>
             <option value="in_service">In Service</option>
             <option value="in_shop">In Shop</option>
-            <option value="scheduled">Scheduled</option>
             <option value="retired">Retired</option>
           </select>
           <select
@@ -687,6 +721,12 @@ export default function CarManagement() {
                       {getSortIcon('status')}
                     </button>
                   </th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider">
+                    Contract Exp
+                  </th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider">
+                    Tank Qual Due
+                  </th>
                   <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wider">
                     Actions
                   </th>
@@ -733,6 +773,36 @@ export default function CarManagement() {
                         >
                           {car.status.replace('_', ' ')}
                         </span>
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-sm">
+                        {car.contractExpiration ? (
+                          <span className={`${
+                            isDatePast(car.contractExpiration)
+                              ? 'text-red-600 font-medium'
+                              : isDateWithinDays(car.contractExpiration, 90)
+                                ? 'text-amber-600'
+                                : 'text-steel-700'
+                          }`}>
+                            {formatDate(car.contractExpiration)}
+                          </span>
+                        ) : (
+                          <span className="text-steel-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-sm">
+                        {car.tankQualDueDate ? (
+                          <span className={`${
+                            isDatePast(car.tankQualDueDate)
+                              ? 'text-red-600 font-medium'
+                              : isDateWithinDays(car.tankQualDueDate, 90)
+                                ? 'text-amber-600'
+                                : 'text-steel-700'
+                          }`}>
+                            {formatDate(car.tankQualDueDate)}
+                          </span>
+                        ) : (
+                          <span className="text-steel-400">-</span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-right text-sm font-medium">
                         <button

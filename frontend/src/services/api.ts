@@ -1027,6 +1027,84 @@ export interface ShopCapacitySnapshot {
   }>;
 }
 
+// S&OP API
+export interface SOPAllocationData {
+  allocations: Record<string, Record<string, number>>; // monthKey -> shopId -> carCount
+  shopCapacities?: Record<string, { monthlyCapacity?: number; isAITX?: boolean }>;
+}
+
+export interface SOPAllocationResponse {
+  success: boolean;
+  message: string;
+  scenarioId?: string;
+  created?: number;
+  errors?: { monthKey: string; shopId: string; error: string }[];
+}
+
+export interface SOPLoadedAllocations {
+  allocations: Record<string, Record<string, number>>; // shopId -> monthKey -> carCount
+  lastUpdated: number | null;
+}
+
+export const sopApi = {
+  // Get saved allocations
+  getAllocations: async (): Promise<SOPLoadedAllocations> => {
+    const response = await apiClient.get<SOPLoadedAllocations>('/sop/allocations');
+    return response.data;
+  },
+
+  // Save monthly allocations
+  saveAllocations: async (data: SOPAllocationData): Promise<SOPAllocationResponse> => {
+    const response = await apiClient.post<SOPAllocationResponse>('/sop/allocations', data);
+    return response.data;
+  },
+
+  // Update shop capacities
+  updateCapacities: async (shopCapacities: Record<string, {
+    qualCapacity?: number;
+    assignCapacity?: number;
+    returnCapacity?: number;
+    repairCapacity?: number;
+    utilizationTarget?: number;
+  }>): Promise<{ success: boolean; message: string; updatedShops: string[] }> => {
+    const response = await apiClient.put('/sop/allocations/capacity', { shopCapacities });
+    return response.data;
+  },
+
+  // Run capacity check
+  checkCapacity: async (data: {
+    carIds: string[];
+    targetShops: string[];
+    startMonth: string;
+    flowRatePerWeek?: number;
+  }): Promise<{
+    passed: boolean;
+    firstOverloadMonth: string | null;
+    totalBacklog: number;
+    totalCars: number;
+    monthsNeeded: number;
+    monthlyBreakdown: Array<{
+      monthKey: string;
+      carsScheduled: number;
+      totalCapacity: number;
+      available: number;
+      isOverloaded: boolean;
+    }>;
+    overloadedShops: Array<{
+      shopId: string;
+      shopName: string;
+      monthKey: string;
+      capacity: number;
+      projected: number;
+      overload: number;
+    }>;
+    message: string;
+  }> => {
+    const response = await apiClient.post('/sop/capacity-check', data);
+    return response.data;
+  },
+};
+
 export const leaseQualificationApi = {
   // Releases
   getReleases: async (horizonMonths: number = 6): Promise<{ data: LeaseRelease[]; count: number }> => {

@@ -536,4 +536,266 @@ router.post('/capacity-check', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// =============================================================================
+// S&OP MONTHLY ALLOCATION ROUTES
+// =============================================================================
+
+/**
+ * GET /api/sop/allocations - Get saved S&OP monthly allocations
+ */
+router.get('/allocations', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+
+  try {
+    // Get all SOPAssignments grouped by shop and month
+    const assignments = await prisma.sOPAssignment.findMany({
+      where: {
+        scenario: {
+          companyId: req.user!.companyId,
+          isBaseline: true, // Only get baseline scenario allocations
+        },
+      },
+      include: {
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            isAitxInternal: true,
+            qualCapacity: true,
+          },
+        },
+      },
+    });
+
+    // Build allocation map by shop and month
+    const allocationMap: Record<string, Record<string, number>> = {};
+
+    assignments.forEach((assignment) => {
+      const shopId = assignment.shopId;
+      const monthKey = assignment.monthKey;
+
+      if (!allocationMap[shopId]) {
+        allocationMap[shopId] = {};
+      }
+      allocationMap[shopId][monthKey] = (allocationMap[shopId][monthKey] || 0) + 1;
+    });
+
+    res.json({
+      allocations: allocationMap,
+      lastUpdated: assignments.length > 0
+        ? Math.max(...assignments.map(a => a.updatedAt.getTime()))
+        : null,
+    });
+  } catch (error: any) {
+    console.error('Get allocations error:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
+  }
+});
+
+/**
+ * POST /api/sop/allocations - Save S&OP monthly allocations
+ *
+ * This endpoint saves the S&OP allocation plan by creating SOPAssignment records.
+ * It creates a baseline scenario if one doesn't exist.
+ */
+router.post('/allocations', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { allocations, shopCapacities } = req.body;
+
+  // allocations format: { monthKey: { shopId: numberOfCars } }
+  // shopCapacities format: { shopId: { monthlyCapacity: number, isAITX: boolean } }
+
+  if (!allocations || typeof allocations !== 'object') {
+    res.status(400).json({ message: 'allocations object is required' });
+    return;
+  }
+
+  try {
+    // Get or create baseline scenario for S&OP allocations
+    let baselineScenario = await prisma.scenario.findFirst({
+      where: {
+        companyId: req.user!.companyId,
+        isBaseline: true,
+        name: 'S&OP Baseline',
+      },
+    });
+
+    if (!baselineScenario) {
+      baselineScenario = await prisma.scenario.create({
+        data: {
+          projectNumber: `SOP-${new Date().getFullYear()}`,
+          name: 'S&OP Baseline',
+          description: 'Baseline S&OP allocation scenario for 18-month planning',
+          isBaseline: true,
+          status: 'active',
+          companyId: req.user!.companyId,
+          createdBy: req.user!.id,
+        },
+      });
+    }
+
+    // Get all available cars for allocation
+    const availableCars = await prisma.car.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        status: { in: ['available', 'scheduled'] },
+      },
+      orderBy: { railcarNumber: 'asc' },
+    });
+
+    // Clear existing allocations for this scenario
+    await prisma.sOPAssignment.deleteMany({
+      where: { scenarioId: baselineScenario.id },
+    });
+
+    // Create new allocations
+    const createdAssignments: any[] = [];
+    const errors: { monthKey: string; shopId: string; error: string }[] = [];
+    let carIndex = 0;
+
+    // Process allocations by month
+    for (const [monthKey, shopAllocations] of Object.entries(allocations)) {
+      if (!shopAllocations || typeof shopAllocations !== 'object') continue;
+
+      for (const [shopId, carCount] of Object.entries(shopAllocations as Record<string, number>)) {
+        const count = Number(carCount);
+        if (isNaN(count) || count <= 0) continue;
+
+        // Verify shop exists
+        const shop = await prisma.shop.findFirst({
+          where: {
+            id: shopId,
+            companyId: req.user!.companyId,
+          },
+        });
+
+        if (!shop) {
+          errors.push({ monthKey, shopId, error: 'Shop not found' });
+          continue;
+        }
+
+        // Create allocation records
+        for (let i = 0; i < count && carIndex < availableCars.length; i++) {
+          const car = availableCars[carIndex++];
+
+          try {
+            const assignment = await prisma.sOPAssignment.create({
+              data: {
+                scenarioId: baselineScenario.id,
+                carId: car.id,
+                shopId: shop.id,
+                workTypes: JSON.stringify(['qualification']),
+                status: 'PLANNED',
+                monthKey,
+                priority: 3,
+              },
+            });
+            createdAssignments.push(assignment);
+          } catch (err: any) {
+            errors.push({ monthKey, shopId, error: err.message });
+          }
+        }
+      }
+    }
+
+    // Update shop capacity slots
+    if (shopCapacities && typeof shopCapacities === 'object') {
+      for (const [shopId, capacity] of Object.entries(shopCapacities as Record<string, { monthlyCapacity?: number }>)) {
+        const monthlyCapacity = capacity?.monthlyCapacity;
+        if (monthlyCapacity !== undefined) {
+          // Update shop's qualification capacity
+          await prisma.shop.update({
+            where: { id: shopId },
+            data: { qualCapacity: monthlyCapacity },
+          }).catch(() => {}); // Ignore errors if shop doesn't exist
+        }
+      }
+    }
+
+    // Emit WebSocket event
+    const websocket = req.app.locals.websocket;
+    if (websocket) {
+      websocket.emitToCompany(req.user!.companyId, 'plan:updated', {
+        scenarioId: baselineScenario.id,
+        assignmentsCreated: createdAssignments.length,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Saved ${createdAssignments.length} allocations`,
+      scenarioId: baselineScenario.id,
+      created: createdAssignments.length,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error: any) {
+    console.error('Save allocations error:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
+  }
+});
+
+/**
+ * PUT /api/sop/allocations/capacity - Update shop capacities
+ */
+router.put('/allocations/capacity', async (req: AuthRequest, res: Response) => {
+  const prisma: PrismaClient = req.app.locals.prisma;
+  const { shopCapacities } = req.body;
+
+  if (!shopCapacities || typeof shopCapacities !== 'object') {
+    res.status(400).json({ message: 'shopCapacities object is required' });
+    return;
+  }
+
+  try {
+    const updatedShops: string[] = [];
+
+    for (const [shopId, updates] of Object.entries(shopCapacities as Record<string, {
+      qualCapacity?: number;
+      assignCapacity?: number;
+      returnCapacity?: number;
+      repairCapacity?: number;
+      utilizationTarget?: number;
+    }>)) {
+      try {
+        await prisma.shop.updateMany({
+          where: {
+            id: shopId,
+            companyId: req.user!.companyId,
+          },
+          data: {
+            ...(updates.qualCapacity !== undefined && { qualCapacity: updates.qualCapacity }),
+            ...(updates.assignCapacity !== undefined && { assignCapacity: updates.assignCapacity }),
+            ...(updates.returnCapacity !== undefined && { returnCapacity: updates.returnCapacity }),
+            ...(updates.repairCapacity !== undefined && { repairCapacity: updates.repairCapacity }),
+            ...(updates.utilizationTarget !== undefined && { utilizationTarget: updates.utilizationTarget }),
+          },
+        });
+        updatedShops.push(shopId);
+      } catch (err) {
+        console.error(`Failed to update shop ${shopId}:`, err);
+      }
+    }
+
+    // Emit WebSocket event
+    const websocket = req.app.locals.websocket;
+    if (websocket) {
+      websocket.emitToCompany(req.user!.companyId, 'shop:capacityChanged', {
+        shopIds: updatedShops,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Updated ${updatedShops.length} shop capacities`,
+      updatedShops,
+    });
+  } catch (error: any) {
+    console.error('Update capacity error:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
+  }
+});
+
 export default router;

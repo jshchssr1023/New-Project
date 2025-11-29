@@ -27,18 +27,25 @@ export interface Car {
   customer: string;
   projectNumber: string;
   reasonShopped: string;
-  status: 'available' | 'in_service' | 'in_shop' | 'scheduled' | 'retired';
+  status: 'available' | 'in_service' | 'in_shop' | 'scheduled' | 'retired' | 'planned' | 'release' | 'assignment' | 'arrived';
   currentLocation: string;
   assignedShopId: string | null;
   projectedCompletionMonth: string;
   projectedCost: number;
   shopEntryDate: string | null;
+  arrivalDate: string | null; // When car arrived at shop (from FMS data)
   daysInShop: number;
   lastServiceDate: string | null;
   nextServiceDue: string | null;
   homeRegion: string;
   originRegion: string;
   notes: string;
+  // Qualification and contract fields
+  contractNumber: string;
+  contractExpiration: string | null; // Contract expiration date
+  tankQualified: boolean; // Tank qualification flag
+  tankQualDueDate: string | null; // Tank qualification due date
+  qualificationType: string; // Full/Partial qualification
   companyId: string;
   createdAt: string;
   updatedAt: string;

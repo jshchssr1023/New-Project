@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   TruckIcon,
@@ -8,31 +8,128 @@ import {
   ExclamationTriangleIcon,
   ClockIcon,
   ChevronRightIcon,
+  CheckCircleIcon,
+  ArrowPathIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
-import { analyticsApi } from '../services/api';
-import type { AnalyticsData } from '../types';
+import { analyticsApi, carsApi } from '../services/api';
+import type { AnalyticsData, Car } from '../types';
+import { useCarUpdates } from '../contexts/WebSocketContext';
 
 const DAYS_IN_SHOP_THRESHOLD = 10;
+
+// Team filter types
+type TeamFilter = 'all' | 'qualification' | 'assignment_release' | 'in_service_repairs';
 
 export default function Dashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
+  const [filteredCars, setFilteredCars] = useState<Car[]>([]);
+  const [monthlyShoppings, setMonthlyShoppings] = useState<{ month: string; count: number }[]>([]);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadAnalytics();
-  }, []);
-
-  const loadAnalytics = async () => {
+  const loadAnalytics = useCallback(async () => {
     try {
       const data = await analyticsApi.getDashboard();
       setAnalytics(data);
+
+      // Load cars for team filtering
+      loadTeamData(teamFilter);
+
+      // Load monthly shoppings (arrived cars)
+      loadMonthlyShoppings();
     } catch (error) {
       console.error('Failed to load analytics:', error);
     } finally {
       setIsLoading(false);
     }
+  }, [teamFilter]);
+
+  // Load cars based on team filter
+  const loadTeamData = async (filter: TeamFilter) => {
+    try {
+      let statusFilter: string | undefined;
+      const currentYear = new Date().getFullYear();
+
+      switch (filter) {
+        case 'qualification':
+          // Planned cars due this year
+          statusFilter = 'planned';
+          break;
+        case 'assignment_release':
+          // Cars in release or assignment status
+          statusFilter = 'release,assignment';
+          break;
+        case 'in_service_repairs':
+          // Cars in shop with repair work
+          statusFilter = 'in_shop';
+          break;
+        default:
+          // All cars
+          statusFilter = undefined;
+      }
+
+      const response = await carsApi.getAll({
+        page: 1,
+        pageSize: 50,
+        status: statusFilter,
+      });
+      setFilteredCars(response.data);
+    } catch (error) {
+      console.error('Failed to load team data:', error);
+    }
   };
+
+  // Load monthly shoppings (cars with arrived status)
+  const loadMonthlyShoppings = async () => {
+    try {
+      // Get cars with arrived status grouped by arrival month
+      const response = await carsApi.getAll({
+        page: 1,
+        pageSize: 500,
+        status: 'arrived',
+      });
+
+      // Group by month
+      const monthlyData: Record<string, number> = {};
+      response.data.forEach((car) => {
+        if (car.arrivalDate) {
+          const month = car.arrivalDate.slice(0, 7); // YYYY-MM
+          monthlyData[month] = (monthlyData[month] || 0) + 1;
+        } else if (car.shopEntryDate) {
+          const month = car.shopEntryDate.slice(0, 7); // YYYY-MM
+          monthlyData[month] = (monthlyData[month] || 0) + 1;
+        }
+      });
+
+      // Convert to array and sort
+      const sortedData = Object.entries(monthlyData)
+        .map(([month, count]) => ({ month, count }))
+        .sort((a, b) => a.month.localeCompare(b.month))
+        .slice(-6);
+
+      setMonthlyShoppings(sortedData);
+    } catch (error) {
+      console.error('Failed to load monthly shoppings:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadAnalytics();
+  }, []);
+
+  // Reload team data when filter changes
+  useEffect(() => {
+    loadTeamData(teamFilter);
+  }, [teamFilter]);
+
+  // Real-time updates via WebSocket
+  const handleCarUpdate = useCallback(() => {
+    loadAnalytics();
+  }, [loadAnalytics]);
+
+  useCarUpdates(handleCarUpdate);
 
   // KPI Card click handlers with navigation and filters
   const handleKPIClick = (kpiType: string) => {
@@ -119,6 +216,54 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* Team Filter Buttons */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-medium text-steel-500">Team View:</span>
+        <button
+          onClick={() => setTeamFilter('all')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            teamFilter === 'all'
+              ? 'bg-rail-600 text-white'
+              : 'bg-steel-100 text-steel-700 hover:bg-steel-200'
+          }`}
+        >
+          All Cars
+        </button>
+        <button
+          onClick={() => setTeamFilter('qualification')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            teamFilter === 'qualification'
+              ? 'bg-indigo-600 text-white'
+              : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+          }`}
+        >
+          <CheckCircleIcon className="h-4 w-4" />
+          Qualification
+        </button>
+        <button
+          onClick={() => setTeamFilter('assignment_release')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            teamFilter === 'assignment_release'
+              ? 'bg-orange-600 text-white'
+              : 'bg-orange-50 text-orange-700 hover:bg-orange-100'
+          }`}
+        >
+          <ArrowPathIcon className="h-4 w-4" />
+          Assignment & Release
+        </button>
+        <button
+          onClick={() => setTeamFilter('in_service_repairs')}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            teamFilter === 'in_service_repairs'
+              ? 'bg-amber-600 text-white'
+              : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+          }`}
+        >
+          <Cog6ToothIcon className="h-4 w-4" />
+          In-Service Repairs
+        </button>
+      </div>
+
       {/* Alert Banner */}
       {analytics?.alerts?.hasAlerts && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -175,6 +320,97 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+
+      {/* Team View Results (shown when team filter is active) */}
+      {teamFilter !== 'all' && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-steel-900">
+                {teamFilter === 'qualification' && 'Qualification Queue'}
+                {teamFilter === 'assignment_release' && 'Assignment & Release Cars'}
+                {teamFilter === 'in_service_repairs' && 'In-Service Repairs'}
+              </h3>
+              <p className="text-xs text-steel-500">
+                {teamFilter === 'qualification' && 'Planned cars due for qualification'}
+                {teamFilter === 'assignment_release' && 'Cars in release or assignment status'}
+                {teamFilter === 'in_service_repairs' && 'Cars currently in shop for repairs'}
+              </p>
+            </div>
+            <span className="text-sm font-medium text-steel-600 bg-steel-100 px-2 py-1 rounded">
+              {filteredCars.length} cars
+            </span>
+          </div>
+          {filteredCars.length > 0 ? (
+            <div className="overflow-x-auto -mx-4 px-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-steel-200">
+                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Railcar #</th>
+                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Customer</th>
+                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Status</th>
+                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Reason</th>
+                    {teamFilter === 'qualification' && (
+                      <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Tank Qual Due</th>
+                    )}
+                    {teamFilter === 'in_service_repairs' && (
+                      <th className="text-right py-2 text-xs font-medium text-steel-500 uppercase">Days In Shop</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-steel-100">
+                  {filteredCars.slice(0, 10).map((car) => (
+                    <tr
+                      key={car.id}
+                      className="hover:bg-steel-50 cursor-pointer"
+                      onClick={() => navigate(`/cars?search=${car.railcarNumber}`)}
+                    >
+                      <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
+                      <td className="py-2 text-steel-700">{car.customer || '-'}</td>
+                      <td className="py-2">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          car.status === 'planned' ? 'bg-indigo-100 text-indigo-800' :
+                          car.status === 'release' ? 'bg-orange-100 text-orange-800' :
+                          car.status === 'assignment' ? 'bg-cyan-100 text-cyan-800' :
+                          car.status === 'in_shop' ? 'bg-amber-100 text-amber-800' :
+                          'bg-steel-100 text-steel-800'
+                        }`}>
+                          {car.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="py-2 text-steel-700">{car.reasonShopped || '-'}</td>
+                      {teamFilter === 'qualification' && (
+                        <td className="py-2 text-steel-700">
+                          {car.tankQualDueDate
+                            ? new Date(car.tankQualDueDate).toLocaleDateString()
+                            : '-'}
+                        </td>
+                      )}
+                      {teamFilter === 'in_service_repairs' && (
+                        <td className={`py-2 text-right ${getDaysInShopColor(car.daysInShop)}`}>
+                          {car.daysInShop}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredCars.length > 10 && (
+                <div className="mt-2 pt-2 border-t border-steel-100 text-center">
+                  <button
+                    onClick={() => navigate(`/cars?status=${teamFilter === 'qualification' ? 'planned' : teamFilter === 'assignment_release' ? 'release,assignment' : 'in_shop'}`)}
+                    className="text-sm text-rail-600 hover:text-rail-800 font-medium"
+                  >
+                    View all {filteredCars.length} cars
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-steel-500 py-4 text-center">No cars in this category</p>
+          )}
+        </div>
+      )}
 
       {/* Operational Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -295,13 +531,28 @@ export default function Dashboard() {
 
       {/* Lower Section - Charts and Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Monthly Service Volume */}
+        {/* Monthly Shoppings (Arrived Cars) */}
         <div className="card p-4">
-          <h3 className="text-sm font-semibold text-steel-900 mb-3">Monthly Service Volume</h3>
+          <h3 className="text-sm font-semibold text-steel-900 mb-1">Monthly Shoppings</h3>
+          <p className="text-xs text-steel-500 mb-3">Cars arrived at shops by month</p>
           <div className="h-48 flex items-end justify-around bg-steel-50 rounded-lg p-3">
             {isLoading ? (
               <p className="text-steel-500 text-sm self-center">Loading...</p>
+            ) : monthlyShoppings.length > 0 ? (
+              monthlyShoppings.map((item) => (
+                <div key={item.month} className="flex flex-col items-center">
+                  <span className="text-xs text-steel-600 mb-1">{item.count}</span>
+                  <div
+                    className="bg-green-500 w-10 rounded-t transition-all hover:bg-green-600"
+                    style={{ height: `${Math.max(item.count * 3, 8)}px` }}
+                  />
+                  <span className="text-xs text-steel-500 mt-2">
+                    {item.month.slice(5)}
+                  </span>
+                </div>
+              ))
             ) : analytics?.monthlyServiceCounts?.length ? (
+              // Fallback to service counts if no arrived data
               analytics.monthlyServiceCounts.slice(-6).map((item) => (
                 <div key={item.month} className="flex flex-col items-center">
                   <span className="text-xs text-steel-600 mb-1">{item.count}</span>
