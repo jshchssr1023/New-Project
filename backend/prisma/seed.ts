@@ -556,8 +556,19 @@ async function main() {
   for (const shop of shops.slice(0, 10)) {
     for (const monthKey of capacityMonths) {
       // Qualification slots
-      await prisma.shopCapacitySlot.create({
-        data: {
+      await prisma.shopCapacitySlot.upsert({
+        where: {
+          shopId_monthKey_slotType: {
+            shopId: shop.id,
+            monthKey,
+            slotType: 'qualification',
+          },
+        },
+        update: {
+          capacity: shop.capacity,
+          used: Math.floor(Math.random() * shop.capacity * 0.3),
+        },
+        create: {
           id: uuidv4(),
           shopId: shop.id,
           monthKey,
@@ -568,8 +579,19 @@ async function main() {
       });
 
       // Assignment slots
-      await prisma.shopCapacitySlot.create({
-        data: {
+      await prisma.shopCapacitySlot.upsert({
+        where: {
+          shopId_monthKey_slotType: {
+            shopId: shop.id,
+            monthKey,
+            slotType: 'assignment',
+          },
+        },
+        update: {
+          capacity: Math.floor(shop.capacity * 0.8),
+          used: Math.floor(Math.random() * shop.capacity * 0.2),
+        },
+        create: {
           id: uuidv4(),
           shopId: shop.id,
           monthKey,
@@ -580,8 +602,19 @@ async function main() {
       });
 
       // Repair slots
-      await prisma.shopCapacitySlot.create({
-        data: {
+      await prisma.shopCapacitySlot.upsert({
+        where: {
+          shopId_monthKey_slotType: {
+            shopId: shop.id,
+            monthKey,
+            slotType: 'repair',
+          },
+        },
+        update: {
+          capacity: Math.floor(shop.capacity * 0.4),
+          used: Math.floor(Math.random() * shop.capacity * 0.1),
+        },
+        create: {
           id: uuidv4(),
           shopId: shop.id,
           monthKey,
