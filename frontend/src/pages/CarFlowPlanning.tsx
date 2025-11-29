@@ -10,6 +10,16 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   DocumentArrowDownIcon,
+  FunnelIcon,
+  ClockIcon,
+  ArrowRightIcon,
+  BellAlertIcon,
+  ArrowTrendingUpIcon,
+  ArrowTrendingDownIcon,
+  UserGroupIcon,
+  TruckIcon,
+  LockClosedIcon,
+  PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 import { carsApi, shopsApi, reportsApi, sopApi } from '../services/api';
 import type { Car, Shop } from '../types';
@@ -39,6 +49,32 @@ import {
   formatPercent,
   validateAllocations,
 } from '../utils/sopCalculations';
+import {
+  get120DayPlanningHorizon,
+  generateMonthLabels,
+  filterTo120DayHorizon,
+  generateCapacityAlerts,
+  getUtilizationColorClass,
+  getUtilizationStatusLabel,
+  getUnassignedCarsWithUrgency,
+  getQualificationPriority,
+  getQualificationPriorityColor,
+  generateCriticalActionItems,
+  generateSchedulingOutput,
+  validateSchedulingOutput,
+  calculateTargetVsActuals,
+  getQualificationDeadlines,
+  getUniqueReasonsShopped,
+  QUALIFICATION_PRIORITY,
+  PLANNING_HORIZON_DAYS,
+  type CapacityAlert,
+  type CriticalActionItem,
+  type UnassignedCar,
+  type TargetVsActual,
+  type QualificationDeadline,
+  type SchedulingOutput,
+  type CapacityConfirmationStatus,
+} from '../utils/carFlowUtilities';
 
 // Import default data
 import {
@@ -48,7 +84,7 @@ import {
   DEFAULT_PLANNING_ASSUMPTIONS as PLANNING_ASSUMPTIONS,
 } from '../types/sop';
 
-type TabType = 'dashboard' | 'demand' | 'supply' | 'plan' | 'assumptions';
+type TabType = 'dashboard' | 'demand' | 'supply' | 'plan' | 'assumptions' | 'allocations' | 'scheduling';
 
 export default function CarFlowPlanning() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
@@ -72,6 +108,14 @@ export default function CarFlowPlanning() {
   const [monthlyAllocations, setMonthlyAllocations] = useState<MonthlyAllocation[]>([]);
   const [assumptions, setAssumptions] = useState<PlanningAssumptions>(PLANNING_ASSUMPTIONS);
   const [assumptionsExpanded, setAssumptionsExpanded] = useState(false);
+
+  // NEW: Enhanced planning state
+  const [use120DayFilter, setUse120DayFilter] = useState(true); // Default to 120-day view
+  const [showCriticalActions, setShowCriticalActions] = useState(true);
+  const [schedulingOutput, setSchedulingOutput] = useState<SchedulingOutput | null>(null);
+  const [isPlanLocked, setIsPlanLocked] = useState(false);
+  const [selectedReasonFilter, setSelectedReasonFilter] = useState<string>('all');
+  const [shopConfirmations, setShopConfirmations] = useState<Record<string, CapacityConfirmationStatus>>({});
 
   // Export handlers
   const handleExportCSV = useCallback(async () => {
@@ -285,6 +329,105 @@ export default function CarFlowPlanning() {
     return result.carsByReason;
   }, [cars]);
 
+  // NEW: Enhanced computed values
+
+  // 120-day filtered allocations
+  const filteredAllocations = useMemo(() => {
+    if (!use120DayFilter) return monthlyAllocations;
+    return filterTo120DayHorizon(monthlyAllocations);
+  }, [monthlyAllocations, use120DayFilter]);
+
+  // Capacity alerts with action prompts
+  const capacityAlerts = useMemo(() => {
+    return generateCapacityAlerts(monthlyAllocations, aitxShops, thirdPartyNetworks);
+  }, [monthlyAllocations, aitxShops, thirdPartyNetworks]);
+
+  // Critical action items
+  const criticalActionItems = useMemo(() => {
+    return generateCriticalActionItems(cars, monthlyAllocations, metrics, capacityAlerts);
+  }, [cars, monthlyAllocations, metrics, capacityAlerts]);
+
+  // Unassigned cars with urgency scoring
+  const unassignedCarsWithUrgency = useMemo(() => {
+    return getUnassignedCarsWithUrgency(cars, shops);
+  }, [cars, shops]);
+
+  // Target vs. Actuals comparison
+  const targetVsActuals = useMemo(() => {
+    return calculateTargetVsActuals(monthlyAllocations, cars, use120DayFilter);
+  }, [monthlyAllocations, cars, use120DayFilter]);
+
+  // Qualification deadlines
+  const qualificationDeadlines = useMemo(() => {
+    return getQualificationDeadlines(cars, use120DayFilter);
+  }, [cars, use120DayFilter]);
+
+  // Unique reasons for dynamic filter
+  const uniqueReasons = useMemo(() => {
+    return getUniqueReasonsShopped(cars);
+  }, [cars]);
+
+  // Planning horizon info
+  const planningHorizon = useMemo(() => {
+    return get120DayPlanningHorizon();
+  }, []);
+
+  // Blocking action items count
+  const blockingActionsCount = useMemo(() => {
+    return criticalActionItems.filter(item => item.isBlocking).length;
+  }, [criticalActionItems]);
+
+  // NEW: Generate scheduling output handler
+  const handleGenerateSchedulingOutput = useCallback(() => {
+    const output = generateSchedulingOutput(monthlyAllocations, cars, use120DayFilter);
+    setSchedulingOutput(output);
+  }, [monthlyAllocations, cars, use120DayFilter]);
+
+  // NEW: Lock plan handler
+  const handleLockPlan = useCallback(() => {
+    if (blockingActionsCount > 0) {
+      setError('Cannot lock plan: there are blocking action items that must be resolved first.');
+      return;
+    }
+    setIsPlanLocked(true);
+    handleGenerateSchedulingOutput();
+    setSaveSuccess('Plan locked and ready for scheduling team.');
+    setTimeout(() => setSaveSuccess(null), 5000);
+  }, [blockingActionsCount, handleGenerateSchedulingOutput]);
+
+  // NEW: Push to scheduling handler
+  const handlePushToScheduling = useCallback(async () => {
+    if (!schedulingOutput) {
+      setError('Please generate scheduling output first.');
+      return;
+    }
+
+    const validation = validateSchedulingOutput(schedulingOutput);
+    if (!validation.isValid) {
+      setError(`Cannot push: ${validation.errors.join(', ')}`);
+      return;
+    }
+
+    // Here you would integrate with the actual scheduling API
+    setSchedulingOutput({
+      ...schedulingOutput,
+      status: 'pushed',
+      pushedAt: new Date().toISOString(),
+    });
+    setSaveSuccess('Plan successfully pushed to scheduling team!');
+    setTimeout(() => setSaveSuccess(null), 5000);
+  }, [schedulingOutput]);
+
+  // NEW: Request shop confirmation handler
+  const handleRequestConfirmation = useCallback((shopId: string) => {
+    setShopConfirmations(prev => ({
+      ...prev,
+      [shopId]: 'requested',
+    }));
+    setSaveSuccess('Confirmation request sent to shop manager.');
+    setTimeout(() => setSaveSuccess(null), 3000);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -309,17 +452,62 @@ export default function CarFlowPlanning() {
         <div>
           <h1 className="text-2xl font-bold text-steel-900">Car Flow Planning</h1>
           <p className="text-sm text-steel-500">
-            S&OP Module - 18 Month Rolling Horizon | {unassignedCarsCount} Unassigned Cars
+            S&OP Module - {use120DayFilter ? '120-Day' : '18 Month'} Rolling Horizon | {unassignedCarsCount} Unassigned Cars
             {hasUnsavedChanges && <span className="ml-2 text-yellow-600">(unsaved changes)</span>}
+            {isPlanLocked && <span className="ml-2 text-green-600">(Plan Locked)</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {/* 120-Day Filter Toggle */}
+          <div className="flex items-center gap-2 rounded-lg border border-steel-200 px-3 py-1.5">
+            <FunnelIcon className="h-4 w-4 text-steel-500" />
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={use120DayFilter}
+                onChange={(e) => setUse120DayFilter(e.target.checked)}
+                className="rounded border-steel-300 text-rail-600 focus:ring-rail-500"
+              />
+              <span className="text-sm text-steel-700">120-Day View</span>
+            </label>
+          </div>
+
+          {/* Lock & Push Buttons */}
+          {!isPlanLocked ? (
+            <button
+              onClick={handleLockPlan}
+              disabled={blockingActionsCount > 0}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition-colors ${
+                blockingActionsCount > 0
+                  ? 'bg-steel-200 text-steel-500 cursor-not-allowed'
+                  : 'bg-yellow-600 text-white hover:bg-yellow-700'
+              }`}
+              title={blockingActionsCount > 0 ? `Resolve ${blockingActionsCount} blocking items first` : 'Lock plan for scheduling'}
+            >
+              <LockClosedIcon className="h-4 w-4" />
+              Confirm & Lock
+            </button>
+          ) : (
+            <button
+              onClick={handlePushToScheduling}
+              disabled={schedulingOutput?.status === 'pushed'}
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition-colors ${
+                schedulingOutput?.status === 'pushed'
+                  ? 'bg-green-100 text-green-800 cursor-not-allowed'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              <PaperAirplaneIcon className="h-4 w-4" />
+              {schedulingOutput?.status === 'pushed' ? 'Pushed to Scheduling' : 'Push to Scheduling'}
+            </button>
+          )}
+
           {/* Save Button */}
           <button
             onClick={handleSavePlan}
-            disabled={isSaving || !hasUnsavedChanges}
+            disabled={isSaving || !hasUnsavedChanges || isPlanLocked}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition-colors ${
-              hasUnsavedChanges
+              hasUnsavedChanges && !isPlanLocked
                 ? 'bg-rail-600 text-white hover:bg-rail-700'
                 : 'bg-steel-200 text-steel-500 cursor-not-allowed'
             }`}
@@ -419,20 +607,76 @@ export default function CarFlowPlanning() {
         </div>
       )}
 
+      {/* Critical Action Items Banner */}
+      {showCriticalActions && criticalActionItems.length > 0 && (
+        <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <BellAlertIcon className="h-6 w-6 text-yellow-600" />
+              <div>
+                <h3 className="font-semibold text-yellow-800">
+                  {criticalActionItems.length} Critical Action Items
+                  {blockingActionsCount > 0 && (
+                    <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700">
+                      {blockingActionsCount} Blocking
+                    </span>
+                  )}
+                </h3>
+                <p className="text-sm text-yellow-700">
+                  {blockingActionsCount > 0
+                    ? 'Resolve blocking items before locking the plan'
+                    : 'Review and address these items for optimal planning'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className="rounded-lg bg-yellow-100 px-3 py-1.5 text-sm font-medium text-yellow-800 hover:bg-yellow-200"
+              >
+                View Details
+              </button>
+              <button
+                onClick={() => setShowCriticalActions(false)}
+                className="text-yellow-600 hover:text-yellow-800"
+              >
+                <XCircleIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+          {/* Quick view of top blocking items */}
+          {blockingActionsCount > 0 && (
+            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+              {criticalActionItems
+                .filter(item => item.isBlocking)
+                .slice(0, 3)
+                .map(item => (
+                  <div key={item.id} className="flex items-center gap-2 rounded bg-red-50 px-3 py-2 text-sm">
+                    <ExclamationTriangleIcon className="h-4 w-4 flex-shrink-0 text-red-600" />
+                    <span className="truncate text-red-800">{item.title}</span>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="border-b border-steel-200">
-        <nav className="-mb-px flex space-x-8">
+        <nav className="-mb-px flex space-x-8 overflow-x-auto">
           {[
             { id: 'dashboard', name: 'Executive Dashboard', icon: ChartBarIcon },
             { id: 'demand', name: 'Demand Register', icon: TableCellsIcon },
             { id: 'supply', name: 'Supply Capacity', icon: TableCellsIcon },
             { id: 'plan', name: 'S&OP Plan', icon: TableCellsIcon },
+            { id: 'allocations', name: 'Car Allocation', icon: TruckIcon },
+            { id: 'scheduling', name: 'Scheduling Output', icon: ClockIcon },
             { id: 'assumptions', name: 'Assumptions', icon: Cog6ToothIcon },
           ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as TabType)}
-              className={`flex items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium ${
+              className={`flex items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'border-rail-600 text-rail-600'
                   : 'border-transparent text-steel-500 hover:border-steel-300 hover:text-steel-700'
@@ -452,6 +696,11 @@ export default function CarFlowPlanning() {
           demandTypes={demandTypes}
           actionItems={ACTION_ITEMS}
           carsByReason={carsByReason}
+          criticalActionItems={criticalActionItems}
+          capacityAlerts={capacityAlerts}
+          targetVsActuals={targetVsActuals}
+          qualificationDeadlines={qualificationDeadlines}
+          use120DayFilter={use120DayFilter}
         />
       )}
 
@@ -459,9 +708,12 @@ export default function CarFlowPlanning() {
         <DemandRegister
           demandTypes={demandTypes}
           setDemandTypes={setDemandTypes}
-          monthlyForecasts={monthlyForecasts}
+          monthlyForecasts={use120DayFilter ? filterTo120DayHorizon(monthlyForecasts) : monthlyForecasts}
           setMonthlyForecasts={setMonthlyForecasts}
           carsByReason={carsByReason}
+          uniqueReasons={uniqueReasons}
+          selectedReasonFilter={selectedReasonFilter}
+          setSelectedReasonFilter={setSelectedReasonFilter}
         />
       )}
 
@@ -471,15 +723,41 @@ export default function CarFlowPlanning() {
           setAitxShops={handleAitxShopsChange}
           thirdPartyNetworks={thirdPartyNetworks}
           setThirdPartyNetworks={handleThirdPartyNetworksChange}
+          shopConfirmations={shopConfirmations}
+          onRequestConfirmation={handleRequestConfirmation}
+          capacityAlerts={capacityAlerts}
         />
       )}
 
       {activeTab === 'plan' && (
         <SOPPlanGrid
-          monthlyAllocations={monthlyAllocations}
+          monthlyAllocations={filteredAllocations}
           setMonthlyAllocations={handleAllocationChange}
           aitxShops={aitxShops}
           thirdPartyNetworks={thirdPartyNetworks}
+          use120DayFilter={use120DayFilter}
+          isPlanLocked={isPlanLocked}
+        />
+      )}
+
+      {activeTab === 'allocations' && (
+        <CarAllocationWorkflow
+          unassignedCars={unassignedCarsWithUrgency}
+          shops={shops}
+          qualificationDeadlines={qualificationDeadlines}
+          onAssignCar={(carId, shopId) => {
+            // Handle car assignment
+            console.log('Assign car', carId, 'to shop', shopId);
+          }}
+        />
+      )}
+
+      {activeTab === 'scheduling' && (
+        <SchedulingOutputPanel
+          schedulingOutput={schedulingOutput}
+          onGenerate={handleGenerateSchedulingOutput}
+          isPlanLocked={isPlanLocked}
+          onPushToScheduling={handlePushToScheduling}
         />
       )}
 
@@ -499,11 +777,21 @@ function ExecutiveDashboard({
   demandTypes,
   actionItems,
   carsByReason,
+  criticalActionItems,
+  capacityAlerts,
+  targetVsActuals,
+  qualificationDeadlines,
+  use120DayFilter,
 }: {
   metrics: SystemMetrics;
   demandTypes: DemandType[];
   actionItems: ActionItem[];
   carsByReason: Map<string, Car[]>;
+  criticalActionItems: CriticalActionItem[];
+  capacityAlerts: CapacityAlert[];
+  targetVsActuals: TargetVsActual[];
+  qualificationDeadlines: QualificationDeadline[];
+  use120DayFilter: boolean;
 }) {
   const StatusBadge = ({ status, type }: { status: string; type: 'capacity' | 'surplus' | 'utilization' }) => {
     const colors = {
@@ -523,6 +811,14 @@ function ExecutiveDashboard({
 
   return (
     <div className="space-y-6">
+      {/* Planning Horizon Banner */}
+      {use120DayFilter && (
+        <div className="flex items-center gap-2 rounded-lg bg-rail-50 px-4 py-2 text-sm text-rail-700">
+          <ClockIcon className="h-5 w-5" />
+          <span>Showing 120-day planning horizon (short-term execution window)</span>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="card">
@@ -646,31 +942,187 @@ function ExecutiveDashboard({
           </div>
         </div>
 
-        {/* Action Items */}
+        {/* Critical Action Items - Enhanced */}
         <div className="card">
           <h3 className="mb-4 text-lg font-semibold text-steel-900">Critical Action Items</h3>
           <div className="space-y-3">
-            {actionItems.map((item) => (
-              <div key={item.id} className="flex items-start gap-3 rounded-lg border border-steel-200 p-3">
-                <span className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
-                  item.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
-                  item.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-green-100 text-green-700'
+            {criticalActionItems.length > 0 ? (
+              criticalActionItems.slice(0, 5).map((item) => (
+                <div key={item.id} className={`flex items-start gap-3 rounded-lg border p-3 ${
+                  item.isBlocking ? 'border-red-300 bg-red-50' : 'border-steel-200'
                 }`}>
-                  {item.priority[0]}
-                </span>
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-steel-900">{item.action}</div>
-                  <div className="mt-1 flex gap-4 text-xs text-steel-500">
-                    <span>Owner: {item.owner}</span>
-                    <span>Frequency: {item.frequency}</span>
+                  <span className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
+                    item.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                    item.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>
+                    {item.priority[0]}
+                  </span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-steel-900">{item.title}</span>
+                      {item.isBlocking && (
+                        <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Blocking</span>
+                      )}
+                    </div>
+                    <div className="mt-1 text-xs text-steel-500">{item.description}</div>
+                    {item.actionLink && (
+                      <a href={item.actionLink} className="mt-1 inline-flex items-center gap-1 text-xs text-rail-600 hover:underline">
+                        Take Action <ArrowRightIcon className="h-3 w-3" />
+                      </a>
+                    )}
                   </div>
+                </div>
+              ))
+            ) : (
+              actionItems.map((item) => (
+                <div key={item.id} className="flex items-start gap-3 rounded-lg border border-steel-200 p-3">
+                  <span className={`mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${
+                    item.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
+                    item.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>
+                    {item.priority[0]}
+                  </span>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-steel-900">{item.action}</div>
+                    <div className="mt-1 flex gap-4 text-xs text-steel-500">
+                      <span>Owner: {item.owner}</span>
+                      <span>Frequency: {item.frequency}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Capacity Alerts with Action Prompts */}
+      {capacityAlerts.length > 0 && (
+        <div className="card">
+          <h3 className="mb-4 text-lg font-semibold text-steel-900">
+            Capacity Alerts
+            <span className="ml-2 rounded-full bg-yellow-100 px-2 py-0.5 text-xs text-yellow-800">
+              {capacityAlerts.length} alerts
+            </span>
+          </h3>
+          <div className="space-y-2">
+            {capacityAlerts.slice(0, 5).map((alert, idx) => (
+              <div key={idx} className={`flex items-center justify-between rounded-lg p-3 ${
+                alert.alertType === 'critical' ? 'bg-red-50' :
+                alert.alertType === 'over' ? 'bg-yellow-50' : 'bg-blue-50'
+              }`}>
+                <div className="flex items-center gap-3">
+                  <ExclamationTriangleIcon className={`h-5 w-5 ${
+                    alert.alertType === 'critical' ? 'text-red-600' :
+                    alert.alertType === 'over' ? 'text-yellow-600' : 'text-blue-600'
+                  }`} />
+                  <div>
+                    <div className="text-sm font-medium text-steel-900">
+                      {alert.shopName} - {alert.monthKey}
+                    </div>
+                    <div className="text-xs text-steel-600">
+                      {(alert.plannedUtilization * 100).toFixed(0)}% planned vs {(alert.targetUtilization * 100).toFixed(0)}% target
+                    </div>
+                  </div>
+                </div>
+                <a href={alert.linkTo} className="rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-steel-700 shadow-sm hover:bg-steel-50">
+                  {alert.actionRequired}
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Target vs. Actuals Comparison */}
+      <div className="card">
+        <h3 className="mb-4 text-lg font-semibold text-steel-900">Target vs. Actuals</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-steel-200 text-sm">
+            <thead className="bg-steel-50">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium text-steel-600">Month</th>
+                <th className="px-4 py-2 text-right font-medium text-steel-600">Target</th>
+                <th className="px-4 py-2 text-right font-medium text-steel-600">Actual Flow-In</th>
+                <th className="px-4 py-2 text-right font-medium text-steel-600">Completed</th>
+                <th className="px-4 py-2 text-right font-medium text-steel-600">Variance</th>
+                <th className="px-4 py-2 text-center font-medium text-steel-600">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-steel-200">
+              {targetVsActuals.slice(0, 6).map((row) => (
+                <tr key={row.monthKey} className="hover:bg-steel-50">
+                  <td className="px-4 py-2 font-medium text-steel-900">{row.monthLabel}</td>
+                  <td className="px-4 py-2 text-right text-steel-700">{row.targetPlanned}</td>
+                  <td className="px-4 py-2 text-right text-steel-700">{row.actualFlowIn}</td>
+                  <td className="px-4 py-2 text-right text-steel-700">{row.actualCompleted}</td>
+                  <td className={`px-4 py-2 text-right font-medium ${
+                    row.variance > 0 ? 'text-green-600' : row.variance < 0 ? 'text-red-600' : 'text-steel-600'
+                  }`}>
+                    {row.variance > 0 ? '+' : ''}{row.variance} ({row.variancePercent.toFixed(1)}%)
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                      row.status === 'on_track' ? 'bg-green-100 text-green-800' :
+                      row.status === 'ahead' ? 'bg-blue-100 text-blue-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {row.status === 'ahead' && <ArrowTrendingUpIcon className="h-3 w-3" />}
+                      {row.status === 'behind' && <ArrowTrendingDownIcon className="h-3 w-3" />}
+                      {row.status.replace('_', ' ')}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Qualification Deadlines - Priority Visualization */}
+      {qualificationDeadlines.length > 0 && (
+        <div className="card">
+          <h3 className="mb-4 text-lg font-semibold text-steel-900">
+            Qualification Deadlines ({use120DayFilter ? '120-Day' : 'All'})
+            <span className="ml-2 text-sm font-normal text-steel-500">
+              {qualificationDeadlines.filter(q => q.isOverdue).length} overdue
+            </span>
+          </h3>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {qualificationDeadlines.slice(0, 9).map((deadline) => (
+              <div key={deadline.carId} className={`rounded-lg border p-3 ${
+                deadline.isOverdue ? 'border-red-300 bg-red-50' :
+                deadline.priority === 'CRITICAL' ? 'border-red-200 bg-red-50' :
+                deadline.priority === 'HIGH' ? 'border-orange-200 bg-orange-50' :
+                deadline.priority === 'MEDIUM' ? 'border-yellow-200 bg-yellow-50' :
+                'border-steel-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-steel-900">{deadline.railcarNumber}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                    deadline.isOverdue ? 'bg-red-600 text-white' :
+                    deadline.priority === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                    deadline.priority === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                    deadline.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-green-100 text-green-800'
+                  }`}>
+                    {deadline.isOverdue ? 'OVERDUE' : deadline.priority}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-steel-600">{deadline.customer}</div>
+                <div className="mt-2 flex items-center justify-between text-xs">
+                  <span className="text-steel-500">Due: {new Date(deadline.qualDueDate).toLocaleDateString()}</span>
+                  <span className={`font-medium ${deadline.daysUntilDue < 0 ? 'text-red-600' : 'text-steel-700'}`}>
+                    {deadline.daysUntilDue < 0 ? `${Math.abs(deadline.daysUntilDue)}d overdue` : `${deadline.daysUntilDue}d remaining`}
+                  </span>
                 </div>
               </div>
             ))}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -682,12 +1134,18 @@ function DemandRegister({
   monthlyForecasts,
   setMonthlyForecasts,
   carsByReason,
+  uniqueReasons,
+  selectedReasonFilter,
+  setSelectedReasonFilter,
 }: {
   demandTypes: DemandType[];
   setDemandTypes: (types: DemandType[]) => void;
   monthlyForecasts: MonthlyDemandForecast[];
   setMonthlyForecasts: (forecasts: MonthlyDemandForecast[]) => void;
   carsByReason: Map<string, Car[]>;
+  uniqueReasons: string[];
+  selectedReasonFilter: string;
+  setSelectedReasonFilter: (filter: string) => void;
 }) {
   const totalDemand = demandTypes.reduce((sum, d) => sum + d.annualVolume, 0);
 
@@ -699,6 +1157,42 @@ function DemandRegister({
 
   return (
     <div className="space-y-6">
+      {/* Dynamic Filter for Reason Shopped */}
+      <div className="card bg-steel-50">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <FunnelIcon className="h-5 w-5 text-steel-500" />
+            <span className="text-sm font-medium text-steel-700">Filter by Reason Shopped:</span>
+          </div>
+          <select
+            value={selectedReasonFilter}
+            onChange={(e) => setSelectedReasonFilter(e.target.value)}
+            className="rounded-lg border border-steel-300 bg-white px-3 py-1.5 text-sm focus:border-rail-500 focus:ring-rail-500"
+          >
+            <option value="all">(All Reasons)</option>
+            <option value="TANK QUALIFICATION">Tank Qualification</option>
+            <option value="qualification">Regulatory Qualification</option>
+            {uniqueReasons
+              .filter(r => !['TANK QUALIFICATION', 'qualification'].includes(r))
+              .map(reason => (
+                <option key={reason} value={reason}>{reason}</option>
+              ))
+            }
+          </select>
+          {selectedReasonFilter !== 'all' && (
+            <button
+              onClick={() => setSelectedReasonFilter('all')}
+              className="text-sm text-rail-600 hover:underline"
+            >
+              Clear Filter
+            </button>
+          )}
+          <div className="ml-auto text-sm text-steel-500">
+            {uniqueReasons.length} unique reasons in database
+          </div>
+        </div>
+      </div>
+
       {/* Demand Types Table */}
       <div className="card">
         <h3 className="mb-4 text-lg font-semibold text-steel-900">Demand Types</h3>
@@ -837,12 +1331,38 @@ function SupplyCapacityEditor({
   setAitxShops,
   thirdPartyNetworks,
   setThirdPartyNetworks,
+  shopConfirmations,
+  onRequestConfirmation,
+  capacityAlerts,
 }: {
   aitxShops: AITXShop[];
   setAitxShops: (shops: AITXShop[]) => void;
   thirdPartyNetworks: ThirdPartyNetwork[];
   setThirdPartyNetworks: (networks: ThirdPartyNetwork[]) => void;
+  shopConfirmations: Record<string, CapacityConfirmationStatus>;
+  onRequestConfirmation: (shopId: string) => void;
+  capacityAlerts: CapacityAlert[];
 }) {
+  // Get confirmation status badge
+  const getConfirmationBadge = (shopId: string) => {
+    const status = shopConfirmations[shopId] || 'pending';
+    const colors: Record<CapacityConfirmationStatus, string> = {
+      'pending': 'bg-yellow-100 text-yellow-800',
+      'requested': 'bg-blue-100 text-blue-800',
+      'confirmed': 'bg-green-100 text-green-800',
+      'rejected': 'bg-red-100 text-red-800',
+    };
+    return (
+      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${colors[status]}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    );
+  };
+
+  // Get shop alerts
+  const getShopAlerts = (shopId: string) => {
+    return capacityAlerts.filter(a => a.shopId === shopId);
+  };
   const aitxTotalMonthly = aitxShops.reduce((sum, s) => sum + s.monthlyCapacity, 0);
   const aitxTotalAnnual = aitxTotalMonthly * 12;
   const networkTotalMonthly = thirdPartyNetworks.reduce((sum, n) => sum + n.monthlyCapacity, 0);
@@ -864,12 +1384,20 @@ function SupplyCapacityEditor({
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Util Target</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Cost Index</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Tank Qualified</th>
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Confirmation</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-steel-200 bg-white">
-              {aitxShops.map((shop) => (
-                <tr key={shop.id}>
-                  <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-steel-900">{shop.location}</td>
+              {aitxShops.map((shop) => {
+                const alerts = getShopAlerts(shop.id);
+                return (
+                <tr key={shop.id} className={alerts.length > 0 ? 'bg-yellow-50' : ''}>
+                  <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-steel-900">
+                    {shop.location}
+                    {alerts.length > 0 && (
+                      <ExclamationTriangleIcon className="ml-1 inline h-4 w-4 text-yellow-500" title={`${alerts.length} capacity alerts`} />
+                    )}
+                  </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-steel-700">{shop.carTypes}</td>
                   <td className="whitespace-nowrap px-4 py-3">
                     <input
@@ -906,14 +1434,29 @@ function SupplyCapacityEditor({
                       <XCircleIcon className="h-5 w-5 text-steel-300" />
                     )}
                   </td>
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      {getConfirmationBadge(shop.id)}
+                      {shopConfirmations[shop.id] !== 'confirmed' && (
+                        <button
+                          onClick={() => onRequestConfirmation(shop.id)}
+                          className="rounded px-2 py-0.5 text-xs text-rail-600 hover:bg-rail-50"
+                          disabled={shopConfirmations[shop.id] === 'requested'}
+                        >
+                          {shopConfirmations[shop.id] === 'requested' ? 'Requested' : 'Request'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
-              ))}
+              );
+              })}
               <tr className="bg-steel-50 font-semibold">
                 <td className="px-4 py-3 text-sm text-steel-900">AITX Total</td>
                 <td></td>
                 <td className="px-4 py-3 text-sm text-steel-900">{aitxTotalMonthly}</td>
                 <td className="px-4 py-3 text-sm text-steel-900">{formatNumber(aitxTotalAnnual)}</td>
-                <td colSpan={3}></td>
+                <td colSpan={4}></td>
               </tr>
             </tbody>
           </table>
@@ -1015,11 +1558,15 @@ function SOPPlanGrid({
   setMonthlyAllocations,
   aitxShops,
   thirdPartyNetworks,
+  use120DayFilter,
+  isPlanLocked,
 }: {
   monthlyAllocations: MonthlyAllocation[];
   setMonthlyAllocations: (allocations: MonthlyAllocation[]) => void;
   aitxShops: AITXShop[];
   thirdPartyNetworks: ThirdPartyNetwork[];
+  use120DayFilter: boolean;
+  isPlanLocked: boolean;
 }) {
   // Create a mapping of all shops/networks for rows
   const allSources = [
@@ -1048,7 +1595,22 @@ function SOPPlanGrid({
 
   return (
     <div className="card">
-      <h3 className="mb-4 text-lg font-semibold text-steel-900">18-Month S&OP Allocation Plan</h3>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-steel-900">
+          {use120DayFilter ? '120-Day' : '18-Month'} S&OP Allocation Plan
+        </h3>
+        {isPlanLocked && (
+          <div className="flex items-center gap-2 rounded-lg bg-green-100 px-3 py-1.5 text-sm font-medium text-green-800">
+            <LockClosedIcon className="h-4 w-4" />
+            Plan Locked - Ready for Scheduling
+          </div>
+        )}
+      </div>
+      {isPlanLocked && (
+        <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">
+          <strong>Note:</strong> This plan is locked. Edits are disabled. To make changes, unlock the plan first.
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-steel-200 text-xs">
           <thead className="bg-steel-50">
@@ -1086,7 +1648,9 @@ function SOPPlanGrid({
                         type="number"
                         value={cars}
                         onChange={(e) => handleAllocationChange(mIdx, source.id, parseInt(e.target.value) || 0)}
+                        disabled={isPlanLocked}
                         className={`w-12 rounded border px-1 py-0.5 text-center text-xs ${
+                          isPlanLocked ? 'cursor-not-allowed bg-steel-100' :
                           isOverCapacity ? 'border-red-500 bg-red-50' : 'border-steel-300'
                         }`}
                       />
@@ -1125,7 +1689,9 @@ function SOPPlanGrid({
                         type="number"
                         value={cars}
                         onChange={(e) => handleAllocationChange(mIdx, source.id, parseInt(e.target.value) || 0)}
+                        disabled={isPlanLocked}
                         className={`w-12 rounded border px-1 py-0.5 text-center text-xs ${
+                          isPlanLocked ? 'cursor-not-allowed bg-steel-100' :
                           isOverCapacity ? 'border-red-500 bg-red-50' : 'border-steel-300'
                         }`}
                       />
@@ -1345,6 +1911,359 @@ function PlanningAssumptionsPanel({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Car Allocation Workflow Component
+function CarAllocationWorkflow({
+  unassignedCars,
+  shops,
+  qualificationDeadlines,
+  onAssignCar,
+}: {
+  unassignedCars: UnassignedCar[];
+  shops: Shop[];
+  qualificationDeadlines: QualificationDeadline[];
+  onAssignCar: (carId: string, shopId: string) => void;
+}) {
+  const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="card">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-yellow-100 p-2">
+              <TruckIcon className="h-6 w-6 text-yellow-600" />
+            </div>
+            <div>
+              <p className="text-sm text-steel-500">Unassigned Cars</p>
+              <p className="text-2xl font-bold text-steel-900">{unassignedCars.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-red-100 p-2">
+              <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+            </div>
+            <div>
+              <p className="text-sm text-steel-500">Critical Priority</p>
+              <p className="text-2xl font-bold text-steel-900">
+                {unassignedCars.filter(c => c.qualificationPriority === 'CRITICAL').length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-orange-100 p-2">
+              <ClockIcon className="h-6 w-6 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-sm text-steel-500">High Priority</p>
+              <p className="text-2xl font-bold text-steel-900">
+                {unassignedCars.filter(c => c.qualificationPriority === 'HIGH').length}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-green-100 p-2">
+              <CheckCircleIcon className="h-6 w-6 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-steel-500">Available Shops</p>
+              <p className="text-2xl font-bold text-steel-900">{shops.filter(s => s.isActive).length}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Prioritized Allocation Queue */}
+      <div className="card">
+        <h3 className="mb-4 text-lg font-semibold text-steel-900">
+          Prioritized Allocation Queue
+          <span className="ml-2 text-sm font-normal text-steel-500">
+            Sorted by urgency score
+          </span>
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-steel-200 text-sm">
+            <thead className="bg-steel-50">
+              <tr>
+                <th className="px-4 py-2 text-left font-medium text-steel-600">Railcar</th>
+                <th className="px-4 py-2 text-left font-medium text-steel-600">Customer</th>
+                <th className="px-4 py-2 text-left font-medium text-steel-600">Reason</th>
+                <th className="px-4 py-2 text-center font-medium text-steel-600">Priority</th>
+                <th className="px-4 py-2 text-center font-medium text-steel-600">Urgency</th>
+                <th className="px-4 py-2 text-left font-medium text-steel-600">Qual Due</th>
+                <th className="px-4 py-2 text-left font-medium text-steel-600">Suggested Shops</th>
+                <th className="px-4 py-2 text-center font-medium text-steel-600">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-steel-200">
+              {unassignedCars.slice(0, 20).map((car) => (
+                <tr key={car.id} className={`hover:bg-steel-50 ${
+                  car.qualificationPriority === 'CRITICAL' ? 'bg-red-50' :
+                  car.qualificationPriority === 'HIGH' ? 'bg-orange-50' : ''
+                }`}>
+                  <td className="px-4 py-2 font-medium text-steel-900">{car.railcarNumber}</td>
+                  <td className="px-4 py-2 text-steel-700">{car.customer}</td>
+                  <td className="px-4 py-2 text-steel-700">{car.reasonShopped || '-'}</td>
+                  <td className="px-4 py-2 text-center">
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      car.qualificationPriority === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                      car.qualificationPriority === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                      car.qualificationPriority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {car.qualificationPriority}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <span className="font-mono text-steel-900">{car.urgencyScore}</span>
+                  </td>
+                  <td className="px-4 py-2 text-steel-700">
+                    {car.daysUntilQualDue !== null ? (
+                      <span className={car.daysUntilQualDue < 0 ? 'text-red-600 font-medium' : ''}>
+                        {car.daysUntilQualDue < 0 ? `${Math.abs(car.daysUntilQualDue)}d overdue` : `${car.daysUntilQualDue}d`}
+                      </span>
+                    ) : '-'}
+                  </td>
+                  <td className="px-4 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {car.suggestedShops.slice(0, 3).map((shop) => (
+                        <button
+                          key={shop.shopId}
+                          onClick={() => onAssignCar(car.id, shop.shopId)}
+                          className={`rounded px-2 py-0.5 text-xs ${
+                            shop.isRecommended
+                              ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                              : 'bg-steel-100 text-steel-700 hover:bg-steel-200'
+                          }`}
+                          title={shop.reasons.join(', ')}
+                        >
+                          {shop.shopCode} ({shop.matchScore})
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <button
+                      onClick={() => setSelectedCarId(car.id)}
+                      className="rounded bg-rail-600 px-3 py-1 text-xs font-medium text-white hover:bg-rail-700"
+                    >
+                      Assign
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {unassignedCars.length > 20 && (
+          <div className="mt-4 text-center text-sm text-steel-500">
+            Showing 20 of {unassignedCars.length} unassigned cars
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Scheduling Output Panel Component
+function SchedulingOutputPanel({
+  schedulingOutput,
+  onGenerate,
+  isPlanLocked,
+  onPushToScheduling,
+}: {
+  schedulingOutput: SchedulingOutput | null;
+  onGenerate: () => void;
+  isPlanLocked: boolean;
+  onPushToScheduling: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      {/* Status Banner */}
+      <div className={`rounded-lg p-4 ${
+        schedulingOutput?.status === 'pushed' ? 'bg-green-50 border border-green-200' :
+        isPlanLocked ? 'bg-blue-50 border border-blue-200' :
+        'bg-yellow-50 border border-yellow-200'
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {schedulingOutput?.status === 'pushed' ? (
+              <CheckCircleIcon className="h-6 w-6 text-green-600" />
+            ) : isPlanLocked ? (
+              <LockClosedIcon className="h-6 w-6 text-blue-600" />
+            ) : (
+              <ClockIcon className="h-6 w-6 text-yellow-600" />
+            )}
+            <div>
+              <h3 className={`font-semibold ${
+                schedulingOutput?.status === 'pushed' ? 'text-green-800' :
+                isPlanLocked ? 'text-blue-800' : 'text-yellow-800'
+              }`}>
+                {schedulingOutput?.status === 'pushed' ? 'Pushed to Scheduling Team' :
+                 isPlanLocked ? 'Plan Locked - Ready to Push' :
+                 'Plan Not Yet Locked'}
+              </h3>
+              <p className={`text-sm ${
+                schedulingOutput?.status === 'pushed' ? 'text-green-700' :
+                isPlanLocked ? 'text-blue-700' : 'text-yellow-700'
+              }`}>
+                {schedulingOutput?.status === 'pushed'
+                  ? `Pushed on ${new Date(schedulingOutput.pushedAt!).toLocaleString()}`
+                  : isPlanLocked
+                  ? 'Review the output below and push to scheduling when ready'
+                  : 'Lock the plan to generate scheduling output'}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {!schedulingOutput && isPlanLocked && (
+              <button
+                onClick={onGenerate}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Generate Output
+              </button>
+            )}
+            {schedulingOutput && schedulingOutput.status !== 'pushed' && (
+              <button
+                onClick={onPushToScheduling}
+                className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+              >
+                <PaperAirplaneIcon className="h-4 w-4" />
+                Push to Scheduling
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Scheduling Output Details */}
+      {schedulingOutput && (
+        <>
+          {/* Summary */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <div className="card">
+              <p className="text-sm text-steel-500">Planning Horizon</p>
+              <p className="text-lg font-semibold text-steel-900">
+                {schedulingOutput.planningHorizonStart} - {schedulingOutput.planningHorizonEnd}
+              </p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-steel-500">Total Assignments</p>
+              <p className="text-2xl font-bold text-steel-900">{schedulingOutput.assignments.length}</p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-steel-500">Status</p>
+              <p className="text-lg font-semibold text-steel-900 capitalize">{schedulingOutput.status}</p>
+            </div>
+            <div className="card">
+              <p className="text-sm text-steel-500">Generated</p>
+              <p className="text-sm text-steel-900">
+                {schedulingOutput.generatedAt ? new Date(schedulingOutput.generatedAt).toLocaleString() : '-'}
+              </p>
+            </div>
+          </div>
+
+          {/* Assignments Table */}
+          <div className="card">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-steel-900">Scheduling Assignments</h3>
+              <button
+                onClick={() => {
+                  // Export to CSV
+                  const headers = ['Railcar #', 'Shop', 'Flow-In Date', 'Target Date', 'Work Scope', 'Priority', 'Est. Days'];
+                  const rows = schedulingOutput.assignments.map(a => [
+                    a.railcarNumber,
+                    a.shopName,
+                    a.plannedFlowInDate,
+                    a.targetCompletionDate,
+                    a.workScope.join('; '),
+                    a.priority.toString(),
+                    a.estimatedDays.toString(),
+                  ]);
+                  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `scheduling-output-${Date.now()}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center gap-2 rounded-lg bg-steel-100 px-3 py-1.5 text-sm font-medium text-steel-700 hover:bg-steel-200"
+              >
+                <ArrowDownTrayIcon className="h-4 w-4" />
+                Export CSV
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-steel-200 text-sm">
+                <thead className="bg-steel-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-steel-600">Railcar #</th>
+                    <th className="px-4 py-2 text-left font-medium text-steel-600">Planned Shop</th>
+                    <th className="px-4 py-2 text-left font-medium text-steel-600">Flow-In Date</th>
+                    <th className="px-4 py-2 text-left font-medium text-steel-600">Target Completion</th>
+                    <th className="px-4 py-2 text-left font-medium text-steel-600">Work Scope</th>
+                    <th className="px-4 py-2 text-center font-medium text-steel-600">Priority</th>
+                    <th className="px-4 py-2 text-center font-medium text-steel-600">Est. Days</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-steel-200">
+                  {schedulingOutput.assignments.slice(0, 50).map((assignment, idx) => (
+                    <tr key={idx} className="hover:bg-steel-50">
+                      <td className="px-4 py-2 font-medium text-steel-900">{assignment.railcarNumber}</td>
+                      <td className="px-4 py-2 text-steel-700">{assignment.shopName}</td>
+                      <td className="px-4 py-2 text-steel-700">{assignment.plannedFlowInDate}</td>
+                      <td className="px-4 py-2 text-steel-700">{assignment.targetCompletionDate}</td>
+                      <td className="px-4 py-2 text-steel-700">{assignment.workScope.join(', ') || '-'}</td>
+                      <td className="px-4 py-2 text-center">
+                        <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                          assignment.priority >= 80 ? 'bg-red-100 text-red-800' :
+                          assignment.priority >= 50 ? 'bg-orange-100 text-orange-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {assignment.priority}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-center text-steel-700">{assignment.estimatedDays}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {schedulingOutput.assignments.length > 50 && (
+              <div className="mt-4 text-center text-sm text-steel-500">
+                Showing 50 of {schedulingOutput.assignments.length} assignments
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Empty State */}
+      {!schedulingOutput && !isPlanLocked && (
+        <div className="card text-center py-12">
+          <ClockIcon className="mx-auto h-12 w-12 text-steel-400" />
+          <h3 className="mt-4 text-lg font-semibold text-steel-900">No Scheduling Output Yet</h3>
+          <p className="mt-2 text-steel-500">
+            Lock the 120-day plan first to generate the scheduling output for the scheduling team.
+          </p>
+          <p className="mt-4 text-sm text-steel-400">
+            The output will include: Railcar #, Planned Shop, Timing (flow-in/target date), and Work Scope
+          </p>
+        </div>
+      )}
     </div>
   );
 }
