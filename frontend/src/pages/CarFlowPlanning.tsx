@@ -11,7 +11,7 @@ import {
   ChevronUpIcon,
   DocumentArrowDownIcon,
 } from '@heroicons/react/24/outline';
-import { carsApi, shopsApi, reportsApi } from '../services/api';
+import { carsApi, shopsApi, reportsApi, sopApi } from '../services/api';
 import type { Car, Shop } from '../types';
 import type {
   DemandType,
@@ -56,6 +56,9 @@ export default function CarFlowPlanning() {
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Data state
   const [cars, setCars] = useState<Car[]>([]);
@@ -155,6 +158,80 @@ export default function CarFlowPlanning() {
     }
   }, []);
 
+  // Save S&OP Plan
+  const handleSavePlan = useCallback(async () => {
+    setIsSaving(true);
+    setSaveSuccess(null);
+    setError(null);
+    try {
+      // Build allocations object from monthlyAllocations
+      const allocations: Record<string, Record<string, number>> = {};
+
+      monthlyAllocations.forEach((monthAlloc) => {
+        allocations[monthAlloc.month] = {};
+        monthAlloc.shopAllocations.forEach((shopAlloc) => {
+          if (shopAlloc.cars > 0) {
+            allocations[monthAlloc.month][shopAlloc.shopId] = shopAlloc.cars;
+          }
+        });
+      });
+
+      // Build shop capacities object
+      const shopCapacities: Record<string, { monthlyCapacity: number; isAITX: boolean }> = {};
+
+      aitxShops.forEach((shop) => {
+        shopCapacities[shop.id] = {
+          monthlyCapacity: shop.monthlyCapacity,
+          isAITX: true,
+        };
+      });
+
+      thirdPartyNetworks.forEach((network) => {
+        shopCapacities[network.id] = {
+          monthlyCapacity: network.monthlyCapacity,
+          isAITX: false,
+        };
+      });
+
+      const result = await sopApi.saveAllocations({
+        allocations,
+        shopCapacities,
+      });
+
+      if (result.success) {
+        setSaveSuccess(`Plan saved successfully! ${result.created || 0} allocations created.`);
+        setHasUnsavedChanges(false);
+        // Clear success message after 5 seconds
+        setTimeout(() => setSaveSuccess(null), 5000);
+      } else {
+        setError(result.message || 'Failed to save plan');
+      }
+    } catch (err) {
+      console.error('Save failed:', err);
+      setError('Failed to save S&OP plan');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [monthlyAllocations, aitxShops, thirdPartyNetworks]);
+
+  // Mark changes when allocations are modified
+  const handleAllocationChange = useCallback((newAllocations: MonthlyAllocation[]) => {
+    setMonthlyAllocations(newAllocations);
+    setHasUnsavedChanges(true);
+  }, []);
+
+  // Mark changes when AITX shops are modified
+  const handleAitxShopsChange = useCallback((newShops: AITXShop[]) => {
+    setAitxShops(newShops);
+    setHasUnsavedChanges(true);
+  }, []);
+
+  // Mark changes when 3P networks are modified
+  const handleThirdPartyNetworksChange = useCallback((newNetworks: ThirdPartyNetwork[]) => {
+    setThirdPartyNetworks(newNetworks);
+    setHasUnsavedChanges(true);
+  }, []);
+
   // Fetch data
   useEffect(() => {
     const fetchData = async () => {
@@ -233,30 +310,58 @@ export default function CarFlowPlanning() {
           <h1 className="text-2xl font-bold text-steel-900">Car Flow Planning</h1>
           <p className="text-sm text-steel-500">
             S&OP Module - 18 Month Rolling Horizon | {unassignedCarsCount} Unassigned Cars
+            {hasUnsavedChanges && <span className="ml-2 text-yellow-600">(unsaved changes)</span>}
           </p>
         </div>
-        <div className="relative">
+        <div className="flex items-center gap-3">
+          {/* Save Button */}
           <button
-            onClick={() => setShowExportMenu(!showExportMenu)}
-            disabled={isExporting}
-            className="btn-secondary flex items-center gap-2"
+            onClick={handleSavePlan}
+            disabled={isSaving || !hasUnsavedChanges}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 font-medium transition-colors ${
+              hasUnsavedChanges
+                ? 'bg-rail-600 text-white hover:bg-rail-700'
+                : 'bg-steel-200 text-steel-500 cursor-not-allowed'
+            }`}
           >
-            {isExporting ? (
+            {isSaving ? (
               <>
                 <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Exporting...
+                Saving...
               </>
             ) : (
               <>
-                <ArrowDownTrayIcon className="h-4 w-4" />
-                Export
-                <ChevronDownIcon className="h-3 w-3" />
+                <CheckCircleIcon className="h-4 w-4" />
+                Save Plan
               </>
             )}
           </button>
+          {/* Export Menu */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={isExporting}
+              className="btn-secondary flex items-center gap-2"
+            >
+              {isExporting ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <ArrowDownTrayIcon className="h-4 w-4" />
+                  Export
+                  <ChevronDownIcon className="h-3 w-3" />
+                </>
+              )}
+            </button>
           {showExportMenu && (
             <div className="absolute right-0 z-10 mt-2 w-48 rounded-lg border border-steel-200 bg-white shadow-lg">
               <div className="py-1">
@@ -284,8 +389,17 @@ export default function CarFlowPlanning() {
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
+
+      {/* Success Message */}
+      {saveSuccess && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+          <CheckCircleIcon className="h-5 w-5 flex-shrink-0" />
+          {saveSuccess}
+        </div>
+      )}
 
       {/* Validation Alerts */}
       {(validation.errors.length > 0 || validation.warnings.length > 0) && (
@@ -354,16 +468,16 @@ export default function CarFlowPlanning() {
       {activeTab === 'supply' && (
         <SupplyCapacityEditor
           aitxShops={aitxShops}
-          setAitxShops={setAitxShops}
+          setAitxShops={handleAitxShopsChange}
           thirdPartyNetworks={thirdPartyNetworks}
-          setThirdPartyNetworks={setThirdPartyNetworks}
+          setThirdPartyNetworks={handleThirdPartyNetworksChange}
         />
       )}
 
       {activeTab === 'plan' && (
         <SOPPlanGrid
           monthlyAllocations={monthlyAllocations}
-          setMonthlyAllocations={setMonthlyAllocations}
+          setMonthlyAllocations={handleAllocationChange}
           aitxShops={aitxShops}
           thirdPartyNetworks={thirdPartyNetworks}
         />

@@ -76,12 +76,13 @@ model Car {
   customer                 String           @default("") // Lessee Name - Customer/lessee name
   projectNumber            String           @default("") // Project or work order number
   reasonShopped            String           @default("") // Reason Shopped: qualification, assignment, return, repair
-  status                   String           @default("available") // Current Status: available, in_service, in_shop, scheduled, retired
+  status                   String           @default("available") // Current Status: available, in_service, in_shop, scheduled, retired, planned, release, assignment, arrived
   currentLocation          String           @default("") // Current physical location
   assignedShopId           String?          // Currently assigned shop (if in_shop or scheduled)
   projectedCompletionMonth String           @default("") // YYYY-MM format
   projectedCost            Float            @default(0) // Estimated cost for current/next service
   shopEntryDate            DateTime?        // When car entered current shop
+  arrivalDate              DateTime?        // When car arrived at shop (from FMS data)
   daysInShop               Int              @default(0) // Calculated field for reporting
   lastServiceDate          DateTime?
   nextServiceDue           DateTime?
@@ -97,6 +98,7 @@ model Car {
   buildYear                Int?             // Year the car was built
   qualificationType        String           @default("") // Full/Partial Qual - "full" or "partial"
   tankQualified            Boolean          @default(false) // Tank Qualified flag
+  tankQualDueDate          DateTime?        // Tank qualification due date
   performScheduled         Boolean          @default(false) // Perform Scheduled flag
   planStatus               String           @default("") // Plan Status
 

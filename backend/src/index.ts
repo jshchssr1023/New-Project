@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
 import { PrismaClient } from '@prisma/client';
 import authRoutes from './routes/auth';
 import carsRoutes from './routes/cars';
@@ -14,10 +15,17 @@ import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
 import schedulerService from './services/schedulerService';
+import websocketService from './services/websocketService';
 
 const app = express();
+const httpServer = createServer(app);
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
+
+// Initialize WebSocket
+const io = websocketService.initialize(httpServer);
+app.locals.io = io;
+app.locals.websocket = websocketService;
 
 // Middleware
 app.use(cors());
@@ -51,9 +59,10 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ message: 'Internal server error', error: err.message });
 });
 
-// Start server
-app.listen(PORT, async () => {
+// Start server with WebSocket support
+httpServer.listen(PORT, async () => {
   console.log(`Chronos Scheduler API running on port ${PORT}`);
+  console.log(`WebSocket server ready on port ${PORT}`);
 
   // Start the scheduler service for scheduled reports
   try {
