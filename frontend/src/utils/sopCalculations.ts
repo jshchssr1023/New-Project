@@ -10,89 +10,370 @@ import type {
   ShopAllocation,
   CapacityStatus,
   SurplusStatus,
-  UtilizationStatus
+  UtilizationStatus,
+  DemandRegister,
+  DemandRegisterItem,
+  DemandRegisterSummary,
+  PlanningState,
+  WorkType
 } from '../types/sop';
-import type { Car } from '../types';
+import type { Car, Shop } from '../types';
+
+// Priority customers that get special handling
+const PRIORITY_CUSTOMERS = ['Priority Customer A', 'Priority Customer B']; // TODO: Make configurable
+
+/**
+ * Format a date to "Mon-YY" format
+ */
+export function formatMonthYear(date: Date): string {
+  const monthName = date.toLocaleString('en-US', { month: 'short' });
+  const year = date.getFullYear().toString().slice(-2);
+  return `${monthName}-${year}`;
+}
+
+/**
+ * Calculate days until a due date
+ */
+export function calculateDaysUntilDue(dueDate: string | null): number {
+  if (!dueDate) return 999; // No due date = way out
+  const due = new Date(dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+  return Math.floor((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * Determine planning state based on car data
+ */
+export function determinePlanningState(car: Car): PlanningState {
+  // If car is already in shop or completed
+  if (car.status === 'in_shop') return 'in_progress';
+  if (car.status === 'arrived') return 'in_progress';
+
+  // If car has an assigned shop and scheduled month, it's at least planned
+  if (car.assignedShopId && car.projectedCompletionMonth) {
+    // Check if it's just scheduled vs committed
+    // For now, use status to differentiate
+    if (car.status === 'scheduled') return 'scheduled';
+    if (car.status === 'planned') return 'planned';
+    return 'tentatively_scheduled';
+  }
+
+  // If car has a shop but no month, it's tentative
+  if (car.assignedShopId) return 'tentatively_scheduled';
+
+  // Default: not planned
+  return 'not_planned';
+}
+
+/**
+ * Build the demand register from actual car data
+ * This is the PRIMARY source of demand - based on actual due dates
+ */
+export function buildDemandRegister(
+  cars: Car[],
+  shops: Shop[],
+  filterYear?: number,
+  includeRolling3Months: boolean = true
+): DemandRegister {
+  const now = new Date();
+  const currentYear = filterYear || now.getFullYear();
+  const yearEnd = new Date(currentYear, 11, 31, 23, 59, 59);
+
+  // Calculate rolling 3-month cutoff (into next year if needed)
+  const rolling3MonthCutoff = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate());
+
+  const items: DemandRegisterItem[] = [];
+  const shopMap = new Map(shops.map(s => [s.id, s]));
+
+  // Process each car to determine if it belongs in the demand register
+  cars.forEach(car => {
+    // Skip retired cars
+    if (car.status === 'retired') return;
+
+    // Skip cars already completed (in_shop status handled separately)
+    // We want to show in_progress cars too
+
+    // QUALIFICATIONS: Cars with tankQualDueDate due this year or prior (including overdue)
+    if (car.tankQualDueDate) {
+      const qualDueDate = new Date(car.tankQualDueDate);
+      const daysUntil = calculateDaysUntilDue(car.tankQualDueDate);
+
+      // Include if:
+      // 1. Due date is in the filter year or earlier (overdue)
+      // 2. OR due date is within rolling 3 months (for visibility into next year planning)
+      const isInFilterYear = qualDueDate <= yearEnd;
+      const isInRolling3Months = includeRolling3Months && qualDueDate <= rolling3MonthCutoff;
+      const isOverdue = daysUntil < 0;
+
+      if (isInFilterYear || isInRolling3Months || isOverdue) {
+        const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
+
+        items.push({
+          carId: car.id,
+          railcarNumber: car.railcarNumber,
+          workType: 'qualification',
+          dueDate: car.tankQualDueDate,
+          dueMonth: formatMonthYear(qualDueDate),
+          daysUntilDue: daysUntil,
+          isOverdue: isOverdue,
+          customer: car.customer,
+          commodity: car.commodity,
+          isTankCar: car.isTankCar,
+          planningState: determinePlanningState(car),
+          assignedShopId: car.assignedShopId,
+          assignedShopName: shop?.name || null,
+          scheduledMonth: car.projectedCompletionMonth || null,
+          isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
+          notes: car.notes,
+          qualificationType: car.qualificationType,
+          tankQualified: car.tankQualified
+        });
+      }
+    }
+
+    // RETURNS: Cars with contractExpiration (lease end dates) in the planning horizon
+    // Returns are known 60+ days in advance, so look 6 months ahead
+    if (car.contractExpiration) {
+      const leaseEndDate = new Date(car.contractExpiration);
+      const daysUntil = calculateDaysUntilDue(car.contractExpiration);
+      const sixMonthsOut = new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
+
+      // Include returns coming in the next 6 months or overdue
+      const isInHorizon = leaseEndDate <= sixMonthsOut;
+      const isOverdue = daysUntil < 0;
+
+      if ((isInHorizon || isOverdue) && car.status !== 'in_shop') {
+        const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
+
+        // Don't double-count if already added as qualification
+        const alreadyAdded = items.some(i => i.carId === car.id && i.workType === 'qualification');
+        if (!alreadyAdded) {
+          items.push({
+            carId: car.id,
+            railcarNumber: car.railcarNumber,
+            workType: 'return',
+            dueDate: car.contractExpiration,
+            dueMonth: formatMonthYear(leaseEndDate),
+            daysUntilDue: daysUntil,
+            isOverdue: isOverdue,
+            customer: car.customer,
+            commodity: car.commodity,
+            isTankCar: car.isTankCar,
+            planningState: determinePlanningState(car),
+            assignedShopId: car.assignedShopId,
+            assignedShopName: shop?.name || null,
+            scheduledMonth: car.projectedCompletionMonth || null,
+            isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
+            notes: car.notes,
+            leaseEndDate: car.contractExpiration
+          });
+        }
+      }
+    }
+
+    // ASSIGNMENTS: Cars marked for assignment (pre-delivery prep)
+    // These come from Commercial team triggers - use reasonShopped
+    if (car.reasonShopped?.toLowerCase() === 'assignment' || car.status === 'assignment') {
+      const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
+      const dueDate = car.nextServiceDue || null;
+      const daysUntil = calculateDaysUntilDue(dueDate);
+
+      // Don't double-count
+      const alreadyAdded = items.some(i => i.carId === car.id);
+      if (!alreadyAdded) {
+        items.push({
+          carId: car.id,
+          railcarNumber: car.railcarNumber,
+          workType: 'assignment',
+          dueDate: dueDate,
+          dueMonth: dueDate ? formatMonthYear(new Date(dueDate)) : formatMonthYear(now),
+          daysUntilDue: daysUntil,
+          isOverdue: daysUntil < 0,
+          customer: car.customer,
+          commodity: car.commodity,
+          isTankCar: car.isTankCar,
+          planningState: determinePlanningState(car),
+          assignedShopId: car.assignedShopId,
+          assignedShopName: shop?.name || null,
+          scheduledMonth: car.projectedCompletionMonth || null,
+          isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
+          notes: car.notes
+        });
+      }
+    }
+  });
+
+  // Sort items: overdue first, then by days until due
+  items.sort((a, b) => {
+    if (a.isOverdue && !b.isOverdue) return -1;
+    if (!a.isOverdue && b.isOverdue) return 1;
+    return a.daysUntilDue - b.daysUntilDue;
+  });
+
+  // Build summaries by work type
+  const summaries = buildDemandSummaries(items);
+
+  // Calculate totals
+  const totalNotPlanned = items.filter(i => i.planningState === 'not_planned').length;
+  const totalPlanned = items.filter(i => ['planned', 'tentatively_scheduled', 'awaiting_confirmation'].includes(i.planningState)).length;
+  const totalScheduled = items.filter(i => i.planningState === 'scheduled').length;
+  const totalOverdue = items.filter(i => i.isOverdue).length;
+
+  return {
+    items,
+    summaries,
+    totalNotPlanned,
+    totalPlanned,
+    totalScheduled,
+    totalOverdue,
+    filterYear: currentYear
+  };
+}
+
+/**
+ * Build summaries for each work type
+ */
+function buildDemandSummaries(items: DemandRegisterItem[]): DemandRegisterSummary[] {
+  const workTypes: { type: WorkType; label: string }[] = [
+    { type: 'qualification', label: 'Regulatory Qualifications' },
+    { type: 'assignment', label: 'Assignments (Pre-Delivery)' },
+    { type: 'return', label: 'Returns (Off-Lease)' },
+    { type: 'repair', label: 'Repairs' },
+    { type: 'maintenance', label: 'Scheduled Maintenance' },
+    { type: 'project', label: 'Project Work' }
+  ];
+
+  return workTypes.map(({ type, label }) => {
+    const typeItems = items.filter(i => i.workType === type);
+    const byMonth = new Map<string, number>();
+
+    typeItems.forEach(item => {
+      const month = item.dueMonth;
+      byMonth.set(month, (byMonth.get(month) || 0) + 1);
+    });
+
+    return {
+      workType: type,
+      label,
+      total: typeItems.length,
+      notPlanned: typeItems.filter(i => i.planningState === 'not_planned').length,
+      tentativelyScheduled: typeItems.filter(i => i.planningState === 'tentatively_scheduled').length,
+      awaitingConfirmation: typeItems.filter(i => i.planningState === 'awaiting_confirmation').length,
+      planned: typeItems.filter(i => i.planningState === 'planned').length,
+      scheduled: typeItems.filter(i => i.planningState === 'scheduled').length,
+      overdue: typeItems.filter(i => i.isOverdue).length,
+      byMonth
+    };
+  }).filter(s => s.total > 0); // Only include work types that have items
+}
+
+/**
+ * Get demand register items grouped by month
+ */
+export function getDemandByMonth(register: DemandRegister): Map<string, DemandRegisterItem[]> {
+  const byMonth = new Map<string, DemandRegisterItem[]>();
+
+  register.items.forEach(item => {
+    const month = item.dueMonth;
+    if (!byMonth.has(month)) {
+      byMonth.set(month, []);
+    }
+    byMonth.get(month)!.push(item);
+  });
+
+  return byMonth;
+}
+
+/**
+ * Filter demand register by work type
+ */
+export function filterDemandByWorkType(register: DemandRegister, workType: WorkType): DemandRegisterItem[] {
+  return register.items.filter(i => i.workType === workType);
+}
+
+/**
+ * Filter demand register by planning state
+ */
+export function filterDemandByState(register: DemandRegister, state: PlanningState): DemandRegisterItem[] {
+  return register.items.filter(i => i.planningState === state);
+}
 
 /**
  * Calculate demand from actual unassigned cars in the system
+ * UPDATED: Now uses tankQualDueDate for qualifications instead of reasonShopped
  */
-export function calculateDemandFromCars(cars: Car[]): {
+export function calculateDemandFromCars(cars: Car[], shops: Shop[] = [], filterYear?: number): {
   demandTypes: DemandType[];
   carsByReason: Map<string, Car[]>;
   totalUnassigned: number;
+  demandRegister: DemandRegister;
 } {
-  // Filter to unassigned cars (available or scheduled but not yet assigned to a shop)
-  const unassignedCars = cars.filter(car =>
-    car.status === 'available' || car.status === 'scheduled'
-  );
+  // Build the demand register first
+  const demandRegister = buildDemandRegister(cars, shops, filterYear);
 
-  // Group by reason shopped
+  // Group items by work type for backward compatibility
   const carsByReason = new Map<string, Car[]>();
-  unassignedCars.forEach(car => {
-    const reason = car.reasonShopped || 'unspecified';
-    if (!carsByReason.has(reason)) {
-      carsByReason.set(reason, []);
-    }
-    carsByReason.get(reason)!.push(car);
-  });
 
-  // Map reason shopped to demand types
+  // Get the actual cars for each work type from the demand register
+  const qualCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'qualification'));
+  const assignCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'assignment'));
+  const returnCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'return'));
+
+  carsByReason.set('qualification', qualCars);
+  carsByReason.set('assignment', assignCars);
+  carsByReason.set('release', returnCars);
+
+  // Build demand types from actual counts
   const demandTypes: DemandType[] = [
     {
       id: 'qual',
       name: 'Regulatory Qualifications',
-      annualVolume: (carsByReason.get('qualification')?.length || 0) * 12, // Annualize current snapshot
+      annualVolume: qualCars.length, // Actual count, not annualized
       priority: 'HIGH',
       leadTime: 'Due by year-end',
-      notes: 'Commodity-based cycles (3-10yr)'
+      notes: `${demandRegister.summaries.find(s => s.workType === 'qualification')?.overdue || 0} overdue`
     },
     {
       id: 'assign',
       name: 'Assignments (Pre-Delivery)',
-      annualVolume: (carsByReason.get('assignment')?.length || 0) * 12,
+      annualVolume: assignCars.length,
       priority: 'MEDIUM',
-      leadTime: '90-120 days',
+      leadTime: '8-16 weeks',
       notes: 'Pre-delivery prep work'
     },
     {
       id: 'return',
       name: 'Returns (Off-Lease)',
-      annualVolume: (carsByReason.get('release')?.length || 0) * 12,
+      annualVolume: returnCars.length,
       priority: 'MEDIUM',
-      leadTime: '60-day notice',
-      notes: 'Lease expirations, 75-120 day cycle'
-    },
-    {
-      id: 'project',
-      name: 'Project Work',
-      annualVolume: (carsByReason.get('project')?.length || 0) * 12,
-      priority: 'MEDIUM',
-      leadTime: 'Varies',
-      notes: 'Customer projects'
-    },
-    {
-      id: 'repair',
-      name: 'Repairs',
-      annualVolume: (carsByReason.get('repair')?.length || 0) * 12,
-      priority: 'HIGH',
-      leadTime: 'ASAP',
-      notes: 'Damage repairs, failures'
-    },
-    {
-      id: 'maintenance',
-      name: 'Scheduled Maintenance',
-      annualVolume: (carsByReason.get('maintenance')?.length || 0) * 12,
-      priority: 'LOW',
-      leadTime: 'Scheduled',
-      notes: 'Routine maintenance'
+      leadTime: '60+ day notice',
+      notes: 'Lease expirations - 3-6 month horizon'
     }
   ];
+
+  // Add other work types if they have items
+  const otherTypes = demandRegister.summaries.filter(s =>
+    !['qualification', 'assignment', 'return'].includes(s.workType)
+  );
+
+  otherTypes.forEach(summary => {
+    demandTypes.push({
+      id: summary.workType,
+      name: summary.label,
+      annualVolume: summary.total,
+      priority: summary.workType === 'repair' ? 'HIGH' : 'LOW',
+      leadTime: 'Varies',
+      notes: ''
+    });
+  });
 
   return {
     demandTypes,
     carsByReason,
-    totalUnassigned: unassignedCars.length
+    totalUnassigned: demandRegister.totalNotPlanned,
+    demandRegister
   };
 }
 
