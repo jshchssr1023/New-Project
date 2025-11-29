@@ -234,6 +234,29 @@ async function main() {
       const performScheduled = Math.random() > 0.7;
       const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
 
+      // Tank qualification due date - only for tank cars
+      // Spread across current year with some overdue, some due soon, some later
+      let tankQualDueDate: Date | null = null;
+      if (isTankCar) {
+        const now = new Date();
+        const yearStart = new Date(now.getFullYear(), 0, 1);
+        const yearEnd = new Date(now.getFullYear(), 11, 31);
+        const daysInYear = 365;
+
+        // 20% overdue (past dates), 30% due within 3 months, 50% due later this year
+        const qualRand = Math.random();
+        if (qualRand < 0.2) {
+          // Overdue - 1-60 days ago
+          tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
+        } else if (qualRand < 0.5) {
+          // Due within next 3 months
+          tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
+        } else {
+          // Due later this year or early next year
+          tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
+        }
+      }
+
       return prisma.car.create({
         data: {
           id: uuidv4(),
@@ -262,6 +285,7 @@ async function main() {
           buildYear,
           qualificationType,
           tankQualified,
+          tankQualDueDate,
           performScheduled,
           planStatus,
           companyId: company.id,
