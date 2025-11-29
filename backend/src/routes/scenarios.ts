@@ -207,7 +207,7 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
     }
 
     // Create scenario cars
-    const createdCars = await Promise.all(
+    await Promise.all(
       cars.map(async (car) => {
         const recommendation = recommendations.find(r => r.carId === car.id);
 
@@ -239,10 +239,42 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
       })
     );
 
+    // Fetch the full scenario with all cars and shop data
+    const updatedScenario = await prisma.scenario.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        basePlan: {
+          select: { id: true, name: true },
+        },
+        cars: {
+          include: { car: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    // Get shop details for suggested/assigned shops
+    const shopIds = updatedScenario!.cars
+      .flatMap(c => [c.suggestedShopId, c.assignedShopId])
+      .filter(Boolean) as string[];
+
+    const shops = await prisma.shop.findMany({
+      where: { id: { in: shopIds } },
+    });
+
+    const shopMap = new Map(shops.map(s => [s.id, s]));
+
     res.status(201).json({
-      added: createdCars.length,
-      cars: createdCars,
-      recommendations,
+      ...updatedScenario,
+      results: updatedScenario!.results ? JSON.parse(updatedScenario!.results) : null,
+      cars: updatedScenario!.cars.map(c => ({
+        ...c,
+        suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
+        assignedShop: c.assignedShopId ? shopMap.get(c.assignedShopId) : null,
+      })),
     });
   } catch (error) {
     console.error('Add cars to scenario error:', error);
@@ -302,7 +334,7 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
     }
 
     // Create scenario cars
-    const createdCars = await Promise.all(
+    await Promise.all(
       cars.map(async (car) => {
         const recommendation = recommendations.find(r => r.carId === car.id);
 
@@ -332,10 +364,42 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
       })
     );
 
+    // Fetch the full scenario with all cars and shop data
+    const updatedScenario = await prisma.scenario.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        basePlan: {
+          select: { id: true, name: true },
+        },
+        cars: {
+          include: { car: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    // Get shop details for suggested/assigned shops
+    const shopIds = updatedScenario!.cars
+      .flatMap(c => [c.suggestedShopId, c.assignedShopId])
+      .filter(Boolean) as string[];
+
+    const allShops = await prisma.shop.findMany({
+      where: { id: { in: shopIds } },
+    });
+
+    const shopMap = new Map(allShops.map(s => [s.id, s]));
+
     res.status(201).json({
-      customer,
-      added: createdCars.length,
-      totalCars: cars.length,
+      ...updatedScenario,
+      results: updatedScenario!.results ? JSON.parse(updatedScenario!.results) : null,
+      cars: updatedScenario!.cars.map(c => ({
+        ...c,
+        suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
+        assignedShop: c.assignedShopId ? shopMap.get(c.assignedShopId) : null,
+      })),
     });
   } catch (error) {
     console.error('Add cars by customer error:', error);
@@ -368,7 +432,7 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
   const { assignedShopId, scheduledMonth, estimatedCost, estimatedDays } = req.body;
 
   try {
-    const scenarioCar = await prisma.scenarioCar.update({
+    await prisma.scenarioCar.update({
       where: { id: req.params.scenarioCarId },
       data: {
         assignedShopId,
@@ -376,10 +440,50 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
         estimatedCost,
         estimatedDays,
       },
-      include: { car: true },
     });
 
-    res.json(scenarioCar);
+    // Fetch the full scenario with all cars and shop data
+    const updatedScenario = await prisma.scenario.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        basePlan: {
+          select: { id: true, name: true },
+        },
+        cars: {
+          include: { car: true },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+
+    if (!updatedScenario) {
+      res.status(404).json({ message: 'Scenario not found' });
+      return;
+    }
+
+    // Get shop details for suggested/assigned shops
+    const shopIds = updatedScenario.cars
+      .flatMap(c => [c.suggestedShopId, c.assignedShopId])
+      .filter(Boolean) as string[];
+
+    const shops = await prisma.shop.findMany({
+      where: { id: { in: shopIds } },
+    });
+
+    const shopMap = new Map(shops.map(s => [s.id, s]));
+
+    res.json({
+      ...updatedScenario,
+      results: updatedScenario.results ? JSON.parse(updatedScenario.results) : null,
+      cars: updatedScenario.cars.map(c => ({
+        ...c,
+        suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
+        assignedShop: c.assignedShopId ? shopMap.get(c.assignedShopId) : null,
+      })),
+    });
   } catch (error) {
     console.error('Update scenario car error:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -387,28 +491,36 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
 });
 
 // Get shop recommendations for a scenario car
-router.get('/:id/cars/:carId/recommendations', async (req: AuthRequest, res: Response) => {
+router.get('/:id/cars/:scenarioCarId/recommendations', async (req: AuthRequest, res: Response) => {
   const prisma: PrismaClient = req.app.locals.prisma;
   const { month } = req.query;
 
   try {
-    const car = await prisma.car.findFirst({
+    // First lookup the scenarioCar to get the actual car
+    const scenarioCar = await prisma.scenarioCar.findFirst({
       where: {
-        id: req.params.carId,
-        companyId: req.user!.companyId,
+        id: req.params.scenarioCarId,
+        scenarioId: req.params.id,
       },
+      include: { car: true },
     });
 
-    if (!car) {
-      res.status(404).json({ message: 'Car not found' });
+    if (!scenarioCar || !scenarioCar.car) {
+      res.status(404).json({ message: 'Scenario car not found' });
+      return;
+    }
+
+    // Verify company ownership
+    if (scenarioCar.car.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Unauthorized' });
       return;
     }
 
     const recommendation = await recommendShopsForCar(
       prisma,
       req.user!.companyId,
-      car as any,
-      (month as string) || new Date().toISOString().slice(0, 7)
+      scenarioCar.car as any,
+      (month as string) || scenarioCar.scheduledMonth || new Date().toISOString().slice(0, 7)
     );
 
     res.json(recommendation);
@@ -576,13 +688,35 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
         results: JSON.stringify(results),
       },
       include: {
-        cars: { include: { car: true } },
+        basePlan: {
+          select: { id: true, name: true },
+        },
+        cars: {
+          include: { car: true },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
+
+    // Get shop details for suggested/assigned shops
+    const allShopIds = updatedScenario.cars
+      .flatMap(c => [c.suggestedShopId, c.assignedShopId])
+      .filter(Boolean) as string[];
+
+    const allShops = await prisma.shop.findMany({
+      where: { id: { in: allShopIds } },
+    });
+
+    const allShopMap = new Map(allShops.map(s => [s.id, s]));
 
     res.json({
       ...updatedScenario,
       results,
+      cars: updatedScenario.cars.map(c => ({
+        ...c,
+        suggestedShop: c.suggestedShopId ? allShopMap.get(c.suggestedShopId) : null,
+        assignedShop: c.assignedShopId ? allShopMap.get(c.assignedShopId) : null,
+      })),
     });
   } catch (error) {
     console.error('Analyze scenario error:', error);

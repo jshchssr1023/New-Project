@@ -319,6 +319,11 @@ export default function ScenarioManager() {
 
       let unallocatedCars = totalCars;
       const months = getNextMonths().slice(0, 6);
+      const monthValues = months.map(m => m.value);
+
+      // Get real capacity data from backend
+      const capacityResult = await shopsApi.getBatchCapacity(selectedShops, monthValues);
+      const { capacityData } = capacityResult;
 
       // Calculate allocations for each shop and month
       for (const shopId of selectedShops) {
@@ -329,8 +334,8 @@ export default function ScenarioManager() {
           const month = monthData.value;
           const shopAlloc = shopAllocations[shopId]?.[month] || 0;
 
-          // Get existing load (would come from API in production)
-          const existingLoad = Math.floor(Math.random() * (shop.capacity * 0.5)); // Simulated
+          // Get real existing load from backend
+          const existingLoad = capacityData[shopId]?.[month]?.used || 0;
 
           allocations.push({
             shopId,
