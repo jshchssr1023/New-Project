@@ -54,7 +54,10 @@ const shopData = [
 async function main() {
   console.log('🌱 Starting seed...');
 
-  // Clear existing data
+  // Clear existing data (order matters due to foreign key constraints)
+  // First, delete leaf tables that reference other tables
+  await prisma.leaseContract.deleteMany();
+  await prisma.shopCapacitySlot.deleteMany();
   await prisma.carShopEligibility.deleteMany();
   await prisma.scenarioModification.deleteMany();
   await prisma.scenarioCar.deleteMany();
