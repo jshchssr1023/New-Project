@@ -55,15 +55,29 @@ async function main() {
   console.log('🌱 Starting seed...');
 
   // Clear existing data (order matters due to foreign key constraints)
-  // First, delete leaf tables that reference other tables
+  // Delete in order from leaf tables to root tables
+
+  // Qualification planning engine tables (deepest leaves first)
+  await prisma.qualificationPlanDocument.deleteMany();
+  await prisma.qualificationPlanAssignment.deleteMany();
+  await prisma.qualificationScenario.deleteMany();
+  await prisma.qualificationPlanEvent.deleteMany();
+  await prisma.leaseQualificationEntry.deleteMany();
   await prisma.leaseContract.deleteMany();
+
+  // S&OP tables
+  await prisma.sOPAssignment.deleteMany();
   await prisma.shopCapacitySlot.deleteMany();
+
+  // Core planning tables
   await prisma.carShopEligibility.deleteMany();
   await prisma.scenarioModification.deleteMany();
   await prisma.scenarioCar.deleteMany();
   await prisma.scenario.deleteMany();
   await prisma.planAssignment.deleteMany();
   await prisma.plan.deleteMany();
+
+  // Master data tables
   await prisma.car.deleteMany();
   await prisma.shop.deleteMany();
   await prisma.shopRule.deleteMany();
