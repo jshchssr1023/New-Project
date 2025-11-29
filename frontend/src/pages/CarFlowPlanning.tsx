@@ -8,7 +8,6 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ChevronDownIcon,
-  ChevronUpIcon,
   DocumentArrowDownIcon,
   FunnelIcon,
   ClockIcon,
@@ -16,7 +15,6 @@ import {
   BellAlertIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
-  UserGroupIcon,
   TruckIcon,
   LockClosedIcon,
   PaperAirplaneIcon,
@@ -32,41 +30,28 @@ import type {
   MonthlyAllocation,
   ActionItem,
   PlanningAssumptions,
-  DEFAULT_AITX_SHOPS,
-  DEFAULT_3P_NETWORKS,
-  DEFAULT_ACTION_ITEMS,
-  DEFAULT_PLANNING_ASSUMPTIONS,
+  DemandRegister as DemandRegisterType,
+  PlanningState,
+  WorkType,
 } from '../types/sop';
 import {
   calculateDemandFromCars,
-  getCarsByScheduledMonth,
-  generate18MonthLabels,
   calculateSystemMetrics,
   generateMonthlyForecast,
   generateMonthlyAllocations,
-  calculateDemandPercentages,
   formatNumber,
   formatPercent,
   validateAllocations,
 } from '../utils/sopCalculations';
 import {
-  get120DayPlanningHorizon,
-  generateMonthLabels,
   filterTo120DayHorizon,
   generateCapacityAlerts,
-  getUtilizationColorClass,
-  getUtilizationStatusLabel,
   getUnassignedCarsWithUrgency,
-  getQualificationPriority,
-  getQualificationPriorityColor,
   generateCriticalActionItems,
   generateSchedulingOutput,
   validateSchedulingOutput,
   calculateTargetVsActuals,
   getQualificationDeadlines,
-  getUniqueReasonsShopped,
-  QUALIFICATION_PRIORITY,
-  PLANNING_HORIZON_DAYS,
   type CapacityAlert,
   type CriticalActionItem,
   type UnassignedCar,
@@ -107,15 +92,19 @@ export default function CarFlowPlanning() {
   const [monthlyForecasts, setMonthlyForecasts] = useState<MonthlyDemandForecast[]>([]);
   const [monthlyAllocations, setMonthlyAllocations] = useState<MonthlyAllocation[]>([]);
   const [assumptions, setAssumptions] = useState<PlanningAssumptions>(PLANNING_ASSUMPTIONS);
-  const [assumptionsExpanded, setAssumptionsExpanded] = useState(false);
 
   // NEW: Enhanced planning state
   const [use120DayFilter, setUse120DayFilter] = useState(true); // Default to 120-day view
   const [showCriticalActions, setShowCriticalActions] = useState(true);
   const [schedulingOutput, setSchedulingOutput] = useState<SchedulingOutput | null>(null);
   const [isPlanLocked, setIsPlanLocked] = useState(false);
-  const [selectedReasonFilter, setSelectedReasonFilter] = useState<string>('all');
   const [shopConfirmations, setShopConfirmations] = useState<Record<string, CapacityConfirmationStatus>>({});
+
+  // NEW: Demand Register state
+  const [demandRegister, setDemandRegister] = useState<DemandRegisterType | null>(null);
+  const [filterYear, setFilterYear] = useState<number>(new Date().getFullYear());
+  const [selectedWorkType, setSelectedWorkType] = useState<WorkType | 'all'>('all');
+  const [selectedPlanningState, setSelectedPlanningState] = useState<PlanningState | 'all'>('all');
 
   // Export handlers
   const handleExportCSV = useCallback(async () => {
@@ -288,11 +277,16 @@ export default function CarFlowPlanning() {
         setCars(carsResponse.data);
         setShops(shopsResponse);
 
-        // Calculate demand from unassigned cars
-        const { demandTypes: calculatedDemand } = calculateDemandFromCars(carsResponse.data);
+        // Calculate demand from actual car data (using tankQualDueDate, contractExpiration, etc.)
+        const { demandTypes: calculatedDemand, demandRegister: register } = calculateDemandFromCars(
+          carsResponse.data,
+          shopsResponse,
+          filterYear
+        );
         setDemandTypes(calculatedDemand);
+        setDemandRegister(register);
 
-        // Generate forecasts and allocations
+        // Generate forecasts and allocations based on actual demand
         const forecasts = generateMonthlyForecast(calculatedDemand);
         setMonthlyForecasts(forecasts);
 
@@ -306,7 +300,7 @@ export default function CarFlowPlanning() {
       }
     };
     fetchData();
-  }, []);
+  }, [filterYear]); // Re-fetch when year filter changes
 
   // Calculate metrics
   const metrics = useMemo(() => {
@@ -361,16 +355,6 @@ export default function CarFlowPlanning() {
   const qualificationDeadlines = useMemo(() => {
     return getQualificationDeadlines(cars, use120DayFilter);
   }, [cars, use120DayFilter]);
-
-  // Unique reasons for dynamic filter
-  const uniqueReasons = useMemo(() => {
-    return getUniqueReasonsShopped(cars);
-  }, [cars]);
-
-  // Planning horizon info
-  const planningHorizon = useMemo(() => {
-    return get120DayPlanningHorizon();
-  }, []);
 
   // Blocking action items count
   const blockingActionsCount = useMemo(() => {
@@ -706,14 +690,14 @@ export default function CarFlowPlanning() {
 
       {activeTab === 'demand' && (
         <DemandRegister
-          demandTypes={demandTypes}
-          setDemandTypes={setDemandTypes}
           monthlyForecasts={use120DayFilter ? filterTo120DayHorizon(monthlyForecasts) : monthlyForecasts}
-          setMonthlyForecasts={setMonthlyForecasts}
-          carsByReason={carsByReason}
-          uniqueReasons={uniqueReasons}
-          selectedReasonFilter={selectedReasonFilter}
-          setSelectedReasonFilter={setSelectedReasonFilter}
+          demandRegister={demandRegister}
+          filterYear={filterYear}
+          setFilterYear={setFilterYear}
+          selectedWorkType={selectedWorkType}
+          setSelectedWorkType={setSelectedWorkType}
+          selectedPlanningState={selectedPlanningState}
+          setSelectedPlanningState={setSelectedPlanningState}
         />
       )}
 
@@ -793,7 +777,7 @@ function ExecutiveDashboard({
   qualificationDeadlines: QualificationDeadline[];
   use120DayFilter: boolean;
 }) {
-  const StatusBadge = ({ status, type }: { status: string; type: 'capacity' | 'surplus' | 'utilization' }) => {
+  const StatusBadge = ({ status, type: _type }: { status: string; type: 'capacity' | 'surplus' | 'utilization' }) => {
     const colors = {
       'Sufficient': 'bg-green-100 text-green-800',
       'SHORTAGE': 'bg-red-100 text-red-800',
@@ -1129,193 +1113,348 @@ function ExecutiveDashboard({
 
 // Demand Register Component
 function DemandRegister({
-  demandTypes,
-  setDemandTypes,
   monthlyForecasts,
-  setMonthlyForecasts,
-  carsByReason,
-  uniqueReasons,
-  selectedReasonFilter,
-  setSelectedReasonFilter,
+  demandRegister,
+  filterYear,
+  setFilterYear,
+  selectedWorkType,
+  setSelectedWorkType,
+  selectedPlanningState,
+  setSelectedPlanningState,
 }: {
-  demandTypes: DemandType[];
-  setDemandTypes: (types: DemandType[]) => void;
   monthlyForecasts: MonthlyDemandForecast[];
-  setMonthlyForecasts: (forecasts: MonthlyDemandForecast[]) => void;
-  carsByReason: Map<string, Car[]>;
-  uniqueReasons: string[];
-  selectedReasonFilter: string;
-  setSelectedReasonFilter: (filter: string) => void;
+  demandRegister: DemandRegisterType | null;
+  filterYear: number;
+  setFilterYear: (year: number) => void;
+  selectedWorkType: WorkType | 'all';
+  setSelectedWorkType: (type: WorkType | 'all') => void;
+  selectedPlanningState: PlanningState | 'all';
+  setSelectedPlanningState: (state: PlanningState | 'all') => void;
 }) {
-  const totalDemand = demandTypes.reduce((sum, d) => sum + d.annualVolume, 0);
+  const currentYear = new Date().getFullYear();
+  const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
-  const handleDemandChange = (id: string, field: keyof DemandType, value: string | number) => {
-    setDemandTypes(demandTypes.map(d =>
-      d.id === id ? { ...d, [field]: value } : d
-    ));
+  // Planning state labels and colors
+  const planningStateConfig: Record<PlanningState, { label: string; color: string; bgColor: string }> = {
+    'not_planned': { label: 'Not Planned', color: 'text-red-700', bgColor: 'bg-red-100' },
+    'tentatively_scheduled': { label: 'Tentative', color: 'text-yellow-700', bgColor: 'bg-yellow-100' },
+    'awaiting_confirmation': { label: 'Awaiting Approval', color: 'text-orange-700', bgColor: 'bg-orange-100' },
+    'planned': { label: 'Planned', color: 'text-blue-700', bgColor: 'bg-blue-100' },
+    'scheduled': { label: 'Scheduled', color: 'text-green-700', bgColor: 'bg-green-100' },
+    'in_progress': { label: 'In Progress', color: 'text-purple-700', bgColor: 'bg-purple-100' },
+    'completed': { label: 'Completed', color: 'text-steel-700', bgColor: 'bg-steel-100' },
   };
+
+  // Filter items based on selections
+  const filteredItems = useMemo(() => {
+    if (!demandRegister) return [];
+    let items = demandRegister.items;
+
+    if (selectedWorkType !== 'all') {
+      items = items.filter(i => i.workType === selectedWorkType);
+    }
+    if (selectedPlanningState !== 'all') {
+      items = items.filter(i => i.planningState === selectedPlanningState);
+    }
+
+    return items;
+  }, [demandRegister, selectedWorkType, selectedPlanningState]);
+
+  if (!demandRegister) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="text-steel-500">Loading demand register...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Dynamic Filter for Reason Shopped */}
+      {/* Triggers Banner - What needs attention */}
+      {demandRegister.totalNotPlanned > 0 && (
+        <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ExclamationTriangleIcon className="h-8 w-8 text-red-600" />
+              <div>
+                <h3 className="text-lg font-bold text-red-800">
+                  {demandRegister.totalNotPlanned} Cars Need Planning
+                </h3>
+                <p className="text-sm text-red-700">
+                  {demandRegister.totalOverdue > 0 && (
+                    <span className="font-semibold">{demandRegister.totalOverdue} overdue! </span>
+                  )}
+                  These cars have due dates but no shop allocation.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedPlanningState('not_planned')}
+              className="rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
+            >
+              View & Plan
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">
+        {demandRegister.summaries.map(summary => (
+          <div
+            key={summary.workType}
+            className={`card cursor-pointer transition-all hover:shadow-lg ${
+              selectedWorkType === summary.workType ? 'ring-2 ring-rail-500' : ''
+            }`}
+            onClick={() => setSelectedWorkType(selectedWorkType === summary.workType ? 'all' : summary.workType)}
+          >
+            <div className="text-xs font-medium uppercase text-steel-500">{summary.label}</div>
+            <div className="mt-1 text-2xl font-bold text-steel-900">{summary.total}</div>
+            <div className="mt-2 space-y-1">
+              {summary.notPlanned > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-red-600">Not Planned</span>
+                  <span className="font-semibold text-red-700">{summary.notPlanned}</span>
+                </div>
+              )}
+              {summary.overdue > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-red-600">Overdue</span>
+                  <span className="font-bold text-red-700">{summary.overdue}</span>
+                </div>
+              )}
+              {(summary.planned + summary.scheduled) > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-green-600">Planned/Scheduled</span>
+                  <span className="font-semibold text-green-700">{summary.planned + summary.scheduled}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
       <div className="card bg-steel-50">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <FunnelIcon className="h-5 w-5 text-steel-500" />
-            <span className="text-sm font-medium text-steel-700">Filter by Reason Shopped:</span>
+            <span className="text-sm font-medium text-steel-700">Filters:</span>
           </div>
-          <select
-            value={selectedReasonFilter}
-            onChange={(e) => setSelectedReasonFilter(e.target.value)}
-            className="rounded-lg border border-steel-300 bg-white px-3 py-1.5 text-sm focus:border-rail-500 focus:ring-rail-500"
-          >
-            <option value="all">(All Reasons)</option>
-            <option value="TANK QUALIFICATION">Tank Qualification</option>
-            <option value="qualification">Regulatory Qualification</option>
-            {uniqueReasons
-              .filter(r => !['TANK QUALIFICATION', 'qualification'].includes(r))
-              .map(reason => (
-                <option key={reason} value={reason}>{reason}</option>
-              ))
-            }
-          </select>
-          {selectedReasonFilter !== 'all' && (
+
+          {/* Year Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-steel-600">Year Due:</label>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(parseInt(e.target.value))}
+              className="rounded-lg border border-steel-300 bg-white px-3 py-1.5 text-sm focus:border-rail-500 focus:ring-rail-500"
+            >
+              {yearOptions.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Work Type Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-steel-600">Work Type:</label>
+            <select
+              value={selectedWorkType}
+              onChange={(e) => setSelectedWorkType(e.target.value as WorkType | 'all')}
+              className="rounded-lg border border-steel-300 bg-white px-3 py-1.5 text-sm focus:border-rail-500 focus:ring-rail-500"
+            >
+              <option value="all">All Types</option>
+              <option value="qualification">Qualifications</option>
+              <option value="assignment">Assignments</option>
+              <option value="return">Returns</option>
+            </select>
+          </div>
+
+          {/* Planning State Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-steel-600">Status:</label>
+            <select
+              value={selectedPlanningState}
+              onChange={(e) => setSelectedPlanningState(e.target.value as PlanningState | 'all')}
+              className="rounded-lg border border-steel-300 bg-white px-3 py-1.5 text-sm focus:border-rail-500 focus:ring-rail-500"
+            >
+              <option value="all">All Statuses</option>
+              <option value="not_planned">Not Planned</option>
+              <option value="tentatively_scheduled">Tentatively Scheduled</option>
+              <option value="awaiting_confirmation">Awaiting Confirmation</option>
+              <option value="planned">Planned</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+          </div>
+
+          {/* Clear Filters */}
+          {(selectedWorkType !== 'all' || selectedPlanningState !== 'all') && (
             <button
-              onClick={() => setSelectedReasonFilter('all')}
+              onClick={() => {
+                setSelectedWorkType('all');
+                setSelectedPlanningState('all');
+              }}
               className="text-sm text-rail-600 hover:underline"
             >
-              Clear Filter
+              Clear Filters
             </button>
           )}
+
           <div className="ml-auto text-sm text-steel-500">
-            {uniqueReasons.length} unique reasons in database
+            Showing {filteredItems.length} of {demandRegister.items.length} items
           </div>
         </div>
       </div>
 
-      {/* Demand Types Table */}
+      {/* Demand Register Table */}
       <div className="card">
-        <h3 className="mb-4 text-lg font-semibold text-steel-900">Demand Types</h3>
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-steel-900">
+            Demand Register - {filterYear}
+            {selectedWorkType !== 'all' && ` - ${selectedWorkType.charAt(0).toUpperCase() + selectedWorkType.slice(1)}s`}
+          </h3>
+          <div className="text-sm text-steel-500">
+            {filteredItems.filter(i => i.isOverdue).length > 0 && (
+              <span className="mr-3 font-semibold text-red-600">
+                {filteredItems.filter(i => i.isOverdue).length} Overdue
+              </span>
+            )}
+            {filteredItems.length} total cars
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-steel-200">
             <thead className="bg-steel-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Type</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Current Backlog</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Annual Volume</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Monthly Avg</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">% of Total</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Priority</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Lead Time</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Car #</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Work Type</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Due Date</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Days</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Customer</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Status</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Shop</th>
+                <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Scheduled</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-steel-200 bg-white">
-              {demandTypes.map((demand) => {
-                const reasonKey = demand.id === 'qual' ? 'qualification' :
-                                  demand.id === 'assign' ? 'assignment' :
-                                  demand.id === 'return' ? 'release' :
-                                  demand.id === 'project' ? 'project' :
-                                  demand.id === 'repair' ? 'repair' : 'maintenance';
-                const actualCars = carsByReason.get(reasonKey)?.length || 0;
-                const percent = totalDemand > 0 ? (demand.annualVolume / totalDemand) * 100 : 0;
-
+              {filteredItems.slice(0, 100).map((item) => {
+                const stateConfig = planningStateConfig[item.planningState];
                 return (
-                  <tr key={demand.id}>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-steel-900">
-                      {demand.name}
+                  <tr
+                    key={`${item.carId}-${item.workType}`}
+                    className={`${item.isOverdue ? 'bg-red-50' : ''} ${item.isPriorityCustomer ? 'border-l-4 border-l-yellow-500' : ''}`}
+                  >
+                    <td className="whitespace-nowrap px-3 py-2 text-sm font-medium text-steel-900">
+                      {item.railcarNumber}
+                      {item.isPriorityCustomer && (
+                        <span className="ml-1 text-yellow-500" title="Priority Customer">★</span>
+                      )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-steel-700">
-                      <span className="font-semibold text-rail-600">{actualCars}</span> cars
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <input
-                        type="number"
-                        value={demand.annualVolume}
-                        onChange={(e) => handleDemandChange(demand.id, 'annualVolume', parseInt(e.target.value) || 0)}
-                        className="w-24 rounded border border-steel-300 px-2 py-1 text-sm"
-                      />
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-steel-700">
-                      {Math.round(demand.annualVolume / 12)}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-steel-700">
-                      {percent.toFixed(1)}%
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
-                        demand.priority === 'HIGH' ? 'bg-red-100 text-red-700' :
-                        demand.priority === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-green-100 text-green-700'
+                    <td className="whitespace-nowrap px-3 py-2 text-sm">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        item.workType === 'qualification' ? 'bg-blue-100 text-blue-700' :
+                        item.workType === 'assignment' ? 'bg-green-100 text-green-700' :
+                        item.workType === 'return' ? 'bg-purple-100 text-purple-700' :
+                        'bg-steel-100 text-steel-700'
                       }`}>
-                        {demand.priority}
+                        {item.workType === 'qualification' ? 'QUAL' :
+                         item.workType === 'assignment' ? 'ASSIGN' :
+                         item.workType === 'return' ? 'RETURN' : item.workType.toUpperCase()}
                       </span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-steel-500">
-                      {demand.leadTime}
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
+                      {item.dueDate ? new Date(item.dueDate).toLocaleDateString() : '-'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm">
+                      <span className={`font-semibold ${
+                        item.isOverdue ? 'text-red-700' :
+                        item.daysUntilDue <= 30 ? 'text-orange-600' :
+                        item.daysUntilDue <= 60 ? 'text-yellow-600' :
+                        'text-steel-600'
+                      }`}>
+                        {item.isOverdue ? `${Math.abs(item.daysUntilDue)}d overdue` :
+                         item.daysUntilDue === 999 ? '-' : `${item.daysUntilDue}d`}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
+                      {item.customer || '-'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${stateConfig.bgColor} ${stateConfig.color}`}>
+                        {stateConfig.label}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
+                      {item.assignedShopName || (
+                        <span className="italic text-steel-400">Unassigned</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
+                      {item.scheduledMonth || '-'}
                     </td>
                   </tr>
                 );
               })}
-              <tr className="bg-steel-50 font-semibold">
-                <td className="px-4 py-3 text-sm text-steel-900">Total</td>
-                <td className="px-4 py-3 text-sm text-steel-900">
-                  {Array.from(carsByReason.values()).reduce((sum, cars) => sum + cars.length, 0)} cars
-                </td>
-                <td className="px-4 py-3 text-sm text-steel-900">{formatNumber(totalDemand)}</td>
-                <td className="px-4 py-3 text-sm text-steel-900">{Math.round(totalDemand / 12)}</td>
-                <td className="px-4 py-3 text-sm text-steel-900">100%</td>
-                <td colSpan={2}></td>
-              </tr>
+              {filteredItems.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-steel-500">
+                    No cars match the current filters
+                  </td>
+                </tr>
+              )}
+              {filteredItems.length > 100 && (
+                <tr>
+                  <td colSpan={8} className="bg-steel-50 px-4 py-2 text-center text-sm text-steel-600">
+                    Showing first 100 of {filteredItems.length} items. Use filters to narrow results.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Monthly Forecast Grid */}
+      {/* Monthly Breakdown by Work Type */}
       <div className="card">
-        <h3 className="mb-4 text-lg font-semibold text-steel-900">18-Month Demand Forecast</h3>
+        <h3 className="mb-4 text-lg font-semibold text-steel-900">Monthly Breakdown</h3>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-steel-200 text-xs">
             <thead className="bg-steel-50">
               <tr>
                 <th className="sticky left-0 z-10 bg-steel-50 px-3 py-2 text-left font-medium uppercase tracking-wider text-steel-500">Type</th>
-                {monthlyForecasts.map((f) => (
+                {monthlyForecasts.slice(0, 12).map((f) => (
                   <th key={f.month} className="px-3 py-2 text-center font-medium uppercase tracking-wider text-steel-500">
                     {f.month}
                   </th>
                 ))}
+                <th className="px-3 py-2 text-center font-medium uppercase tracking-wider text-steel-500">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-steel-200 bg-white">
-              <tr>
-                <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-steel-900">Qualifications</td>
-                {monthlyForecasts.map((f) => (
-                  <td key={f.month} className="px-3 py-2 text-center text-steel-700">{f.qualifications}</td>
-                ))}
-              </tr>
-              <tr>
-                <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-steel-900">Assignments</td>
-                {monthlyForecasts.map((f) => (
-                  <td key={f.month} className="px-3 py-2 text-center text-steel-700">{f.assignments}</td>
-                ))}
-              </tr>
-              <tr>
-                <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-steel-900">Returns</td>
-                {monthlyForecasts.map((f) => (
-                  <td key={f.month} className="px-3 py-2 text-center text-steel-700">{f.returns}</td>
-                ))}
-              </tr>
-              <tr>
-                <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-steel-900">External</td>
-                {monthlyForecasts.map((f) => (
-                  <td key={f.month} className="px-3 py-2 text-center text-steel-700">{f.external}</td>
-                ))}
-              </tr>
+              {demandRegister.summaries.map(summary => (
+                <tr key={summary.workType}>
+                  <td className="sticky left-0 z-10 bg-white px-3 py-2 font-medium text-steel-900">{summary.label}</td>
+                  {monthlyForecasts.slice(0, 12).map((f) => (
+                    <td key={f.month} className="px-3 py-2 text-center text-steel-700">
+                      {summary.byMonth.get(f.month) || 0}
+                    </td>
+                  ))}
+                  <td className="px-3 py-2 text-center font-semibold text-steel-900">{summary.total}</td>
+                </tr>
+              ))}
               <tr className="bg-steel-50 font-semibold">
                 <td className="sticky left-0 z-10 bg-steel-50 px-3 py-2 text-steel-900">Total</td>
-                {monthlyForecasts.map((f) => (
-                  <td key={f.month} className="px-3 py-2 text-center text-steel-900">{f.total}</td>
-                ))}
+                {monthlyForecasts.slice(0, 12).map((f) => {
+                  const monthTotal = demandRegister.summaries.reduce(
+                    (sum, s) => sum + (s.byMonth.get(f.month) || 0), 0
+                  );
+                  return (
+                    <td key={f.month} className="px-3 py-2 text-center text-steel-900">{monthTotal}</td>
+                  );
+                })}
+                <td className="px-3 py-2 text-center text-steel-900">{demandRegister.items.length}</td>
               </tr>
             </tbody>
           </table>
@@ -1919,7 +2058,7 @@ function PlanningAssumptionsPanel({
 function CarAllocationWorkflow({
   unassignedCars,
   shops,
-  qualificationDeadlines,
+  qualificationDeadlines: _qualificationDeadlines,
   onAssignCar,
 }: {
   unassignedCars: UnassignedCar[];
@@ -1927,7 +2066,7 @@ function CarAllocationWorkflow({
   qualificationDeadlines: QualificationDeadline[];
   onAssignCar: (carId: string, shopId: string) => void;
 }) {
-  const [selectedCarId, setSelectedCarId] = useState<string | null>(null);
+  const [_selectedCarId, setSelectedCarId] = useState<string | null>(null);
 
   return (
     <div className="space-y-6">

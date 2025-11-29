@@ -6,6 +6,70 @@ export type CapacityStatus = 'Sufficient' | 'SHORTAGE';
 export type SurplusStatus = 'Surplus' | 'DEFICIT';
 export type UtilizationStatus = 'Healthy' | 'Over-Utilized';
 
+// Planning State - workflow states for car planning
+export type PlanningState =
+  | 'not_planned'           // Nothing scheduled - needs attention
+  | 'tentatively_scheduled' // Initial allocation, pending review
+  | 'awaiting_confirmation' // Sent to Portfolio/Commercial for approval
+  | 'planned'               // Approved allocation to shop/month
+  | 'scheduled'             // Commitment made with customer and shop
+  | 'in_progress'           // Work underway
+  | 'completed';            // Work finished
+
+// Work Type - what kind of work needs to be done
+export type WorkType = 'qualification' | 'assignment' | 'return' | 'repair' | 'maintenance' | 'project';
+
+// Demand Register Item - individual car in the demand register
+export interface DemandRegisterItem {
+  carId: string;
+  railcarNumber: string;
+  workType: WorkType;
+  dueDate: string | null;           // tankQualDueDate or contractExpiration
+  dueMonth: string;                  // Formatted as "Mon-YY"
+  daysUntilDue: number;
+  isOverdue: boolean;
+  customer: string;
+  commodity: string;
+  isTankCar: boolean;
+  planningState: PlanningState;
+  assignedShopId: string | null;
+  assignedShopName: string | null;
+  scheduledMonth: string | null;
+  isPriorityCustomer: boolean;
+  notes: string;
+  // Qualification specific
+  qualificationType?: string;
+  tankQualified?: boolean;
+  // Return specific
+  leaseEndDate?: string | null;
+  nextCustomer?: string | null;
+}
+
+// Demand Register Summary - grouped counts
+export interface DemandRegisterSummary {
+  workType: WorkType;
+  label: string;
+  total: number;
+  notPlanned: number;
+  tentativelyScheduled: number;
+  awaitingConfirmation: number;
+  planned: number;
+  scheduled: number;
+  overdue: number;
+  byMonth: Map<string, number>;
+}
+
+// Full Demand Register
+export interface DemandRegister {
+  items: DemandRegisterItem[];
+  summaries: DemandRegisterSummary[];
+  totalNotPlanned: number;
+  totalPlanned: number;
+  totalScheduled: number;
+  totalOverdue: number;
+  filterYear: number;
+}
+
 // Demand Type - 4 categories of work
 export interface DemandType {
   id: string;
