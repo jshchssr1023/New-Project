@@ -13,6 +13,7 @@ import auditRoutes from './routes/audit';
 import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
+import schedulerService from './services/schedulerService';
 
 const app = express();
 const prisma = new PrismaClient();
@@ -51,12 +52,22 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Chronos Scheduler API running on port ${PORT}`);
+
+  // Start the scheduler service for scheduled reports
+  try {
+    await schedulerService.start();
+    console.log('Scheduler service started for scheduled reports');
+  } catch (error) {
+    console.error('Failed to start scheduler service:', error);
+  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
+  console.log('Shutting down gracefully...');
+  schedulerService.stop();
   await prisma.$disconnect();
   process.exit(0);
 });
