@@ -8,7 +8,7 @@
  * - Selecting specific cars/shops for documents
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   PlayIcon,
   DocumentTextIcon,
@@ -21,6 +21,8 @@ import {
   DocumentArrowDownIcon,
   ArrowPathIcon,
   FunnelIcon,
+  CalendarDaysIcon,
+  BellAlertIcon,
 } from '@heroicons/react/24/outline';
 import {
   leaseQualificationApi,
@@ -31,17 +33,33 @@ import {
   AvailableCustomer,
   AvailableMonth,
   ScenarioComparison,
+  carsApi,
 } from '../services/api';
+import type { Car } from '../types';
+import {
+  get120DayPlanningHorizon,
+  getQualificationDeadlines,
+  getQualificationPriority,
+  filterCarsByReasonShopped,
+  getUniqueReasonsShopped,
+  QUALIFICATION_PRIORITY,
+  PLANNING_HORIZON_DAYS,
+} from '../utils/carFlowUtilities';
 
-type TabType = 'scenarios' | 'documents' | 'queue';
+type TabType = 'scenarios' | 'documents' | 'queue' | 'deadlines';
 
 export default function LeaseQualificationEngine() {
-  const [activeTab, setActiveTab] = useState<TabType>('scenarios');
+  const [activeTab, setActiveTab] = useState<TabType>('deadlines'); // Default to deadlines for qualification focus
   const [scenarios, setScenarios] = useState<QualificationScenario[]>([]);
   const [selectedScenario, setSelectedScenario] = useState<QualificationScenario | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [comparison, setComparison] = useState<ScenarioComparison | null>(null);
+
+  // NEW: Enhanced state for qualification focus
+  const [cars, setCars] = useState<Car[]>([]);
+  const [use120DayFilter, setUse120DayFilter] = useState(true);
+  const [reasonFilter, setReasonFilter] = useState<string>('TANK QUALIFICATION'); // Default to tank qualification
 
   // Document generation state
   const [showDocumentModal, setShowDocumentModal] = useState(false);
@@ -65,6 +83,38 @@ export default function LeaseQualificationEngine() {
 
   useEffect(() => {
     loadScenarios();
+    loadCars();
+  }, []);
+
+  const loadCars = async () => {
+    try {
+      const response = await carsApi.getAll();
+      setCars(response.data);
+    } catch (error) {
+      console.error('Failed to load cars:', error);
+    }
+  };
+
+  // Compute qualification deadlines using the new utilities
+  const qualificationDeadlines = useMemo(() => {
+    return getQualificationDeadlines(cars, use120DayFilter);
+  }, [cars, use120DayFilter]);
+
+  const filteredDeadlines = useMemo(() => {
+    if (reasonFilter === 'all') return qualificationDeadlines;
+    return qualificationDeadlines.filter(d => {
+      const car = cars.find(c => c.id === d.carId);
+      if (!car) return false;
+      return car.reasonShopped?.toLowerCase().includes(reasonFilter.toLowerCase());
+    });
+  }, [qualificationDeadlines, reasonFilter, cars]);
+
+  const uniqueReasons = useMemo(() => {
+    return getUniqueReasonsShopped(cars);
+  }, [cars]);
+
+  const planningHorizon = useMemo(() => {
+    return get120DayPlanningHorizon();
   }, []);
 
   const loadScenarios = async () => {
@@ -225,6 +275,7 @@ export default function LeaseQualificationEngine() {
       <div className="border-b border-steel-200">
         <nav className="flex space-x-8">
           {[
+            { id: 'deadlines', label: 'Qualification Deadlines', icon: BellAlertIcon },
             { id: 'scenarios', label: 'Scenarios', icon: ChartBarIcon },
             { id: 'documents', label: 'Documents', icon: DocumentTextIcon },
             { id: 'queue', label: 'Qualification Queue', icon: ClockIcon },
@@ -244,6 +295,220 @@ export default function LeaseQualificationEngine() {
           ))}
         </nav>
       </div>
+
+      {/* Deadlines Tab - Default View for Qualification Focus */}
+      {activeTab === 'deadlines' && (
+        <div className="space-y-6">
+          {/* Controls Bar */}
+          <div className="card">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                {/* 120-Day Filter Toggle */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={use120DayFilter}
+                    onChange={(e) => setUse120DayFilter(e.target.checked)}
+                    className="rounded border-steel-300 text-rail-600 focus:ring-rail-500"
+                  />
+                  <span className="text-sm text-steel-700">
+                    <CalendarDaysIcon className="h-4 w-4 inline mr-1" />
+                    120-Day Horizon ({PLANNING_HORIZON_DAYS} days)
+                  </span>
+                </label>
+
+                {/* Reason Shopped Filter */}
+                <div className="flex items-center gap-2">
+                  <FunnelIcon className="h-4 w-4 text-steel-500" />
+                  <select
+                    value={reasonFilter}
+                    onChange={(e) => setReasonFilter(e.target.value)}
+                    className="input text-sm py-1"
+                  >
+                    <option value="all">All Reasons</option>
+                    <option value="TANK QUALIFICATION">Tank Qualification</option>
+                    {uniqueReasons.map((reason) => (
+                      <option key={reason} value={reason}>
+                        {reason}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="text-sm text-steel-600">
+                Showing {filteredDeadlines.length} cars with qualification deadlines
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="card border-l-4 border-red-500">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-steel-500">Overdue</p>
+                  <p className="text-2xl font-bold text-red-600">
+                    {filteredDeadlines.filter((d) => d.isOverdue).length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="card border-l-4 border-red-400">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-50 rounded-lg">
+                  <ClockIcon className="h-6 w-6 text-red-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-steel-500">Critical (≤30d)</p>
+                  <p className="text-2xl font-bold text-red-500">
+                    {filteredDeadlines.filter((d) => d.priority === 'CRITICAL' && !d.isOverdue).length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="card border-l-4 border-orange-400">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-50 rounded-lg">
+                  <ClockIcon className="h-6 w-6 text-orange-500" />
+                </div>
+                <div>
+                  <p className="text-sm text-steel-500">High (≤60d)</p>
+                  <p className="text-2xl font-bold text-orange-500">
+                    {filteredDeadlines.filter((d) => d.priority === 'HIGH').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="card border-l-4 border-yellow-400">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-yellow-50 rounded-lg">
+                  <ClockIcon className="h-6 w-6 text-yellow-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-steel-500">Medium (≤90d)</p>
+                  <p className="text-2xl font-bold text-yellow-600">
+                    {filteredDeadlines.filter((d) => d.priority === 'MEDIUM').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="card border-l-4 border-green-400">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-50 rounded-lg">
+                  <CheckCircleIcon className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-steel-500">Low (≤120d)</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {filteredDeadlines.filter((d) => d.priority === 'LOW').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Qualification Deadlines Table */}
+          <div className="card">
+            <h3 className="text-lg font-semibold mb-4">Qualification Deadlines</h3>
+            {filteredDeadlines.length === 0 ? (
+              <div className="text-center py-8 text-steel-500">
+                No qualification deadlines found in the selected time horizon.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b border-steel-200">
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Priority</th>
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Railcar #</th>
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Customer</th>
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Due Date</th>
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Days Until Due</th>
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Assigned Shop</th>
+                      <th className="text-left py-3 px-4 font-medium text-steel-600">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredDeadlines.map((deadline) => {
+                      const priorityConfig = QUALIFICATION_PRIORITY[deadline.priority];
+                      return (
+                        <tr
+                          key={deadline.carId}
+                          className={`border-b border-steel-100 hover:bg-steel-50 ${
+                            deadline.isOverdue ? 'bg-red-50' : ''
+                          }`}
+                        >
+                          <td className="py-3 px-4">
+                            <span
+                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                deadline.isOverdue
+                                  ? 'bg-red-100 text-red-800'
+                                  : priorityConfig.color === 'red'
+                                  ? 'bg-red-100 text-red-800'
+                                  : priorityConfig.color === 'orange'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : priorityConfig.color === 'yellow'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : priorityConfig.color === 'green'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                              }`}
+                            >
+                              {deadline.isOverdue ? 'OVERDUE' : priorityConfig.label}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-medium text-steel-900">
+                            {deadline.railcarNumber}
+                          </td>
+                          <td className="py-3 px-4 text-steel-700">{deadline.customer}</td>
+                          <td className="py-3 px-4 text-steel-700">
+                            {new Date(deadline.qualDueDate).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`font-medium ${
+                                deadline.isOverdue
+                                  ? 'text-red-600'
+                                  : deadline.daysUntilDue <= 30
+                                  ? 'text-red-500'
+                                  : deadline.daysUntilDue <= 60
+                                  ? 'text-orange-500'
+                                  : deadline.daysUntilDue <= 90
+                                  ? 'text-yellow-600'
+                                  : 'text-green-600'
+                              }`}
+                            >
+                              {deadline.isOverdue
+                                ? `${Math.abs(deadline.daysUntilDue)} days overdue`
+                                : `${deadline.daysUntilDue} days`}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {deadline.assignedShopName ? (
+                              <span className="text-steel-700">{deadline.assignedShopName}</span>
+                            ) : (
+                              <span className="text-steel-400 italic">Unassigned</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <button className="btn-ghost text-sm text-rail-600 hover:text-rail-700">
+                              View Details
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Scenarios Tab */}
       {activeTab === 'scenarios' && (
