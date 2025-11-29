@@ -140,47 +140,48 @@ async function main() {
 
   console.log('✓ Created users: admin, planner, viewer');
 
-  // Create 25 shops with actual data
-  const shops = await Promise.all(
-    shopData.map(async (shop, index) => {
-      // Convert annual capacity to monthly (divide by 12)
-      const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
-      const isAitx = shop.network === 'AITX-Own';
-      // Tank qualified based on certifications (shops with Qualification cert are tank qualified)
-      const tankQualified = shop.certifications.includes('Qualification');
-      // Network tier: AITX = 1 (preferred), 3P varies by index
-      const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
+  // Create 25 shops with actual data (sequential to avoid SQLite crashes)
+  const shops = [];
+  for (let index = 0; index < shopData.length; index++) {
+    const shop = shopData[index];
+    // Convert annual capacity to monthly (divide by 12)
+    const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
+    const isAitx = shop.network === 'AITX-Own';
+    // Tank qualified based on certifications (shops with Qualification cert are tank qualified)
+    const tankQualified = shop.certifications.includes('Qualification');
+    // Network tier: AITX = 1 (preferred), 3P varies by index
+    const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
 
-      return prisma.shop.create({
-        data: {
-          id: uuidv4(),
-          name: shop.name,
-          code: shop.code,
-          location: `${shop.city}, ${shop.state}`,
-          city: shop.city,
-          state: shop.state,
-          region: shop.region,
-          network: shop.network,
-          isAitxInternal: isAitx,
-          tankQualified,
-          networkTier,
-          shopStatus: 'active',
-          capacity: monthlyCapacity,
-          utilizationTarget: 0.90,
-          baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
-          laborRate: isAitx ? 95 : 75,
-          costIndex: isAitx ? 1.379 : 1.0,
-          baseTurnTime: shop.turnTime,
-          certifications: JSON.stringify(shop.certifications.split(', ')),
-          contactName: shop.contact.split(' (')[0],
-          contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
-          notes: shop.notes,
-          isActive: true,
-          companyId: company.id,
-        },
-      });
-    })
-  );
+    const createdShop = await prisma.shop.create({
+      data: {
+        id: uuidv4(),
+        name: shop.name,
+        code: shop.code,
+        location: `${shop.city}, ${shop.state}`,
+        city: shop.city,
+        state: shop.state,
+        region: shop.region,
+        network: shop.network,
+        isAitxInternal: isAitx,
+        tankQualified,
+        networkTier,
+        shopStatus: 'active',
+        capacity: monthlyCapacity,
+        utilizationTarget: 0.90,
+        baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
+        laborRate: isAitx ? 95 : 75,
+        costIndex: isAitx ? 1.379 : 1.0,
+        baseTurnTime: shop.turnTime,
+        certifications: JSON.stringify(shop.certifications.split(', ')),
+        contactName: shop.contact.split(' (')[0],
+        contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
+        notes: shop.notes,
+        isActive: true,
+        companyId: company.id,
+      },
+    });
+    shops.push(createdShop);
+  }
 
   console.log(`✓ Created ${shops.length} shops`);
 
@@ -188,111 +189,112 @@ async function main() {
   const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
   const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
 
-  // Create 200 railcars with new car database fields
-  const cars = await Promise.all(
-    Array.from({ length: 200 }, (_, i) => {
-      const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
-      const isTankCar = carType === 'Tank Car';
-      const commodity = commodities[Math.floor(Math.random() * commodities.length)];
-      const customer = customers[Math.floor(Math.random() * customers.length)];
-      const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
-      const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05]; // available, in_service, in_shop, scheduled, retired
-      const carStatuses = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
-      const rand = Math.random();
-      let statusIndex = 0;
-      let cumulative = 0;
-      for (let j = 0; j < statusWeights.length; j++) {
-        cumulative += statusWeights[j];
-        if (rand < cumulative) {
-          statusIndex = j;
-          break;
-        }
+  // Create 200 railcars with new car database fields (sequential to avoid SQLite crashes)
+  const cars = [];
+  const carStatusesList = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
+  const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05]; // available, in_service, in_shop, scheduled, retired
+
+  for (let i = 0; i < 200; i++) {
+    const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
+    const isTankCar = carType === 'Tank Car';
+    const commodity = commodities[Math.floor(Math.random() * commodities.length)];
+    const customer = customers[Math.floor(Math.random() * customers.length)];
+    const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
+    const rand = Math.random();
+    let statusIndex = 0;
+    let cumulative = 0;
+    for (let j = 0; j < statusWeights.length; j++) {
+      cumulative += statusWeights[j];
+      if (rand < cumulative) {
+        statusIndex = j;
+        break;
       }
-      const status = carStatuses[statusIndex];
-      const region = regions[Math.floor(Math.random() * regions.length)];
-      const nextServiceDue = new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000);
+    }
+    const status = carStatusesList[statusIndex];
+    const region = regions[Math.floor(Math.random() * regions.length)];
+    const nextServiceDue = new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000);
 
-      // Some cars overdue (for testing red highlighting)
-      const isOverdue = Math.random() > 0.85;
-      const adjustedNextServiceDue = isOverdue
-        ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) // overdue by up to 30 days
-        : nextServiceDue;
+    // Some cars overdue (for testing red highlighting)
+    const isOverdue = Math.random() > 0.85;
+    const adjustedNextServiceDue = isOverdue
+      ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) // overdue by up to 30 days
+      : nextServiceDue;
 
-      // Days in shop for in_shop status
-      const daysInShop = status === 'in_shop' ? Math.floor(Math.random() * 20) + 1 : 0;
-      const shopEntryDate = status === 'in_shop'
-        ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000)
-        : null;
+    // Days in shop for in_shop status
+    const daysInShop = status === 'in_shop' ? Math.floor(Math.random() * 20) + 1 : 0;
+    const shopEntryDate = status === 'in_shop'
+      ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000)
+      : null;
 
-      // New car database fields
-      const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000); // Up to 2 years
-      const buildYear = 1990 + Math.floor(Math.random() * 35); // 1990-2024
-      const isJacketed = isTankCar ? Math.random() > 0.5 : false; // Only tank cars can be jacketed
-      const isLined = isTankCar ? Math.random() > 0.6 : false; // Only tank cars can be lined
-      const qualificationType = qualificationTypes[Math.floor(Math.random() * qualificationTypes.length)];
-      const tankQualified = isTankCar ? Math.random() > 0.2 : false; // Most tank cars are tank qualified
-      const performScheduled = Math.random() > 0.7;
-      const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
+    // New car database fields
+    const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000); // Up to 2 years
+    const buildYear = 1990 + Math.floor(Math.random() * 35); // 1990-2024
+    const isJacketed = isTankCar ? Math.random() > 0.5 : false; // Only tank cars can be jacketed
+    const isLined = isTankCar ? Math.random() > 0.6 : false; // Only tank cars can be lined
+    const qualificationType = qualificationTypes[Math.floor(Math.random() * qualificationTypes.length)];
+    const tankQualified = isTankCar ? Math.random() > 0.2 : false; // Most tank cars are tank qualified
+    const performScheduled = Math.random() > 0.7;
+    const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
 
-      // Tank qualification due date - only for tank cars
-      // Spread across current year with some overdue, some due soon, some later
-      let tankQualDueDate: Date | null = null;
-      if (isTankCar) {
-        const now = new Date();
-        const yearStart = new Date(now.getFullYear(), 0, 1);
-        const yearEnd = new Date(now.getFullYear(), 11, 31);
-        const daysInYear = 365;
-
-        // 20% overdue (past dates), 30% due within 3 months, 50% due later this year
-        const qualRand = Math.random();
-        if (qualRand < 0.2) {
-          // Overdue - 1-60 days ago
-          tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
-        } else if (qualRand < 0.5) {
-          // Due within next 3 months
-          tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
-        } else {
-          // Due later this year or early next year
-          tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
-        }
+    // Tank qualification due date - only for tank cars
+    // Spread across current year with some overdue, some due soon, some later
+    let tankQualDueDate: Date | null = null;
+    if (isTankCar) {
+      // 20% overdue (past dates), 30% due within 3 months, 50% due later this year
+      const qualRand = Math.random();
+      if (qualRand < 0.2) {
+        // Overdue - 1-60 days ago
+        tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
+      } else if (qualRand < 0.5) {
+        // Due within next 3 months
+        tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
+      } else {
+        // Due later this year or early next year
+        tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
       }
+    }
 
-      return prisma.car.create({
-        data: {
-          id: uuidv4(),
-          railcarNumber: `AITX${String(100000 + i).slice(1)}`,
-          carType,
-          isTankCar,
-          commodity,
-          customer,
-          projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
-          reasonShopped,
-          status,
-          currentLocation: locations[Math.floor(Math.random() * locations.length)],
-          homeRegion: region,
-          originRegion: region,
-          projectedCost: 12000 + Math.floor(Math.random() * 10000),
-          daysInShop,
-          shopEntryDate,
-          lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
-          nextServiceDue: adjustedNextServiceDue,
-          notes: Math.random() > 0.7 ? 'Priority service required' : '',
-          // New car database fields
-          contractNumber: `CTR-${2024}-${String(10000 + i)}`,
-          contractExpiration,
-          isJacketed,
-          isLined,
-          buildYear,
-          qualificationType,
-          tankQualified,
-          tankQualDueDate,
-          performScheduled,
-          planStatus,
-          companyId: company.id,
-        },
-      });
-    })
-  );
+    const createdCar = await prisma.car.create({
+      data: {
+        id: uuidv4(),
+        railcarNumber: `AITX${String(100000 + i).slice(1)}`,
+        carType,
+        isTankCar,
+        commodity,
+        customer,
+        projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
+        reasonShopped,
+        status,
+        currentLocation: locations[Math.floor(Math.random() * locations.length)],
+        homeRegion: region,
+        originRegion: region,
+        projectedCost: 12000 + Math.floor(Math.random() * 10000),
+        daysInShop,
+        shopEntryDate,
+        lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
+        nextServiceDue: adjustedNextServiceDue,
+        notes: Math.random() > 0.7 ? 'Priority service required' : '',
+        // New car database fields
+        contractNumber: `CTR-${2024}-${String(10000 + i)}`,
+        contractExpiration,
+        isJacketed,
+        isLined,
+        buildYear,
+        qualificationType,
+        tankQualified,
+        tankQualDueDate,
+        performScheduled,
+        planStatus,
+        companyId: company.id,
+      },
+    });
+    cars.push(createdCar);
+
+    // Log progress every 50 cars
+    if ((i + 1) % 50 === 0) {
+      console.log(`  ... created ${i + 1}/200 railcars`);
+    }
+  }
 
   console.log(`✓ Created ${cars.length} railcars`);
 
