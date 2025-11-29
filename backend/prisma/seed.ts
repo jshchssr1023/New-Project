@@ -10,6 +10,8 @@ const commodities = ['Crude Oil', 'Ethanol', 'Corn', 'Wheat', 'Coal', 'Lumber', 
 const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
 const reasonsShopped = ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'];
 const carStatuses = ['available', 'in_service', 'scheduled', 'retired'];
+const qualificationTypes = ['full', 'partial', ''];
+const planStatuses = ['planned', 'in_progress', 'completed', 'pending', ''];
 
 // Shop locations - actual shop data
 const shopData = [
@@ -53,6 +55,7 @@ async function main() {
   console.log('🌱 Starting seed...');
 
   // Clear existing data
+  await prisma.carShopEligibility.deleteMany();
   await prisma.scenarioModification.deleteMany();
   await prisma.scenarioCar.deleteMany();
   await prisma.scenario.deleteMany();
@@ -168,7 +171,7 @@ async function main() {
   const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
   const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
 
-  // Create 200 railcars
+  // Create 200 railcars with new car database fields
   const cars = await Promise.all(
     Array.from({ length: 200 }, (_, i) => {
       const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
@@ -204,6 +207,16 @@ async function main() {
         ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000)
         : null;
 
+      // New car database fields
+      const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000); // Up to 2 years
+      const buildYear = 1990 + Math.floor(Math.random() * 35); // 1990-2024
+      const isJacketed = isTankCar ? Math.random() > 0.5 : false; // Only tank cars can be jacketed
+      const isLined = isTankCar ? Math.random() > 0.6 : false; // Only tank cars can be lined
+      const qualificationType = qualificationTypes[Math.floor(Math.random() * qualificationTypes.length)];
+      const tankQualified = isTankCar ? Math.random() > 0.2 : false; // Most tank cars are tank qualified
+      const performScheduled = Math.random() > 0.7;
+      const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
+
       return prisma.car.create({
         data: {
           id: uuidv4(),
@@ -224,6 +237,16 @@ async function main() {
           lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
           nextServiceDue: adjustedNextServiceDue,
           notes: Math.random() > 0.7 ? 'Priority service required' : '',
+          // New car database fields
+          contractNumber: `CTR-${2024}-${String(10000 + i)}`,
+          contractExpiration,
+          isJacketed,
+          isLined,
+          buildYear,
+          qualificationType,
+          tankQualified,
+          performScheduled,
+          planStatus,
           companyId: company.id,
         },
       });
@@ -231,6 +254,37 @@ async function main() {
   );
 
   console.log(`✓ Created ${cars.length} railcars`);
+
+  // Create shop eligibility records for cars
+  // Each car will be eligible for a random subset of shops based on region and tank qualification
+  let eligibilityCount = 0;
+  for (const car of cars) {
+    // Get eligible shops based on region and tank qualification
+    const eligibleShops = shops.filter(shop => {
+      // Tank cars can only go to tank-qualified shops
+      if (car.isTankCar && !shop.tankQualified) return false;
+      // 70% chance to be eligible for shops in same region
+      if (shop.region === car.homeRegion && Math.random() > 0.3) return true;
+      // 30% chance to be eligible for shops in other regions
+      return Math.random() > 0.7;
+    });
+
+    // Create eligibility records
+    for (const shop of eligibleShops) {
+      await prisma.carShopEligibility.create({
+        data: {
+          id: uuidv4(),
+          carId: car.id,
+          shopId: shop.id,
+          isEligible: true,
+          notes: '',
+        },
+      });
+      eligibilityCount++;
+    }
+  }
+
+  console.log(`✓ Created ${eligibilityCount} car-shop eligibility records`);
 
   // Create 2 plans
   const plan2024 = await prisma.plan.create({

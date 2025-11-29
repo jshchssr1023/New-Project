@@ -68,37 +68,50 @@ model Customer {
 }
 
 model Car {
-  id                      String           @id @default(uuid())
-  railcarNumber           String           // Railcar number/reporting mark
-  carType                 String           @default("") // Tank car, hopper, boxcar, gondola, etc.
-  isTankCar               Boolean          @default(false) // Critical for shop qualification validation
-  commodity               String           @default("") // What the car carries
-  customer                String           @default("") // Customer/lessee name
-  projectNumber           String           @default("") // Project or work order number
-  reasonShopped           String           @default("") // Why car is being shopped: qualification, assignment, return, repair
-  status                  String           @default("available") // available, in_service, in_shop, scheduled, retired
-  currentLocation         String           @default("") // Current physical location
-  assignedShopId          String?          // Currently assigned shop (if in_shop or scheduled)
-  projectedCompletionMonth String          @default("") // YYYY-MM format
-  projectedCost           Float            @default(0) // Estimated cost for current/next service
-  shopEntryDate           DateTime?        // When car entered current shop
-  daysInShop              Int              @default(0) // Calculated field for reporting
-  lastServiceDate         DateTime?
-  nextServiceDue          DateTime?
-  homeRegion              String           @default("") // Preferred geographic region
-  originRegion            String           @default("") // Origin region for logistics
-  notes                   String           @default("")
-  companyId               String
-  company                 Company          @relation(fields: [companyId], references: [id])
-  assignments             PlanAssignment[]
-  scenarioCars            ScenarioCar[]
-  sopAssignments          SOPAssignment[]  // S&OP shop assignments
-  createdAt               DateTime         @default(now())
-  updatedAt               DateTime         @updatedAt
+  id                       String           @id @default(uuid())
+  railcarNumber            String           // Railcar number/reporting mark (Car Mark)
+  carType                  String           @default("") // Car Type Level 2: Tank car, hopper, boxcar, gondola, etc.
+  isTankCar                Boolean          @default(false) // Critical for shop qualification validation
+  commodity                String           @default("") // Primary Commodity - What the car carries
+  customer                 String           @default("") // Lessee Name - Customer/lessee name
+  projectNumber            String           @default("") // Project or work order number
+  reasonShopped            String           @default("") // Reason Shopped: qualification, assignment, return, repair
+  status                   String           @default("available") // Current Status: available, in_service, in_shop, scheduled, retired
+  currentLocation          String           @default("") // Current physical location
+  assignedShopId           String?          // Currently assigned shop (if in_shop or scheduled)
+  projectedCompletionMonth String           @default("") // YYYY-MM format
+  projectedCost            Float            @default(0) // Estimated cost for current/next service
+  shopEntryDate            DateTime?        // When car entered current shop
+  daysInShop               Int              @default(0) // Calculated field for reporting
+  lastServiceDate          DateTime?
+  nextServiceDue           DateTime?
+  homeRegion               String           @default("") // Preferred geographic region
+  originRegion             String           @default("") // Origin region for logistics
+  notes                    String           @default("")
+
+  // New fields from car database specification
+  contractNumber           String           @default("") // Contract number/reference
+  contractExpiration       DateTime?        // Contract Expiration date
+  isJacketed               Boolean          @default(false) // Jacketed tank car
+  isLined                  Boolean          @default(false) // Lined tank car
+  buildYear                Int?             // Year the car was built
+  qualificationType        String           @default("") // Full/Partial Qual - "full" or "partial"
+  tankQualified            Boolean          @default(false) // Tank Qualified flag
+  performScheduled         Boolean          @default(false) // Perform Scheduled flag
+  planStatus               String           @default("") // Plan Status
+
+  companyId                String
+  company                  Company          @relation(fields: [companyId], references: [id])
+  assignments              PlanAssignment[]
+  scenarioCars             ScenarioCar[]
+  sopAssignments           SOPAssignment[]  // S&OP shop assignments
+  shopEligibilities        CarShopEligibility[] // Eligible shops for this car
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
 
   // Lease Qualification Engine relations
-  leaseContracts          LeaseContract[]
-  qualificationEntries    LeaseQualificationEntry[]
+  leaseContracts           LeaseContract[]
+  qualificationEntries     LeaseQualificationEntry[]
 
   @@unique([railcarNumber, companyId])
 }
@@ -136,6 +149,7 @@ model Shop {
   companyId          String
   company            Company          @relation(fields: [companyId], references: [id])
   assignments        PlanAssignment[]
+  carEligibilities   CarShopEligibility[] // Cars eligible for this shop
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
@@ -154,6 +168,24 @@ model Shop {
   qualificationEntries LeaseQualificationEntry[]
 
   @@unique([code, companyId])
+}
+
+// Junction table for Car-Shop eligibility (shop checkboxes in car database)
+// Maps to columns: Sarnia, Kansas City, Mounds, LaPorte, AITX Fleet Services, etc.
+model CarShopEligibility {
+  id          String   @id @default(uuid())
+  carId       String
+  car         Car      @relation(fields: [carId], references: [id], onDelete: Cascade)
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  isEligible  Boolean  @default(true) // Whether this car is eligible for this shop
+  notes       String   @default("")   // Optional notes about eligibility
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([carId, shopId])
+  @@index([carId])
+  @@index([shopId])
 }
 
 // Rule engine for shop recommendations
