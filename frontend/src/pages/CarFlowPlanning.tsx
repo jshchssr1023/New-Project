@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ChartBarIcon,
   TableCellsIcon,
@@ -9,8 +9,9 @@ import {
   XCircleIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  DocumentArrowDownIcon,
 } from '@heroicons/react/24/outline';
-import { carsApi, shopsApi } from '../services/api';
+import { carsApi, shopsApi, reportsApi } from '../services/api';
 import type { Car, Shop } from '../types';
 import type {
   DemandType,
@@ -53,6 +54,8 @@ export default function CarFlowPlanning() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // Data state
   const [cars, setCars] = useState<Car[]>([]);
@@ -66,6 +69,91 @@ export default function CarFlowPlanning() {
   const [monthlyAllocations, setMonthlyAllocations] = useState<MonthlyAllocation[]>([]);
   const [assumptions, setAssumptions] = useState<PlanningAssumptions>(PLANNING_ASSUMPTIONS);
   const [assumptionsExpanded, setAssumptionsExpanded] = useState(false);
+
+  // Export handlers
+  const handleExportCSV = useCallback(async () => {
+    setIsExporting(true);
+    setShowExportMenu(false);
+    try {
+      // Export cars data
+      const blob = await reportsApi.exportCSV({
+        entityType: 'Car',
+        columns: ['railcarNumber', 'carType', 'isTankCar', 'commodity', 'customer', 'status', 'projectedCompletionMonth', 'projectedCost'],
+      });
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `sop-car-flow-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError('Failed to export data');
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
+  const handleExportExcel = useCallback(async () => {
+    setIsExporting(true);
+    setShowExportMenu(false);
+    try {
+      const excelData = await reportsApi.exportExcel({
+        entityType: 'Car',
+        columns: ['railcarNumber', 'carType', 'isTankCar', 'commodity', 'customer', 'status', 'projectedCompletionMonth', 'projectedCost'],
+      });
+
+      // Convert to CSV format for Excel compatibility
+      const escapeCell = (value: unknown): string => {
+        const str = String(value ?? '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      };
+
+      const headerRow = excelData.headers.map(escapeCell).join(',');
+      const dataRows = excelData.rows.map((row) => row.map(escapeCell).join(','));
+      const csvContent = [headerRow, ...dataRows].join('\n');
+
+      // Download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `sop-car-flow-${new Date().toISOString().split('T')[0]}.xlsx.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError('Failed to export data');
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
+  const handleExportPDF = useCallback(async () => {
+    setIsExporting(true);
+    setShowExportMenu(false);
+    try {
+      await reportsApi.exportPDF({
+        entityType: 'Car',
+        columns: ['railcarNumber', 'carType', 'isTankCar', 'commodity', 'customer', 'status', 'projectedCompletionMonth', 'projectedCost'],
+        title: 'S&OP Car Flow Planning Report',
+      });
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError('Failed to export PDF');
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
 
   // Fetch data
   useEffect(() => {
@@ -147,13 +235,56 @@ export default function CarFlowPlanning() {
             S&OP Module - 18 Month Rolling Horizon | {unassignedCarsCount} Unassigned Cars
           </p>
         </div>
-        <button
-          onClick={() => {/* TODO: Export */}}
-          className="btn-secondary flex items-center gap-2"
-        >
-          <ArrowDownTrayIcon className="h-4 w-4" />
-          Export to Excel
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu(!showExportMenu)}
+            disabled={isExporting}
+            className="btn-secondary flex items-center gap-2"
+          >
+            {isExporting ? (
+              <>
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Exporting...
+              </>
+            ) : (
+              <>
+                <ArrowDownTrayIcon className="h-4 w-4" />
+                Export
+                <ChevronDownIcon className="h-3 w-3" />
+              </>
+            )}
+          </button>
+          {showExportMenu && (
+            <div className="absolute right-0 z-10 mt-2 w-48 rounded-lg border border-steel-200 bg-white shadow-lg">
+              <div className="py-1">
+                <button
+                  onClick={handleExportCSV}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-steel-700 hover:bg-steel-100"
+                >
+                  <ArrowDownTrayIcon className="h-4 w-4" />
+                  Export as CSV
+                </button>
+                <button
+                  onClick={handleExportExcel}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-steel-700 hover:bg-steel-100"
+                >
+                  <ArrowDownTrayIcon className="h-4 w-4" />
+                  Export as Excel
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-steel-700 hover:bg-steel-100"
+                >
+                  <DocumentArrowDownIcon className="h-4 w-4" />
+                  Export as PDF
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Validation Alerts */}

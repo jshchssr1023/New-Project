@@ -645,6 +645,26 @@ export const reportsApi = {
     return response.data;
   },
 
+  exportPDF: async (config: {
+    entityType: string;
+    columns: string[];
+    filters?: FilterCriteria[];
+    sort?: { field: string; direction: 'asc' | 'desc' };
+    title?: string;
+  }): Promise<void> => {
+    const response = await apiClient.post('/reports/export/pdf', config, { responseType: 'blob' });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${config.title || config.entityType}-report-${Date.now()}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   // Templates
   getTemplates: async (): Promise<ReportTemplate[]> => {
     const response = await apiClient.get<ReportTemplate[]>('/reports/templates');

@@ -4,6 +4,8 @@ import { authenticate, requireRole } from '../middleware/auth';
 import reportBuilderService, { FilterCriteria, SortConfig } from '../services/reportBuilderService';
 import scheduledReportService from '../services/scheduledReportService';
 import auditService from '../services/auditService';
+import pdfService from '../services/pdfService';
+import schedulerService from '../services/schedulerService';
 
 const router = Router();
 
@@ -122,6 +124,86 @@ router.post('/export/xlsx', async (req, res) => {
   } catch (error) {
     console.error('Failed to export Excel data:', error);
     res.status(500).json({ message: 'Failed to export Excel data' });
+  }
+});
+
+// Export report as PDF
+router.post('/export/pdf', async (req, res) => {
+  try {
+    const { entityType, columns, filters, sort, groupBy, title } = req.body;
+    const user = (req as any).user;
+
+    if (!entityType || !columns || columns.length === 0) {
+      return res.status(400).json({ message: 'Entity type and columns are required' });
+    }
+
+    const { data } = await reportBuilderService.executeReport(
+      { entityType, columns, filters: filters || [], sort, groupBy },
+      user.companyId
+    );
+
+    // Get column definitions for headers
+    const allColumns = reportBuilderService.getAvailableColumns(entityType);
+    const headers = columns.map((colKey: string) => {
+      const colDef = allColumns.find((c) => c.key === colKey);
+      return colDef?.label || colKey;
+    });
+
+    // Convert data to rows
+    const rows = data.map((row) =>
+      columns.map((col: string) => {
+        const value = (row as Record<string, unknown>)[col];
+        if (value === null || value === undefined) return '-';
+        if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+        if (value instanceof Date) return value.toLocaleDateString();
+        if (typeof value === 'number' && value > 1000) return value.toLocaleString();
+        return String(value);
+      })
+    );
+
+    // Generate PDF
+    const pdfBuffer = await pdfService.generateFromReportData(headers, rows, {
+      title: title || `${entityType} Report`,
+      subtitle: `${data.length} Records`,
+      createdAt: new Date(),
+    });
+
+    // Log export action
+    await auditService.logAudit({
+      userId: user.id,
+      userEmail: user.email,
+      action: 'export',
+      entityType: entityType,
+      entityId: 'bulk',
+      entityName: `${entityType} Export`,
+      changes: { exportedCount: { new: data.length } },
+      metadata: { format: 'pdf', columns, filters },
+      companyId: user.companyId,
+    }, req);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${entityType.toLowerCase()}-report-${Date.now()}.pdf`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Failed to export PDF:', error);
+    res.status(500).json({ message: 'Failed to export PDF' });
+  }
+});
+
+// Get scheduler status
+router.get('/scheduler/status', requireRole('admin'), (_, res) => {
+  res.json(schedulerService.getStatus());
+});
+
+// Trigger a scheduled report immediately (admin only)
+router.post('/schedules/:id/trigger', requireRole('admin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await schedulerService.triggerReport(id);
+    res.json(result);
+  } catch (error) {
+    console.error('Failed to trigger scheduled report:', error);
+    res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to trigger report' });
   }
 });
 
