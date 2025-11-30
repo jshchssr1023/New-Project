@@ -15,6 +15,7 @@ import LeaseQualificationEngine from './pages/LeaseQualificationEngine';
 import RuleBuilder from './pages/RuleBuilder';
 import ImportExport from './pages/ImportExport';
 import Webhooks from './pages/Webhooks';
+import ApiKeys from './pages/ApiKeys';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -82,6 +83,14 @@ export default function App() {
           element={
             <AdminRoute>
               <Webhooks />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="api-keys"
+          element={
+            <AdminRoute>
+              <ApiKeys />
             </AdminRoute>
           }
         />

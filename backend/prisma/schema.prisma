@@ -858,6 +858,30 @@ model WebhookConfig {
 }
 
 // =============================================================================
+// PUBLIC API KEYS
+// =============================================================================
+
+model ApiKey {
+  id              String    @id @default(uuid())
+  name            String
+  keyHash         String    @unique // SHA-256 hash of the full key
+  keyPrefix       String    // First 12 chars for display (chr_live_xxx)
+  permissions     String    // JSON array of permissions
+  rateLimit       Int       @default(1000) // Requests per window
+  rateLimitWindow Int       @default(3600) // Window in seconds (default 1 hour)
+  isActive        Boolean   @default(true)
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
+  companyId       String
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([companyId, isActive])
+  @@index([keyHash])
+}
+
+// =============================================================================
 // NOTIFICATIONS
 // =============================================================================
 

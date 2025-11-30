@@ -20,6 +20,8 @@ import importExportRoutes from './routes/importExport';
 import notificationsRoutes from './routes/notifications';
 import webhooksRoutes from './routes/webhooks';
 import multiYearPlanningRoutes from './routes/multiYearPlanning';
+import apiKeysRoutes from './routes/apiKeys';
+import publicApiV1 from './routes/api/v1';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 
@@ -58,6 +60,10 @@ app.use('/api/import-export', importExportRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/multi-year-planning', multiYearPlanningRoutes);
+app.use('/api/api-keys', apiKeysRoutes);
+
+// Public REST API (v1)
+app.use('/api/v1', publicApiV1);
 
 // Health check
 app.get('/api/health', (_, res) => {
