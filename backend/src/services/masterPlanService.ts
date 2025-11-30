@@ -57,9 +57,9 @@ export const CommitmentStatusSchema = z.enum([
 export type CommitmentStatus = z.infer<typeof CommitmentStatusSchema>;
 
 /**
- * Work types that can be performed on a railcar
+ * Reasons a car is shopped - can have multiple bundled (Qualification is priority/main cost driver)
  */
-export const WorkTypeSchema = z.enum([
+export const ReasonsShoppedSchema = z.enum([
   'qualification',
   'assignment',
   'return',
@@ -67,7 +67,7 @@ export const WorkTypeSchema = z.enum([
   'maintenance',
 ]);
 
-export type WorkType = z.infer<typeof WorkTypeSchema>;
+export type ReasonShopped = z.infer<typeof ReasonsShoppedSchema>;
 
 /**
  * Schema for creating a MasterPlan from a Scenario
@@ -111,7 +111,7 @@ export const MasterPlanCommitmentSchema = z.object({
   scheduledMonth: z.string().regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM format'),
   plannedArrival: z.date().nullable(),
   plannedRelease: z.date().nullable(),
-  workTypes: z.string(), // JSON array as string
+  reasonsShopped: z.string(), // JSON array as string - Qualification is priority/main cost driver
   isBundled: z.boolean(),
   estimatedCost: z.number().nullable(),
   priority: z.number().int().min(1).max(5),
@@ -330,18 +330,29 @@ export class MasterPlanService {
           const customerName = assignment.car.customer || 'Unknown';
           const customerId = customerMap.get(customerName)!;
 
-          // Parse work types - handle both JSON string and plain string
-          let workTypes = assignment.workTypes;
-          let workTypesArray: string[] = [];
+          // Parse reasonsShopped - handle both JSON string and plain string
+          // Qualification is the priority/main cost driver when multiple reasons exist
+          let reasonsShopped = assignment.reasonsShopped || '[]';
+          let reasonsArray: string[] = [];
 
           try {
-            workTypesArray = JSON.parse(workTypes);
+            reasonsArray = JSON.parse(reasonsShopped);
           } catch {
             // If not valid JSON, treat as comma-separated or single value
-            workTypesArray = workTypes.split(',').map((w) => w.trim());
+            reasonsArray = reasonsShopped.split(',').map((r) => r.trim()).filter(Boolean);
           }
 
-          const isBundled = workTypesArray.length > 1;
+          // If empty, default to car's reasonsShopped or 'qualification'
+          if (reasonsArray.length === 0) {
+            try {
+              const carReasons = JSON.parse(assignment.car.reasonsShopped || '[]');
+              reasonsArray = carReasons.length > 0 ? carReasons : ['qualification'];
+            } catch {
+              reasonsArray = ['qualification'];
+            }
+          }
+
+          const isBundled = reasonsArray.length > 1;
 
           return {
             masterPlanId: plan.id,
@@ -351,7 +362,7 @@ export class MasterPlanService {
             scheduledMonth: assignment.monthKey,
             plannedArrival: assignment.scheduledArrival,
             plannedRelease: assignment.scheduledCompletion,
-            workTypes: JSON.stringify(workTypesArray),
+            workTypes: JSON.stringify(reasonsArray), // Keep workTypes in MasterPlanCommitment for now
             isBundled,
             estimatedCost: assignment.estimatedCost,
             priority: assignment.priority,

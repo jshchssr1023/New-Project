@@ -67,6 +67,9 @@ model Customer {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Car relations - cars belonging to this customer
+  cars                 Car[]    @relation("CarCustomer")
+
   // Lease Qualification Engine relations
   leaseContracts       LeaseContract[]
   qualificationEntries LeaseQualificationEntry[]
@@ -83,9 +86,11 @@ model Car {
   carType                  String           @default("") // Car Type Level 2: Tank car, hopper, boxcar, gondola, etc.
   isTankCar                Boolean          @default(false) // Critical for shop qualification validation
   commodity                String           @default("") // Primary Commodity - What the car carries
-  customer                 String           @default("") // Lessee Name - Customer/lessee name
+  customer                 String           @default("") // Lessee Name - Customer/lessee name (legacy, use customerId)
+  customerId               String?          // FK to Customer table (preferred over customer string)
+  customerRef              Customer?        @relation("CarCustomer", fields: [customerId], references: [id])
   projectNumber            String           @default("") // Project or work order number
-  reasonShopped            String           @default("") // Reason Shopped: qualification, assignment, return, repair
+  reasonsShopped           String           @default("[]") // JSON array: ["qualification", "repair"] - multiple reasons can be bundled
   status                   String           @default("available") // Current Status: available, in_service, in_shop, scheduled, retired, planned, release, assignment, arrived
   currentLocation          String           @default("") // Current physical location
   assignedShopId           String?          // Currently assigned shop (if in_shop or scheduled)
@@ -469,6 +474,7 @@ model ShopCapacitySlot {
 }
 
 // S&OP Shop Assignment - links railcars to shops within a scenario
+// This is THE authoritative assignment table that feeds MasterPlan creation
 model SOPAssignment {
   id                  String    @id @default(uuid())
   scenarioId          String
@@ -477,7 +483,7 @@ model SOPAssignment {
   car                 Car       @relation(fields: [carId], references: [id])
   shopId              String
   shop                Shop      @relation(fields: [shopId], references: [id])
-  workTypes           String    // JSON array of work types
+  reasonsShopped      String    @default("[]") // JSON array: ["qualification", "repair"] - Qualification is priority/main cost driver
   status              String    @default("DRAFT") // DRAFT, PLANNED, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
   monthKey            String    // "2026-03"
   scheduledArrival    DateTime?

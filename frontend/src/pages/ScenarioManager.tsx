@@ -67,8 +67,6 @@ export default function ScenarioManager() {
   const [isShopSelectionModalOpen, setIsShopSelectionModalOpen] = useState(false);
   const [isCapacityCheckModalOpen, setIsCapacityCheckModalOpen] = useState(false);
   const [isRecommendationsModalOpen, setIsRecommendationsModalOpen] = useState(false);
-  const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
-  const [isCommitting, setIsCommitting] = useState(false);
   const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [approvePlanName, setApprovePlanName] = useState('');
@@ -76,7 +74,6 @@ export default function ScenarioManager() {
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [selectedScenarioCar, setSelectedScenarioCar] = useState<ScenarioCar | null>(null);
   const [recommendations, setRecommendations] = useState<ShopRecommendation[]>([]);
-  const [commitPlanId, setCommitPlanId] = useState<string>('');
   const [capacityCheckResult, setCapacityCheckResult] = useState<CapacityCheckResult | null>(null);
   const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
 
@@ -423,7 +420,7 @@ export default function ScenarioManager() {
     }
   };
 
-  // Bulk assign to selected shops
+  // Bulk assign to selected shops and confirm assignments (creates SOPAssignments)
   const handleBulkAssignToShops = async () => {
     if (!selectedScenario || selectedShops.length === 0) return;
 
@@ -444,11 +441,22 @@ export default function ScenarioManager() {
         }
       }
 
+      // CRITICAL: Convert ScenarioCar records to SOPAssignment records
+      // This enables the "Approve Scenario" to create MasterPlan
+      const confirmResult = await scenariosApi.confirmAssignments(selectedScenario.id);
+
+      alert(
+        `Shop assignments confirmed!\n\n` +
+        `${confirmResult.sopAssignmentCount} cars are now ready for approval.\n` +
+        `Click "Approve Scenario" to create the Master Plan.`
+      );
+
       await loadScenarioDetails(selectedScenario.id);
       setIsShopSelectionModalOpen(false);
       setIsCapacityCheckModalOpen(false);
     } catch (error) {
       console.error('Bulk assign failed:', error);
+      alert('Failed to confirm assignments. Please try again.');
     }
   };
 
@@ -472,58 +480,6 @@ export default function ScenarioManager() {
       loadData();
     } catch (error) {
       console.error('Failed to delete scenario:', error);
-    }
-  };
-
-  const handleOpenCommitModal = () => {
-    if (!selectedScenario || !selectedScenario.cars || selectedScenario.cars.length === 0) {
-      alert('No cars in scenario to commit');
-      return;
-    }
-
-    const unassignedCars = selectedScenario.cars.filter(sc => !sc.assignedShopId && !sc.suggestedShopId);
-    if (unassignedCars.length > 0) {
-      alert(`${unassignedCars.length} car(s) have no assigned or suggested shop. Please assign shops before committing.`);
-      return;
-    }
-
-    setIsCommitModalOpen(true);
-  };
-
-  const handleCommitToPlan = async () => {
-    if (!selectedScenario || !commitPlanId) return;
-
-    setIsCommitting(true);
-    try {
-      const assignments = selectedScenario.cars.map(sc => ({
-        carId: sc.carId,
-        shopId: sc.assignedShopId || sc.suggestedShopId || '',
-        scheduledMonth: sc.scheduledMonth,
-        estimatedCost: sc.estimatedCost,
-        estimatedDuration: sc.estimatedDays,
-        status: 'pending' as const,
-      })).filter(a => a.shopId);
-
-      const result = await plansApi.bulkAddAssignments(commitPlanId, assignments);
-
-      // Update car statuses to 'planned'
-      const carIds = assignments.map(a => a.carId);
-      await carsApi.bulkUpdate(carIds, { status: 'planned' });
-
-      if (result.failed > 0) {
-        alert(`Committed ${result.success} assignments. ${result.failed} failed. Car statuses updated to "Planned".`);
-      } else {
-        alert(`Successfully committed ${result.success} assignments! Car statuses updated to "Planned".`);
-      }
-
-      setIsCommitModalOpen(false);
-      setCommitPlanId('');
-      await loadData();
-    } catch (error) {
-      console.error('Failed to commit to plan:', error);
-      alert('Failed to commit assignments to plan');
-    } finally {
-      setIsCommitting(false);
     }
   };
 
@@ -750,22 +706,13 @@ export default function ScenarioManager() {
                         </button>
                       )}
                       {selectedScenario.status === 'completed' && (
-                        <>
-                          <button
-                            onClick={handleOpenCommitModal}
-                            className="btn-secondary py-2 px-4 text-sm flex items-center font-medium"
-                          >
-                            <CheckIcon className="mr-2 h-4 w-4" />
-                            Commit Plan
-                          </button>
-                          <button
-                            onClick={handleOpenApproveModal}
-                            className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-green-600 hover:bg-green-700"
-                          >
-                            <RocketLaunchIcon className="mr-2 h-4 w-4" />
-                            Approve Scenario
-                          </button>
-                        </>
+                        <button
+                          onClick={handleOpenApproveModal}
+                          className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-green-600 hover:bg-green-700"
+                        >
+                          <RocketLaunchIcon className="mr-2 h-4 w-4" />
+                          Approve Scenario
+                        </button>
                       )}
                       {selectedScenario.status === 'approved' && (
                         <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
@@ -1429,90 +1376,6 @@ export default function ScenarioManager() {
 
               <div className="flex justify-end mt-4">
                 <button onClick={() => setIsRecommendationsModalOpen(false)} className="btn-secondary">Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Commit to Plan Modal */}
-      {isCommitModalOpen && selectedScenario && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex min-h-screen items-center justify-center p-4">
-            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsCommitModalOpen(false)} />
-            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-              <h2 className="text-xl font-semibold text-steel-900 mb-4">Commit Scenario to Plan</h2>
-
-              <div className="bg-steel-50 rounded-lg p-4 mb-4">
-                <h3 className="font-medium text-steel-900 mb-2">{selectedScenario.name}</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <p className="text-steel-600">
-                    <span className="text-steel-500">Total Cars:</span> {selectedScenario.cars?.length || 0}
-                  </p>
-                  <p className="text-steel-600">
-                    <span className="text-steel-500">Assigned:</span>{' '}
-                    {selectedScenario.cars?.filter(c => c.assignedShopId || c.suggestedShopId).length || 0}
-                  </p>
-                </div>
-
-                <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded">
-                  <p className="text-sm text-blue-800">
-                    Car statuses will be updated to <span className="font-semibold">"Planned"</span> upon commit.
-                  </p>
-                </div>
-
-                {selectedScenario.results?.capacityAnalysis?.hasOverload && (
-                  <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded p-2">
-                    <ExclamationTriangleIcon className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                    <div className="text-sm">
-                      <p className="font-medium text-amber-800">Capacity Note</p>
-                      <p className="text-amber-700">
-                        Some cars will overflow to next month due to capacity constraints.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="mb-6">
-                <label className="label">Select Target Plan</label>
-                <select
-                  value={commitPlanId}
-                  onChange={(e) => setCommitPlanId(e.target.value)}
-                  className="input"
-                >
-                  <option value="">Choose a plan...</option>
-                  {plans.filter(p => p.status === 'active' || p.status === 'draft').map(plan => (
-                    <option key={plan.id} value={plan.id}>{plan.name} ({plan.status})</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => { setIsCommitModalOpen(false); setCommitPlanId(''); }}
-                  className="btn-secondary"
-                  disabled={isCommitting}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCommitToPlan}
-                  disabled={!commitPlanId || isCommitting}
-                  className="btn-primary disabled:opacity-50 flex items-center"
-                >
-                  {isCommitting ? (
-                    <>
-                      <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
-                      Committing...
-                    </>
-                  ) : (
-                    <>
-                      <CheckIcon className="mr-2 h-4 w-4" />
-                      Commit {selectedScenario.cars?.length || 0} Assignments
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           </div>
