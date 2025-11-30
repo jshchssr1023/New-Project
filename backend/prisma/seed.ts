@@ -9,23 +9,52 @@ const prisma = new PrismaClient();
 // CSV file path
 const CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
 
-// Helper function to parse CSV
+// Helper function to normalize header names for matching
+function normalizeHeader(header: string): string {
+  return header.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Helper function to parse CSV with flexible header matching
 function parseCSV(content: string): Record<string, string>[] {
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content.split(/\r?\n/).filter(line => line.trim());
   if (lines.length === 0) return [];
 
-  // Parse header - handle potential BOM and whitespace
+  // Parse header - handle potential BOM, quotes, and whitespace
   const headerLine = lines[0].replace(/^\uFEFF/, ''); // Remove BOM if present
-  const headers = headerLine.split(',').map(h => h.trim());
+  const rawHeaders = headerLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+
+  // Log headers for debugging
+  console.log('   CSV Headers found:', rawHeaders.slice(0, 5).join(', '), '...');
 
   const records: Record<string, string>[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim());
+    const line = lines[i];
+    if (!line.trim()) continue;
+
+    // Parse values, handling quoted fields
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (const char of line) {
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim().replace(/^"|"$/g, ''));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim().replace(/^"|"$/g, ''));
+
     const record: Record<string, string> = {};
 
-    headers.forEach((header, index) => {
+    rawHeaders.forEach((header, index) => {
+      // Store both original and normalized versions
       record[header] = values[index] || '';
+      record[normalizeHeader(header)] = values[index] || '';
     });
 
     records.push(record);
@@ -272,29 +301,35 @@ async function main() {
 
   if (csvRecords.length > 0) {
     // Import from CSV
+    // Log first record's keys for debugging
+    if (csvRecords.length > 0) {
+      console.log('   First record keys:', Object.keys(csvRecords[0]).slice(0, 10).join(', '));
+    }
+
     for (let i = 0; i < csvRecords.length; i++) {
       const record = csvRecords[i];
 
-      // Map CSV columns to database fields
-      // CSV: Car Init, Car No, Car Type, Commodity, Lessee, Contract #, Cont Exp, Jacketed?, Lined?, Build Yr, Qual Type, Tank Qual, Tank Qual Due, Perf Sched, Plan Status
-      const carInit = record['Car Init'] || 'AITX';
-      const carNo = record['Car No'] || String(10000 + i);
-      const railcarNumber = `${carInit}${carNo}`;
+      // Map CSV columns to database fields using normalized header names
+      // Original: Car Init, Car No, Car Type, Commodity, Lessee, Contract #, Cont Exp, Jacketed?, Lined?, Build Yr, Qual Type, Tank Qual, Tank Qual Due, Perf Sched, Plan Status
+      // Normalized: carinit, carno, cartype, commodity, lessee, contract, contexp, jacketed, lined, buildyr, qualtype, tankqual, tankqualdue, perfsched, planstatus
+      const carInit = record['carinit'] || record['Car Init'] || '';
+      const carNo = record['carno'] || record['Car No'] || '';
+      const railcarNumber = carInit && carNo ? `${carInit}${carNo}` : (carNo || `AITX${String(10000 + i)}`);
 
-      const carType = record['Car Type'] || 'Tank Car';
+      const carType = record['cartype'] || record['Car Type'] || 'Tank Car';
       const isTankCar = carType.toLowerCase().includes('tank');
-      const commodity = record['Commodity'] || '';
-      const customer = record['Lessee'] || '';
-      const contractNumber = record['Contract #'] || '';
-      const contractExpiration = parseDate(record['Cont Exp']);
-      const isJacketed = parseBoolean(record['Jacketed?'] || '');
-      const isLined = parseBoolean(record['Lined?'] || '');
-      const buildYear = parseInt(record['Build Yr']) || null;
-      const qualificationType = record['Qual Type'] || '';
-      const tankQualified = parseBoolean(record['Tank Qual'] || '');
-      const tankQualDueDate = parseDate(record['Tank Qual Due']);
-      const performScheduled = parseBoolean(record['Perf Sched'] || '');
-      const planStatus = record['Plan Status'] || '';
+      const commodity = record['commodity'] || record['Commodity'] || '';
+      const customer = record['lessee'] || record['Lessee'] || '';
+      const contractNumber = record['contract'] || record['Contract #'] || '';
+      const contractExpiration = parseDate(record['contexp'] || record['Cont Exp'] || '');
+      const isJacketed = parseBoolean(record['jacketed'] || record['Jacketed?'] || '');
+      const isLined = parseBoolean(record['lined'] || record['Lined?'] || '');
+      const buildYear = parseInt(record['buildyr'] || record['Build Yr'] || '') || null;
+      const qualificationType = record['qualtype'] || record['Qual Type'] || '';
+      const tankQualified = parseBoolean(record['tankqual'] || record['Tank Qual'] || '');
+      const tankQualDueDate = parseDate(record['tankqualdue'] || record['Tank Qual Due'] || '');
+      const performScheduled = parseBoolean(record['perfsched'] || record['Perf Sched'] || '');
+      const planStatus = record['planstatus'] || record['Plan Status'] || '';
 
       // Generate some reasonable defaults for fields not in CSV
       const region = regions[Math.floor(Math.random() * regions.length)];
@@ -314,7 +349,7 @@ async function main() {
           currentLocation: locations[Math.floor(Math.random() * locations.length)],
           homeRegion: region,
           originRegion: region,
-          projectedCost: null,
+          projectedCost: 0,
           daysInShop: 0,
           shopEntryDate: null,
           lastServiceDate: null,
@@ -330,7 +365,7 @@ async function main() {
           tankQualDueDate,
           performScheduled,
           planStatus,
-          companyId: company.id,
+          company: { connect: { id: company.id } },
         },
       });
       cars.push(createdCar);
@@ -422,7 +457,7 @@ async function main() {
           tankQualDueDate,
           performScheduled,
           planStatus,
-          companyId: company.id,
+          company: { connect: { id: company.id } },
         },
       });
       cars.push(createdCar);
