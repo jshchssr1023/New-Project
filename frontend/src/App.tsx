@@ -86,7 +86,15 @@ export default function App() {
         <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
         <Route path="rules" element={<RuleBuilder />} />
-        <Route path="import-export" element={<ImportExport />} />
+        {/* Admin-only routes */}
+        <Route
+          path="import-export"
+          element={
+            <AdminRoute>
+              <ImportExport />
+            </AdminRoute>
+          }
+        />
         <Route
           path="users"
           element={
@@ -111,7 +119,14 @@ export default function App() {
             </AdminRoute>
           }
         />
-        <Route path="settings" element={<Settings />} />
+        <Route
+          path="settings"
+          element={
+            <AdminRoute>
+              <Settings />
+            </AdminRoute>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
