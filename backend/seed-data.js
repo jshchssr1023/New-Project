@@ -1,8 +1,9 @@
-// Seed script to create sample data for local development
+// Seed script to create sample data from CSV for local development
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const { v4: uuid } = require('uuid');
 const path = require('path');
+const fs = require('fs');
 
 const db = new Database(path.join(__dirname, 'prisma/dev.db'));
 
@@ -245,49 +246,203 @@ if (!existingUser) {
 const existingShops = db.prepare('SELECT COUNT(*) as count FROM Shop WHERE companyId = ?').get(companyId);
 
 if (existingShops.count === 0) {
-  // Create some shops
+  // Create shops from CSV column headers (these are the actual shop names)
   const shops = [
-    { name: 'Chicago Repair Center', code: 'CHI-01', location: 'Chicago, IL', city: 'Chicago', state: 'IL', region: 'Midwest', network: 'Primary', capacity: 50 },
-    { name: 'Houston Tank Works', code: 'HOU-01', location: 'Houston, TX', city: 'Houston', state: 'TX', region: 'Southwest', network: 'Primary', capacity: 75 },
-    { name: 'Atlanta Rail Services', code: 'ATL-01', location: 'Atlanta, GA', city: 'Atlanta', state: 'GA', region: 'Southeast', network: 'Secondary', capacity: 40 },
-    { name: 'Denver Mountain Shop', code: 'DEN-01', location: 'Denver, CO', city: 'Denver', state: 'CO', region: 'Mountain', network: 'Primary', capacity: 35 },
-    { name: 'Los Angeles Yard', code: 'LAX-01', location: 'Los Angeles, CA', city: 'Los Angeles', state: 'CA', region: 'West', network: 'Secondary', capacity: 60 },
+    { name: 'AITX Fleet Services of Canada Inc.', code: 'AITX-SARNIA', location: 'Sarnia, ON', city: 'Sarnia', state: 'ON', region: 'Canada', network: 'AITX', capacity: 50, isAitxInternal: 1 },
+    { name: 'AITX Railcar Services LLC', code: 'AITX-NKC', location: 'N Kansas City, MO', city: 'N Kansas City', state: 'MO', region: 'Midwest', network: 'AITX', capacity: 75, isAitxInternal: 1 },
+    { name: 'AITX Mini/Mobile Unit 93', code: 'AITX-MOUNDS', location: 'Mounds, OK', city: 'Mounds', state: 'OK', region: 'Southwest', network: 'AITX', capacity: 30, isAitxInternal: 1 },
+    { name: 'AITX Mobile Headquarters', code: 'AITX-LAPORTE', location: 'LaPorte, TX', city: 'LaPorte', state: 'TX', region: 'Southwest', network: 'AITX', capacity: 40, isAitxInternal: 1 },
+    { name: 'AITX Mobile Operations', code: 'AITX-HOUSTON', location: 'Houston, TX', city: 'Houston', state: 'TX', region: 'Southwest', network: 'AITX', capacity: 60, isAitxInternal: 1 },
+    { name: 'AITX Railcar Services LLC (Brookhaven)', code: 'AITX-BROOK', location: 'Brookhaven, MS', city: 'Brookhaven', state: 'MS', region: 'Southeast', network: 'AITX', capacity: 45, isAitxInternal: 1 },
+    { name: 'AITX Railcar Services LLC (Bude)', code: 'AITX-BUDE', location: 'Bude, MS', city: 'Bude', state: 'MS', region: 'Southeast', network: 'AITX', capacity: 35, isAitxInternal: 1 },
+    { name: 'AITX Railcar Services LLC (Longview)', code: 'AITX-LONG', location: 'Longview, TX', city: 'Longview', state: 'TX', region: 'Southwest', network: 'AITX', capacity: 55, isAitxInternal: 1 },
+    { name: 'AITX Railcar Services LLC (Tennille)', code: 'AITX-TENN', location: 'Tennille, GA', city: 'Tennille', state: 'GA', region: 'Southeast', network: 'AITX', capacity: 40, isAitxInternal: 1 },
+    { name: 'Eagle Railcar (Channelview)', code: 'EAGLE-CHAN', location: 'Channelview, TX', city: 'Channelview', state: 'TX', region: 'Southwest', network: 'Eagle', capacity: 80, isAitxInternal: 0 },
+    { name: 'Eagle Railcar (Elkhart)', code: 'EAGLE-ELK', location: 'Elkhart, IN', city: 'Elkhart', state: 'IN', region: 'Midwest', network: 'Eagle', capacity: 70, isAitxInternal: 0 },
+    { name: 'Trinity Industries Inc.', code: 'TRINITY-FW', location: 'Ft. Worth, TX', city: 'Ft. Worth', state: 'TX', region: 'Southwest', network: 'Trinity', capacity: 100, isAitxInternal: 0 },
+    { name: 'Greenbrier Repair & Services (Cleburne)', code: 'GREEN-CLEB', location: 'Cleburne, TX', city: 'Cleburne', state: 'TX', region: 'Southwest', network: 'Greenbrier', capacity: 65, isAitxInternal: 0 },
+    { name: 'Procor Limited (Sarnia)', code: 'PROCOR-SAR', location: 'Sarnia, ON', city: 'Sarnia', state: 'ON', region: 'Canada', network: 'Procor', capacity: 50, isAitxInternal: 0 },
+    { name: 'Cathcart Rail - Kansas City', code: 'CATH-KC', location: 'Kansas City, MO', city: 'Kansas City', state: 'MO', region: 'Midwest', network: 'Cathcart', capacity: 45, isAitxInternal: 0 },
   ];
 
   shops.forEach(shop => {
-    db.prepare('INSERT INTO Shop (id, name, code, location, city, state, region, network, capacity, isAitxInternal, tankQualified, companyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(uuid(), shop.name, shop.code, shop.location, shop.city, shop.state, shop.region, shop.network, shop.capacity, 1, 1, companyId);
+    db.prepare('INSERT INTO Shop (id, name, code, location, city, state, region, network, capacity, isAitxInternal, tankQualified, companyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      uuid(), shop.name, shop.code, shop.location, shop.city, shop.state, shop.region, shop.network, shop.capacity, shop.isAitxInternal, 1, companyId
+    );
   });
-  console.log('Created 5 shops');
+  console.log('Created 15 shops');
 } else {
   console.log('Shops already exist: ' + existingShops.count);
 }
 
-// Check if cars exist
+// Import cars from CSV
 const existingCars = db.prepare('SELECT COUNT(*) as count FROM Car WHERE companyId = ?').get(companyId);
 
 if (existingCars.count === 0) {
-  // Create some cars
-  const customers = ['GATX', 'Union Tank Car', 'Trinity Rail', 'Wells Fargo Rail'];
-  const carTypes = ['Tank', 'Covered Hopper', 'Gondola', 'Box'];
-  const statuses = ['available', 'scheduled', 'in_shop', 'awaiting_parts'];
-  const reasons = ['qualification', 'repair', 'inspection', 'return'];
+  console.log('Importing cars from CSV...');
 
-  for (let i = 1; i <= 50; i++) {
-    const carNum = 'AITX' + String(100000 + i).padStart(6, '0');
-    db.prepare('INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, status, reasonShopped, companyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      uuid(),
-      carNum,
-      carTypes[i % carTypes.length],
-      carTypes[i % carTypes.length] === 'Tank' ? 1 : 0,
-      customers[i % customers.length],
-      statuses[i % statuses.length],
-      reasons[i % reasons.length],
-      companyId
-    );
+  const csvPath = path.join(__dirname, 'prisma', 'Qual Planner Master.csv');
+
+  if (!fs.existsSync(csvPath)) {
+    console.log('CSV file not found at: ' + csvPath);
+    console.log('Creating sample cars instead...');
+
+    // Fallback: create sample cars
+    const customers = ['GATX', 'Union Tank Car', 'Trinity Rail', 'Wells Fargo Rail'];
+    const carTypes = ['Tank', 'Covered Hopper', 'Gondola', 'Box'];
+    const statuses = ['available', 'scheduled', 'in_shop', 'awaiting_parts'];
+    const reasons = ['qualification', 'repair', 'inspection', 'return'];
+
+    for (let i = 1; i <= 500; i++) {
+      const carNum = 'AITX' + String(100000 + i).padStart(6, '0');
+      db.prepare('INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, status, reasonShopped, companyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+        uuid(),
+        carNum,
+        carTypes[i % carTypes.length],
+        carTypes[i % carTypes.length] === 'Tank' ? 1 : 0,
+        customers[i % customers.length],
+        statuses[i % statuses.length],
+        reasons[i % reasons.length],
+        companyId
+      );
+    }
+    console.log('Created 500 sample railcars');
+  } else {
+    // Parse CSV and import first 500 cars
+    const csvContent = fs.readFileSync(csvPath, 'utf-8');
+    const lines = csvContent.split('\n');
+    const headers = lines[0].split(',');
+
+    // Find column indexes
+    const getIndex = (name) => headers.findIndex(h => h.trim().toLowerCase().includes(name.toLowerCase()));
+
+    const lesseeIdx = getIndex('Lessee Name');
+    const carMarkIdx = getIndex('Car Mark');
+    const contractIdx = getIndex('Contract');
+    const contractExpIdx = getIndex('Contract Expiration');
+    const commodityIdx = getIndex('Primary Commodity');
+    const jacketedIdx = getIndex('Jacketed');
+    const linedIdx = getIndex('Lined');
+    const carAgeIdx = getIndex('Car Age');
+    const carTypeIdx = getIndex('Car Type Level 2');
+    const statusIdx = getIndex('Current Status');
+    const reasonIdx = getIndex('Reason Shopped');
+    const tankQualIdx = getIndex('Perform Tank Qual');
+    const planStatusIdx = getIndex('Plan Status');
+
+    console.log('Found columns:', { lesseeIdx, carMarkIdx, contractIdx, commodityIdx, statusIdx, reasonIdx });
+
+    const insertCar = db.prepare(`
+      INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, commodity, status, reasonShopped,
+        contractNumber, contractExpiration, isJacketed, isLined, buildYear, tankQualified, performScheduled, planStatus, companyId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let imported = 0;
+    const seenCars = new Set();
+
+    for (let i = 1; i < lines.length && imported < 500; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+
+      // Parse CSV line (handle commas in quoted fields)
+      const values = [];
+      let current = '';
+      let inQuotes = false;
+      for (const char of line) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+
+      const carMark = values[carMarkIdx] || '';
+      if (!carMark || seenCars.has(carMark)) continue;
+      seenCars.add(carMark);
+
+      const customer = values[lesseeIdx] || '';
+      const contract = values[contractIdx] || '';
+      const contractExp = values[contractExpIdx] || '';
+      const commodity = values[commodityIdx] || '';
+      const jacketed = (values[jacketedIdx] || '').toLowerCase() === 'jacketed' ? 1 : 0;
+      const lined = (values[linedIdx] || '').toLowerCase() !== 'unlined' ? 1 : 0;
+      const carAge = parseInt(values[carAgeIdx]) || 0;
+      const carType = values[carTypeIdx] || 'General Service Tank';
+      const currentStatus = values[statusIdx] || 'Active';
+      const reason = values[reasonIdx] || '';
+      const tankQual = (values[tankQualIdx] || '').toLowerCase() === 'yes' ? 1 : 0;
+      const planStatus = values[planStatusIdx] || '';
+
+      // Map status
+      let status = 'available';
+      if (currentStatus.toLowerCase().includes('complete')) status = 'completed';
+      else if (currentStatus.toLowerCase().includes('arrived')) status = 'in_shop';
+      else if (currentStatus.toLowerCase().includes('route')) status = 'in_transit';
+      else if (currentStatus.toLowerCase().includes('active')) status = 'available';
+
+      // Calculate build year from age
+      const buildYear = carAge > 0 ? (2024 - carAge) : null;
+
+      try {
+        insertCar.run(
+          uuid(),
+          carMark,
+          carType,
+          1, // isTankCar (most are tank cars in this file)
+          customer,
+          commodity,
+          status,
+          reason,
+          contract,
+          contractExp || null,
+          jacketed,
+          lined,
+          buildYear,
+          tankQual,
+          tankQual,
+          planStatus,
+          companyId
+        );
+        imported++;
+      } catch (err) {
+        // Skip duplicates
+      }
+    }
+
+    console.log('Imported ' + imported + ' railcars from CSV');
   }
-  console.log('Created 50 railcars');
 } else {
   console.log('Cars already exist: ' + existingCars.count);
+}
+
+// Create some customers
+const existingCustomers = db.prepare('SELECT COUNT(*) as count FROM Customer WHERE companyId = ?').get(companyId);
+
+if (existingCustomers.count === 0) {
+  const customers = [
+    { name: 'ADM Transportation Company', code: 'ADM' },
+    { name: 'GATX Corporation', code: 'GATX' },
+    { name: 'Union Tank Car Company', code: 'UTLX' },
+    { name: 'Trinity Industries', code: 'TILX' },
+    { name: 'Wells Fargo Rail', code: 'WFRX' },
+    { name: 'CIT Rail', code: 'CITX' },
+    { name: 'Dow Chemical', code: 'DOWX' },
+    { name: 'BASF Corporation', code: 'BASF' },
+    { name: 'Acme-Hardesty Co', code: 'ACME' },
+    { name: 'Cargill Inc', code: 'CARG' },
+  ];
+
+  customers.forEach(cust => {
+    db.prepare('INSERT INTO Customer (id, name, code, isActive, companyId) VALUES (?, ?, ?, ?, ?)').run(
+      uuid(), cust.name, cust.code, 1, companyId
+    );
+  });
+  console.log('Created 10 customers');
 }
 
 db.close();
