@@ -13,12 +13,17 @@ import {
   ExclamationTriangleIcon,
   ExclamationCircleIcon,
   NoSymbolIcon,
+  LockClosedIcon,
+  CursorArrowRaysIcon,
 } from '@heroicons/react/24/outline';
 import { plansApi, shopsApi, carsApi, scenariosApi } from '../services/api';
 import type { Plan, Shop, PlanAssignment, Car, ReportGenerationConfig, ReportData, RecipientType } from '../types';
 import { getCellColorClasses, getBorderColorClass, getUtilizationLevel } from '../utils/utilizationColors';
 import ReportGenerationModal from '../components/ReportGenerationModal';
 import PrintPreview, { PrintPreviewRef } from '../components/PrintPreview';
+import PresenceIndicator from '../components/PresenceIndicator';
+import { useCollaboration } from '../contexts/CollaborationContext';
+import { useAssignmentUpdates } from '../contexts/WebSocketContext';
 
 // Drag item type constant for consistency
 const DRAG_ITEM_TYPE = 'application/x-railcar-ids';
@@ -41,6 +46,21 @@ const SHOPPING_TYPES = [
 
 export default function PlanningGrid() {
   const navigate = useNavigate();
+
+  // Collaboration hooks
+  const {
+    setCurrentPage,
+    remoteDraggers,
+    notifyDragStart,
+    notifyDragEnd,
+    isCellLocked,
+  } = useCollaboration();
+
+  // Set current page for presence tracking
+  useEffect(() => {
+    setCurrentPage('planning');
+    return () => setCurrentPage('');
+  }, [setCurrentPage]);
 
   // Data state
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -112,6 +132,13 @@ export default function PlanningGrid() {
       loadPlanAssignments();
     }
   }, [selectedPlan?.id]);
+
+  // Real-time updates: reload assignments when other users make changes
+  useAssignmentUpdates(useCallback(() => {
+    if (selectedPlan) {
+      loadPlanAssignments();
+    }
+  }, [selectedPlan?.id]));
 
   const loadInitialData = async () => {
     try {
@@ -218,6 +245,16 @@ export default function PlanningGrid() {
 
   // Use centralized utilization color utilities
   const getCellColor = getCellColorClasses;
+
+  // Check if a car is being dragged by another user
+  const getRemoteDraggerForCar = useCallback((carId: string): { userName: string; userColor: string } | null => {
+    for (const [, dragger] of remoteDraggers) {
+      if (dragger.carIds.includes(carId)) {
+        return { userName: dragger.userName, userColor: dragger.userColor };
+      }
+    }
+    return null;
+  }, [remoteDraggers]);
 
   // Validate assignment - check tank car to tank-qualified shop
   const validateAssignment = (carIds: Set<string> | string[], shopId: string, monthIndex?: number): { valid: boolean; errors: string[]; canDrop: boolean; projectedUtilization: number } => {
@@ -474,22 +511,33 @@ export default function PlanningGrid() {
       const count = carIdsToUse.length;
       ghost.textContent = `${count} railcar${count > 1 ? 's' : ''}`;
       ghost.style.display = 'block';
+      // Position ghost off-screen initially to avoid flicker
+      ghost.style.position = 'fixed';
+      ghost.style.top = '-100px';
+      ghost.style.left = '-100px';
       e.dataTransfer.setDragImage(ghost, 50, 20);
-      // Hide ghost after a moment
-      setTimeout(() => {
+      // Hide ghost after drag image is captured
+      requestAnimationFrame(() => {
         ghost.style.display = 'none';
-      }, 0);
+      });
     }
 
     setIsDragging(true);
-  }, [selectedCarIds]);
+
+    // Notify other users about the drag operation
+    if (selectedPlan) {
+      notifyDragStart(carIdsToUse, selectedPlan.id);
+    }
+  }, [selectedCarIds, selectedPlan, notifyDragStart]);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
     setDragOverCell(null);
     setDragValidation(null);
     draggedCarIdsRef.current = [];
-  }, []);
+    // Notify other users that drag ended (without assignment)
+    notifyDragEnd(false);
+  }, [notifyDragEnd]);
 
   const handleDragOver = useCallback((e: React.DragEvent, shopId: string, monthIndex: number) => {
     e.preventDefault();
@@ -615,19 +663,23 @@ export default function PlanningGrid() {
         setSelectedCarIds(new Set());
         setValidationErrors([]);
         draggedCarIdsRef.current = [];
+        // Notify other users of successful assignment
+        notifyDragEnd(true, shopId, scheduledMonth);
       } catch (error: any) {
         // Rollback optimistic update
         setAssignments(originalAssignments);
         const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
         alert(`Failed to assign cars: ${errorMessage}`);
+        notifyDragEnd(false);
       }
     } catch (error) {
       console.error('Drop assignment failed:', error);
       alert('Failed to process drop. Please try again.');
+      notifyDragEnd(false);
     } finally {
       setIsAssigning(false);
     }
-  }, [selectedPlan, selectedYear, shops, cars, assignments, validateAssignment]);
+  }, [selectedPlan, selectedYear, shops, cars, assignments, validateAssignment, notifyDragEnd]);
 
   // Report generation handler
   const handleGenerateReport = async (config: ReportGenerationConfig) => {
@@ -757,17 +809,24 @@ export default function PlanningGrid() {
           {filteredCars.map(car => {
             const isAssigned = assignedCarIds.has(car.id);
             const isSelected = selectedCarIds.has(car.id);
+            const remoteDragger = getRemoteDraggerForCar(car.id);
+            const isRemoteDragged = !!remoteDragger;
 
             return (
               <div
                 key={car.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, car.id)}
+                draggable={!isRemoteDragged}
+                onDragStart={(e) => !isRemoteDragged && handleDragStart(e, car.id)}
                 onDragEnd={handleDragEnd}
-                className={`p-3 border-b border-steel-100 cursor-grab active:cursor-grabbing transition-colors ${
+                className={`p-3 border-b border-steel-100 transition-colors ${
+                  isRemoteDragged
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-grab active:cursor-grabbing'
+                } ${
                   isSelected ? 'bg-rail-50 border-l-4 border-l-rail-500' : 'hover:bg-steel-50'
                 } ${isDragging && isSelected ? 'opacity-50' : ''}`}
-                onClick={() => toggleCarSelection(car.id)}
+                style={isRemoteDragged ? { borderLeftColor: remoteDragger.userColor, borderLeftWidth: 4 } : undefined}
+                onClick={() => !isRemoteDragged && toggleCarSelection(car.id)}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -786,6 +845,15 @@ export default function PlanningGrid() {
                       {isAssigned && (
                         <span className="px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded">
                           Assigned
+                        </span>
+                      )}
+                      {isRemoteDragged && (
+                        <span
+                          className="px-1.5 py-0.5 text-xs rounded font-medium flex items-center gap-1 animate-pulse"
+                          style={{ backgroundColor: `${remoteDragger.userColor}20`, color: remoteDragger.userColor }}
+                        >
+                          <CursorArrowRaysIcon className="w-3 h-3" />
+                          {remoteDragger.userName}
                         </span>
                       )}
                     </div>
@@ -932,6 +1000,8 @@ export default function PlanningGrid() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {/* Presence Indicator - shows active users */}
+              <PresenceIndicator />
               <select
                 value={selectedPlan?.id || ''}
                 onChange={(e) => setSelectedPlan(plans.find(p => p.id === e.target.value) || null)}
@@ -1049,6 +1119,22 @@ export default function PlanningGrid() {
               </span>
             )}
           </div>
+
+          {/* Remote draggers indicator */}
+          {remoteDraggers.size > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {Array.from(remoteDraggers.entries()).map(([socketId, dragger]) => (
+                <div
+                  key={socketId}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium animate-pulse"
+                  style={{ backgroundColor: `${dragger.userColor}20`, color: dragger.userColor }}
+                >
+                  <CursorArrowRaysIcon className="w-4 h-4" />
+                  <span>{dragger.userName} is dragging {dragger.carIds.length} car{dragger.carIds.length !== 1 ? 's' : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Grid */}
@@ -1101,6 +1187,8 @@ export default function PlanningGrid() {
                         const isDragOver = dragOverCell?.shopId === shop.id && dragOverCell?.monthIndex === idx;
                         const dragCarCount = draggedCarIdsRef.current.length || selectedCarIds.size;
                         const projectedCount = isDragOver ? count + dragCarCount : count;
+                        const cellLock = isCellLocked(shop.id, idx);
+                        const isLockedByOther = !!cellLock;
 
                         // Determine border color based on validation during drag
                         const getDragOverBorderClass = () => {
@@ -1113,6 +1201,9 @@ export default function PlanningGrid() {
 
                         // Determine cursor style based on drop validity
                         const getCursorClass = () => {
+                          if (isLockedByOther) {
+                            return 'cursor-not-allowed';
+                          }
                           if (isDragOver && dragValidation && !dragValidation.canDrop) {
                             return 'cursor-not-allowed';
                           }
@@ -1123,26 +1214,40 @@ export default function PlanningGrid() {
                           <td
                             key={idx}
                             className={`px-2 py-3 text-center transition-all relative ${getCursorClass()} ${
-                              isDragOver
-                                ? `border-4 ${getDragOverBorderClass()} ${dragValidation?.canDrop === false ? 'bg-red-50' : 'bg-opacity-50'}`
-                                : isSelected
-                                  ? 'ring-2 ring-rail-500 ring-inset bg-rail-100 border'
-                                  : `border ${getCellColor(count, shop.capacity)}`
+                              isLockedByOther
+                                ? 'opacity-60'
+                                : isDragOver
+                                  ? `border-4 ${getDragOverBorderClass()} ${dragValidation?.canDrop === false ? 'bg-red-50' : 'bg-opacity-50'}`
+                                  : isSelected
+                                    ? 'ring-2 ring-rail-500 ring-inset bg-rail-100 border'
+                                    : `border ${getCellColor(count, shop.capacity)}`
                             }`}
-                            onClick={() => handleCellClick(shop.id, idx)}
+                            style={isLockedByOther ? { borderColor: cellLock.lockedBy.userColor, borderWidth: 2 } : undefined}
+                            onClick={() => !isLockedByOther && handleCellClick(shop.id, idx)}
                             onDragOver={(e) => handleDragOver(e, shop.id, idx)}
                             onDragLeave={handleDragLeave}
-                            onDrop={(e) => handleDrop(e, shop.id, idx)}
+                            onDrop={(e) => !isLockedByOther && handleDrop(e, shop.id, idx)}
                           >
+                            {/* Cell locked by another user indicator */}
+                            {isLockedByOther && (
+                              <div
+                                className="absolute top-0 right-0 p-0.5 rounded-bl"
+                                style={{ backgroundColor: cellLock.lockedBy.userColor }}
+                                title={`Locked by ${cellLock.lockedBy.userName}`}
+                              >
+                                <LockClosedIcon className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+
                             {/* No-drop indicator */}
-                            {isDragOver && dragValidation && !dragValidation.canDrop && (
+                            {isDragOver && dragValidation && !dragValidation.canDrop && !isLockedByOther && (
                               <div className="absolute inset-0 flex items-center justify-center bg-red-100 bg-opacity-90">
                                 <NoSymbolIcon className="w-6 h-6 text-red-500" />
                               </div>
                             )}
 
                             {/* Projected count during drag */}
-                            {isDragOver && dragValidation?.canDrop && (
+                            {isDragOver && dragValidation?.canDrop && !isLockedByOther && (
                               <div className="text-sm font-bold text-rail-600">
                                 {count} → {projectedCount}
                               </div>

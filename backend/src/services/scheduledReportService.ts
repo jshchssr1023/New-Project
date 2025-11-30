@@ -2,6 +2,8 @@
 // Manages scheduled report jobs with cron-like scheduling
 import { prisma } from './db';
 import reportBuilderService from './reportBuilderService';
+import emailService, { EmailAttachment, ReportEmailData } from './emailService';
+import pdfService from './pdfService';
 
 
 // Common schedule presets
@@ -253,27 +255,79 @@ export async function executeScheduledReport(reportId: string) {
     );
 
     // Generate output based on format
-    let output: string | { headers: string[]; rows: unknown[][] };
+    let attachment: EmailAttachment;
+    const now = new Date();
+    const dateStamp = now.toISOString().split('T')[0];
 
     switch (report.outputFormat) {
-      case 'csv':
-        output = reportBuilderService.generateCSV(data, template.columns, template.entityType);
+      case 'csv': {
+        const csvContent = reportBuilderService.generateCSV(data, template.columns, template.entityType);
+        attachment = {
+          filename: `${report.name.replace(/\s+/g, '_')}_${dateStamp}.csv`,
+          content: csvContent,
+          contentType: 'text/csv',
+        };
         break;
-      case 'xlsx':
-        output = reportBuilderService.generateExcelData(data, template.columns, template.entityType);
+      }
+      case 'xlsx': {
+        const excelData = reportBuilderService.generateExcelData(data, template.columns, template.entityType);
+        // Convert to CSV for now (full Excel generation would need xlsx library)
+        const csvRows = [excelData.headers.join(',')];
+        excelData.rows.forEach(row => {
+          csvRows.push(row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','));
+        });
+        attachment = {
+          filename: `${report.name.replace(/\s+/g, '_')}_${dateStamp}.csv`,
+          content: csvRows.join('\n'),
+          contentType: 'text/csv',
+        };
         break;
-      case 'pdf':
-        // PDF generation would require additional library (e.g., puppeteer, pdfkit)
-        // For now, generate CSV as fallback
-        output = reportBuilderService.generateCSV(data, template.columns, template.entityType);
+      }
+      case 'pdf': {
+        const excelData = reportBuilderService.generateExcelData(data, template.columns, template.entityType);
+        const pdfBuffer = await pdfService.generateFromReportData(
+          excelData.headers,
+          excelData.rows,
+          {
+            title: report.name,
+            subtitle: `Generated on ${now.toLocaleDateString()}`,
+            createdAt: now,
+          }
+        );
+        attachment = {
+          filename: `${report.name.replace(/\s+/g, '_')}_${dateStamp}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        };
         break;
-      default:
-        output = reportBuilderService.generateCSV(data, template.columns, template.entityType);
+      }
+      default: {
+        const csvContent = reportBuilderService.generateCSV(data, template.columns, template.entityType);
+        attachment = {
+          filename: `${report.name.replace(/\s+/g, '_')}_${dateStamp}.csv`,
+          content: csvContent,
+          contentType: 'text/csv',
+        };
+      }
     }
 
-    // In production, send email to recipients here
-    // For now, log the execution
-    console.log(`[ScheduledReport] Executed report ${report.name} for ${JSON.parse(report.recipients).join(', ')}`);
+    // Send email to recipients
+    const recipients = JSON.parse(report.recipients) as string[];
+    const reportEmailData: ReportEmailData = {
+      reportName: report.name,
+      reportType: 'scheduled',
+      generatedAt: now,
+      recordCount: data.length,
+      exportFormat: report.outputFormat as 'pdf' | 'csv' | 'xlsx',
+    };
+
+    const emailResult = await emailService.sendReportEmail(recipients, reportEmailData, attachment);
+
+    if (!emailResult.success) {
+      console.warn(`[ScheduledReport] Email delivery failed for ${report.name}: ${emailResult.error}`);
+    } else {
+      console.log(`[ScheduledReport] Report ${report.name} sent to ${recipients.join(', ')}`);
+    }
 
     // Calculate next run time
     const nextRunAt = parseNextRun(report.schedule, report.timezone);
@@ -282,14 +336,14 @@ export async function executeScheduledReport(reportId: string) {
     await prisma.scheduledReport.update({
       where: { id: reportId },
       data: {
-        lastRunAt: new Date(),
-        lastRunStatus: 'success',
-        lastRunError: '',
+        lastRunAt: now,
+        lastRunStatus: emailResult.success ? 'success' : 'email_failed',
+        lastRunError: emailResult.error || '',
         nextRunAt,
       },
     });
 
-    return { success: true, data: output };
+    return { success: true, emailSent: emailResult.success, recipients };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 

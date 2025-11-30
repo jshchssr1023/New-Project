@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import websocketService from '../services/websocketService';
 
 const router = Router();
 
@@ -414,6 +415,20 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
           error: error.message || 'Failed to create assignment',
         });
       }
+    }
+
+    // Emit WebSocket event for real-time collaboration
+    if (results.success > 0) {
+      websocketService.emitBulkAssignmentsCreated(
+        req.user!.companyId,
+        assignments.slice(0, results.success).map((a: any) => ({
+          planId: req.params.id,
+          carId: a.carId,
+          shopId: a.shopId,
+          scheduledMonth: a.scheduledMonth,
+        })),
+        req.user!.id
+      );
     }
 
     res.json({

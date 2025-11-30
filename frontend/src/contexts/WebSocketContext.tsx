@@ -20,7 +20,17 @@ export type WebSocketEvent =
   | 'masterPlan:approved'
   | 'masterPlan:activated'
   | 'commitment:statusChanged'
-  | 'dashboard:refresh';
+  | 'dashboard:refresh'
+  // Real-time collaboration events
+  | 'presence:join'
+  | 'presence:leave'
+  | 'presence:update'
+  | 'presence:list'
+  | 'collaboration:dragStart'
+  | 'collaboration:dragEnd'
+  | 'collaboration:cellLock'
+  | 'collaboration:cellUnlock'
+  | 'collaboration:cursorMove';
 
 export interface WebSocketPayload {
   event: WebSocketEvent;
@@ -36,6 +46,8 @@ interface WebSocketContextValue {
   subscribe: (event: WebSocketEvent, handler: EventHandler) => () => void;
   joinPage: (page: string) => void;
   leavePage: (page: string) => void;
+  emit: (event: string, data: Record<string, unknown>) => void;
+  getSocket: () => Socket | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
@@ -107,6 +119,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       'masterPlan:activated',
       'commitment:statusChanged',
       'dashboard:refresh',
+      // Real-time collaboration events
+      'presence:join',
+      'presence:leave',
+      'presence:update',
+      'presence:list',
+      'collaboration:dragStart',
+      'collaboration:dragEnd',
+      'collaboration:cellLock',
+      'collaboration:cellUnlock',
+      'collaboration:cursorMove',
     ];
 
     events.forEach((event) => {
@@ -149,8 +171,16 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
     }
   }, []);
 
+  const emit = useCallback((event: string, data: Record<string, unknown>) => {
+    if (socketRef.current?.connected) {
+      socketRef.current.emit(event, data);
+    }
+  }, []);
+
+  const getSocket = useCallback(() => socketRef.current, []);
+
   return (
-    <WebSocketContext.Provider value={{ isConnected, subscribe, joinPage, leavePage }}>
+    <WebSocketContext.Provider value={{ isConnected, subscribe, joinPage, leavePage, emit, getSocket }}>
       {children}
     </WebSocketContext.Provider>
   );
