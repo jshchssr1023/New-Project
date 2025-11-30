@@ -185,6 +185,9 @@ model Shop {
   // MasterPlan relations
   masterCommitments    MasterPlanCommitment[]
 
+  // Gold Standard relations
+  weeklyCapacities     WeeklyCapacity[]
+
   @@unique([code, companyId])
 }
 
@@ -902,4 +905,306 @@ model Notification {
 
   @@index([userId, isRead, createdAt])
   @@index([companyId, createdAt])
+}
+
+// =============================================================================
+// GOLD STANDARD CAR FLOW PLANNING MODELS
+// =============================================================================
+
+// Weekly Capacity - Time-series capacity tracking per shop per week
+model WeeklyCapacity {
+  id              String    @id @default(uuid())
+  shopId          String
+  shop            Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  weekStartDate   DateTime  // Monday of the week
+  weekKey         String    // Format: YYYY-Www (e.g., 2025-W48)
+
+  // Capacity by work type
+  qualCapacity    Int       @default(0)
+  assignCapacity  Int       @default(0)
+  returnCapacity  Int       @default(0)
+  repairCapacity  Int       @default(0)
+  totalCapacity   Int       @default(0)
+
+  // Used capacity tracking
+  qualUsed        Int       @default(0)
+  assignUsed      Int       @default(0)
+  returnUsed      Int       @default(0)
+  repairUsed      Int       @default(0)
+  totalUsed       Int       @default(0)
+
+  // Locked status
+  isLocked        Boolean   @default(false)
+  lockedAt        DateTime?
+  lockedById      String?
+
+  notes           String    @default("")
+  companyId       String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Audit trail for changes
+  capacityAudits  CapacityAudit[]
+
+  @@unique([shopId, weekKey])
+  @@index([shopId, weekStartDate])
+  @@index([companyId, weekKey])
+}
+
+// Capacity Audit - Inline auditing for capacity changes with justification
+model CapacityAudit {
+  id                String    @id @default(uuid())
+  weeklyCapacityId  String
+  weeklyCapacity    WeeklyCapacity @relation(fields: [weeklyCapacityId], references: [id], onDelete: Cascade)
+
+  // Change details
+  fieldName         String    // qualCapacity, assignCapacity, etc.
+  previousValue     Int
+  newValue          Int
+
+  // Required justification
+  justification     String    // User must provide reason for change
+  changeCategory    String    // demand_increase, resource_constraint, maintenance, seasonal, emergency, other
+
+  // Who made the change
+  changedById       String
+  changedByEmail    String
+
+  // Approval workflow (optional)
+  requiresApproval  Boolean   @default(false)
+  approvedById      String?
+  approvedAt        DateTime?
+  approvalStatus    String    @default("auto_approved") // pending, approved, rejected, auto_approved
+
+  companyId         String
+  createdAt         DateTime  @default(now())
+
+  @@index([weeklyCapacityId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+// Shop History - Soft-delete and versioning for historical data integrity
+model ShopHistory {
+  id                String    @id @default(uuid())
+  shopId            String    // Reference to the current shop
+
+  // Historical snapshot
+  name              String
+  code              String
+  location          String
+  city              String
+  state             String
+  region            String
+  network           String
+  isAitxInternal    Boolean
+  tankQualified     Boolean
+  capacity          Int
+
+  // Versioning
+  version           Int       @default(1)
+  validFrom         DateTime  // When this version became active
+  validTo           DateTime? // When this version was superseded (null if current)
+
+  // Soft-delete tracking
+  status            String    @default("active") // active, inactive, renamed, merged
+  previousShopId    String?   // Link to previous shop if renamed
+  successorShopId   String?   // Link to new shop if renamed
+  changeReason      String    @default("") // Reason for change/deactivation
+
+  // Who made the change
+  changedById       String?
+  changedByEmail    String    @default("")
+
+  companyId         String
+  createdAt         DateTime  @default(now())
+
+  @@index([shopId, validFrom])
+  @@index([companyId, status])
+  @@index([code, companyId])
+}
+
+// Master Plan Version - Versioned master plans with lock/unlock tracking
+model MasterPlanVersion {
+  id                String    @id @default(uuid())
+  masterPlanId      String
+
+  // Version info
+  versionNumber     String    // Format: v2025.11.1 (year.month.revision)
+  versionLabel      String    @default("") // Optional human-readable label
+
+  // Status workflow
+  status            String    @default("draft") // draft, pending_review, locked, published, superseded
+
+  // Lock tracking
+  isLocked          Boolean   @default(false)
+  lockedAt          DateTime?
+  lockedById        String?
+  lockedByEmail     String    @default("")
+  lockReason        String    @default("")
+
+  // Publication tracking
+  publishedAt       DateTime?
+  publishedById     String?
+  publishedByEmail  String    @default("")
+
+  // Snapshot of the plan at this version
+  planSnapshot      String    // JSON: full plan data at time of version
+  commitmentCount   Int       @default(0)
+  totalCars         Int       @default(0)
+
+  // Downstream push tracking
+  pushedToScheduling   Boolean   @default(false)
+  pushedToSchedulingAt DateTime?
+  pushResponse         String    @default("{}") // JSON: response from downstream
+
+  companyId         String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([masterPlanId, versionNumber])
+  @@index([companyId, status])
+}
+
+// Integration Log - API/Webhook monitoring for Master Plan publication
+model IntegrationLog {
+  id              String    @id @default(uuid())
+
+  // Integration details
+  integrationType String    // webhook, api_call, data_sync
+  endpoint        String    // URL or endpoint called
+  method          String    // POST, PUT, GET, etc.
+
+  // Request/Response
+  requestPayload  String    @default("{}") // JSON: request body (sanitized)
+  responseStatus  Int       // HTTP status code
+  responseBody    String    @default("{}") // JSON: response body (sanitized)
+
+  // Timing
+  startedAt       DateTime
+  completedAt     DateTime?
+  durationMs      Int       @default(0)
+
+  // Status
+  status          String    @default("pending") // pending, success, failed, timeout, retrying
+  retryCount      Int       @default(0)
+  maxRetries      Int       @default(3)
+  errorMessage    String    @default("")
+
+  // Context
+  triggerAction   String    // master_plan_publish, allocation_update, capacity_change
+  entityType      String    // MasterPlan, WeeklyCapacity, etc.
+  entityId        String
+
+  // Who triggered
+  triggeredById   String?
+  triggeredByEmail String   @default("")
+
+  companyId       String
+  createdAt       DateTime  @default(now())
+
+  @@index([companyId, integrationType, createdAt])
+  @@index([entityType, entityId])
+  @@index([status, createdAt])
+}
+
+// Import Session - Track import workflow with 3-step validation
+model ImportSession {
+  id              String    @id @default(uuid())
+
+  // Session info
+  sessionType     String    // cars, shops, capacity, allocations
+  fileName        String
+  fileSize        Int       @default(0)
+
+  // Workflow status
+  status          String    @default("uploaded") // uploaded, validating, preview, mapping, confirmed, importing, completed, failed
+  currentStep     Int       @default(1) // 1: Upload, 2: Preview/Validate, 3: Confirm Mapping
+
+  // Validation results
+  totalRows       Int       @default(0)
+  validRows       Int       @default(0)
+  errorRows       Int       @default(0)
+  warningRows     Int       @default(0)
+
+  // Errors and warnings (JSON arrays)
+  validationErrors  String  @default("[]") // JSON: [{row, field, message, severity}]
+  validationWarnings String @default("[]")
+
+  // Field mapping
+  detectedHeaders   String  @default("[]") // JSON: detected column headers
+  fieldMappings     String  @default("{}") // JSON: {sourceField: targetField}
+  unmappedFields    String  @default("[]") // JSON: fields that couldn't be mapped
+
+  // Preview data
+  previewData       String  @default("[]") // JSON: first N rows for preview
+
+  // Import results
+  importedCount     Int     @default(0)
+  updatedCount      Int     @default(0)
+  skippedCount      Int     @default(0)
+
+  // Error report
+  errorReportUrl    String  @default("") // Path to downloadable error CSV
+
+  // Timestamps
+  uploadedAt        DateTime @default(now())
+  validatedAt       DateTime?
+  mappedAt          DateTime?
+  confirmedAt       DateTime?
+  completedAt       DateTime?
+
+  // User
+  uploadedById      String
+  uploadedByEmail   String
+  companyId         String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId, status])
+  @@index([uploadedById, createdAt])
+}
+
+// Allocation Override - Track user overrides in allocation matrix
+model AllocationOverride {
+  id                String    @id @default(uuid())
+
+  // Allocation target
+  shopId            String
+  weekKey           String    // YYYY-Www format
+  workType          String    // qualification, assignment, return, repair
+
+  // Override details
+  originalValue     Int
+  overrideValue     Int
+
+  // Justification (required)
+  justification     String
+  overrideReason    String    // rebalancing, customer_request, emergency, capacity_issue, other
+
+  // Related cars (optional bulk selection)
+  relatedCarIds     String    @default("[]") // JSON array of car IDs
+  carCount          Int       @default(0)
+
+  // Status
+  status            String    @default("pending") // pending, applied, reverted
+  appliedAt         DateTime?
+  revertedAt        DateTime?
+
+  // User tracking
+  overriddenById    String
+  overriddenByEmail String
+
+  // Approval (if over threshold)
+  requiresApproval  Boolean   @default(false)
+  approvalThreshold Int       @default(10) // Override > N cars requires approval
+  approvedById      String?
+  approvedAt        DateTime?
+  approvalStatus    String    @default("auto_approved") // pending, approved, rejected, auto_approved
+
+  companyId         String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([shopId, weekKey])
+  @@index([companyId, status])
 }
