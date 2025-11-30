@@ -17,6 +17,7 @@ import {
   ClipboardDocumentCheckIcon,
   AdjustmentsHorizontalIcon,
   ArrowUpTrayIcon,
+  BellAlertIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -36,6 +37,7 @@ const navigation = [
 
 const adminNavigation = [
   { name: 'Users', href: '/users', icon: UsersIcon },
+  { name: 'Webhooks', href: '/webhooks', icon: BellAlertIcon },
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },
 ];
 

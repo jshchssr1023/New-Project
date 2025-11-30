@@ -1,6 +1,7 @@
 // Audit logging service for tracking all data changes
 import { prisma } from './db';
 import { Request } from 'express';
+import webhookAlertService from './webhookAlertService';
 
 
 export interface AuditLogEntry {
@@ -83,9 +84,79 @@ export async function logAudit(
         companyId: entry.companyId,
       },
     });
+
+    // Trigger webhook alerts for significant events
+    await triggerWebhookAlert(entry);
   } catch (error) {
     // Log error but don't throw - audit logging should not break main operations
     console.error('Failed to create audit log:', error);
+  }
+}
+
+// Trigger webhook alerts for significant audit events
+async function triggerWebhookAlert(entry: AuditLogEntry): Promise<void> {
+  try {
+    const isBulkOperation = entry.metadata?.bulkOperation === true;
+    const recordCount = (entry.metadata?.count as number) || 1;
+
+    // Alert on bulk delete operations (5+ records)
+    if (entry.action === 'delete' && isBulkOperation && recordCount >= 5) {
+      await webhookAlertService.alertDataChange(entry.companyId, {
+        action: 'Bulk Delete',
+        entityType: entry.entityType,
+        count: recordCount,
+        userId: entry.userId,
+        userName: entry.userEmail,
+      });
+      return;
+    }
+
+    // Alert on bulk updates/creates
+    if (isBulkOperation && recordCount >= 10) {
+      await webhookAlertService.alertDataChange(entry.companyId, {
+        action: entry.action === 'create' ? 'Bulk Create' : 'Bulk Update',
+        entityType: entry.entityType,
+        count: recordCount,
+        userId: entry.userId,
+        userName: entry.userEmail,
+      });
+      return;
+    }
+
+    // Alert on user role changes (potential security event)
+    if (entry.entityType === 'User' && entry.changes.role) {
+      const oldRole = entry.changes.role.old as string;
+      const newRole = entry.changes.role.new as string;
+
+      // Alert if user is promoted to admin
+      if (newRole === 'admin' && oldRole !== 'admin') {
+        await webhookAlertService.alertSecurity(entry.companyId, {
+          title: 'Admin Privileges Granted',
+          message: `User ${entry.entityName || entry.entityId} was granted admin privileges by ${entry.userEmail}`,
+          details: {
+            targetUser: entry.entityName || entry.entityId,
+            previousRole: oldRole,
+            newRole,
+            changedBy: entry.userEmail,
+          },
+        });
+      }
+      return;
+    }
+
+    // Alert on Plan commits (important data change)
+    if (entry.entityType === 'Plan' && entry.action === 'commit') {
+      await webhookAlertService.alertDataChange(entry.companyId, {
+        action: 'Plan Committed',
+        entityType: 'Plan',
+        count: 1,
+        userId: entry.userId,
+        userName: entry.userEmail,
+      });
+    }
+  } catch (error) {
+    // Silent fail - webhook alerting should not break audit logging
+    console.error('Failed to trigger webhook alert:', error);
   }
 }
 

@@ -839,6 +839,25 @@ model MasterPlanCommitment {
 }
 
 // =============================================================================
+// WEBHOOK ALERTING
+// =============================================================================
+
+model WebhookConfig {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // slack, teams, custom
+  url         String
+  isActive    Boolean  @default(true)
+  categories  String   // JSON array: ["security", "capacity", "performance", "system", "data_change"]
+  severities  String   // JSON array: ["info", "warning", "critical"]
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, isActive])
+}
+
+// =============================================================================
 // NOTIFICATIONS
 // =============================================================================
 
