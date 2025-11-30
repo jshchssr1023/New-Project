@@ -925,4 +925,128 @@ router.put('/queue/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// =============================================================================
+// INTEGRATION: Bridge to SOPAssignment / Main Planning Flow
+// =============================================================================
+
+/**
+ * POST /api/lease-qualification/entries/create-sop-assignments
+ * Convert scheduled qualification entries to SOPAssignments
+ * This bridges the Lease Qualification Engine into the main planning flow
+ */
+router.post('/entries/create-sop-assignments', async (req: AuthRequest, res: Response) => {
+  try {
+    const prisma: any = req.app.locals.prisma;
+    const { companyId, id: userId } = req.user!;
+    const { entryIds, scenarioId, createScenario } = req.body;
+
+    if (!entryIds || !Array.isArray(entryIds) || entryIds.length === 0) {
+      res.status(400).json({ success: false, message: 'entryIds array is required' });
+      return;
+    }
+
+    // Get the qualification entries with shop assignments
+    const entries = await prisma.leaseQualificationEntry.findMany({
+      where: {
+        id: { in: entryIds },
+        companyId,
+        assignedShopId: { not: null }, // Must have a shop assigned
+      },
+      include: {
+        car: true,
+        customer: true,
+        assignedShop: true,
+      },
+    });
+
+    if (entries.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: 'No entries found with shop assignments. Assign shops before creating SOP assignments.',
+      });
+      return;
+    }
+
+    // Create or use existing scenario
+    let targetScenarioId = scenarioId;
+
+    if (!targetScenarioId && createScenario) {
+      // Auto-create a scenario for these lease releases
+      const now = new Date();
+      const scenario = await prisma.scenario.create({
+        data: {
+          projectNumber: `LQ-${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`,
+          name: `Lease Releases - ${now.toISOString().slice(0, 10)}`,
+          description: 'Auto-generated from Lease Qualification Engine',
+          status: 'draft',
+          companyId,
+          createdBy: userId,
+        },
+      });
+      targetScenarioId = scenario.id;
+    }
+
+    if (!targetScenarioId) {
+      res.status(400).json({
+        success: false,
+        message: 'Either scenarioId or createScenario: true is required',
+      });
+      return;
+    }
+
+    // Create SOPAssignment records from qualification entries
+    const sopAssignmentData = entries.map((entry: any) => {
+      // Parse workTypes from entry
+      let reasonsArray: string[] = [];
+      try {
+        reasonsArray = JSON.parse(entry.workTypes || '[]');
+      } catch {
+        reasonsArray = ['qualification']; // Default for lease releases
+      }
+
+      return {
+        scenarioId: targetScenarioId,
+        carId: entry.carId,
+        shopId: entry.assignedShopId,
+        reasonsShopped: JSON.stringify(reasonsArray),
+        status: 'PLANNED',
+        monthKey: entry.targetQualMonth,
+        estimatedCost: 15000, // Default estimate
+        estimatedDays: 14,
+        priority: entry.priority || 3,
+        notes: `From Lease Release: ${entry.customer?.name || ''} - ${entry.bundleReason || ''}`,
+      };
+    });
+
+    // Create the SOPAssignments
+    await prisma.sOPAssignment.createMany({
+      data: sopAssignmentData,
+      skipDuplicates: true, // Skip if car already in scenario
+    });
+
+    // Update entry status to indicate it's been scheduled
+    await prisma.leaseQualificationEntry.updateMany({
+      where: { id: { in: entryIds } },
+      data: { queueStatus: 'scheduled' },
+    });
+
+    // Mark scenario as completed (has SOPAssignments, ready for approval)
+    await prisma.scenario.update({
+      where: { id: targetScenarioId },
+      data: { status: 'completed' },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Created ${sopAssignmentData.length} SOP assignments`,
+      scenarioId: targetScenarioId,
+      sopAssignmentCount: sopAssignmentData.length,
+      entriesProcessed: entries.length,
+    });
+  } catch (error: any) {
+    console.error('[LeaseQualification] Error creating SOP assignments:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;

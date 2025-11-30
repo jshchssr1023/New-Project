@@ -24,6 +24,7 @@ import PrintPreview, { PrintPreviewRef } from '../components/PrintPreview';
 import PresenceIndicator from '../components/PresenceIndicator';
 import { useCollaboration } from '../contexts/CollaborationContext';
 import { useAssignmentUpdates } from '../contexts/WebSocketContext';
+import { useCarSelection } from '../contexts/CarSelectionContext';
 
 // Drag item type constant for consistency
 const DRAG_ITEM_TYPE = 'application/x-railcar-ids';
@@ -89,8 +90,26 @@ export default function PlanningGrid() {
   const [carSearchQuery, setCarSearchQuery] = useState('');
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  // Selection and assignment state
-  const [selectedCarIds, setSelectedCarIds] = useState<Set<string>>(new Set());
+  // Global car selection context
+  const {
+    selectedCars: globalSelectedCars,
+    selectCar,
+    deselectCar,
+    toggleCar,
+    selectMultiple,
+    clearSelection,
+    hasSelection: hasGlobalSelection,
+  } = useCarSelection();
+
+  // Selection and assignment state (local state synced with global context)
+  const selectedCarIds = globalSelectedCars; // Use global selection
+  const setSelectedCarIds = (updater: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    // Sync local updates to global context
+    const newSet = typeof updater === 'function' ? updater(globalSelectedCars) : updater;
+    // Clear and re-add all
+    clearSelection();
+    newSet.forEach(id => selectCar(id));
+  };
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
 

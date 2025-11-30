@@ -801,6 +801,148 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Confirm shop assignments - converts ScenarioCar records to SOPAssignment records
+// This is the CRITICAL bridge that enables MasterPlan creation
+// Called when user clicks "Confirm & Assign to Shops"
+router.post('/:id/confirm-assignments', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+
+  try {
+    // Get scenario with all cars and their shop assignments
+    const scenario = await prisma.scenario.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        cars: {
+          include: { car: true },
+        },
+        sopAssignments: true,
+      },
+    });
+
+    if (!scenario) {
+      res.status(404).json({ message: 'Scenario not found' });
+      return;
+    }
+
+    // Get cars with assigned shops (either manually assigned or suggested)
+    const carsWithShops = scenario.cars.filter(
+      (sc: any) => sc.assignedShopId || sc.suggestedShopId
+    );
+
+    if (carsWithShops.length === 0) {
+      res.status(400).json({
+        message: 'No cars have shop assignments. Please assign shops before confirming.',
+      });
+      return;
+    }
+
+    // Delete any existing SOPAssignments for this scenario (replace mode)
+    await prisma.sOPAssignment.deleteMany({
+      where: { scenarioId: scenario.id },
+    });
+
+    // Create SOPAssignment records from ScenarioCar records
+    const sopAssignmentData = carsWithShops.map((sc: any) => {
+      const shopId = sc.assignedShopId || sc.suggestedShopId;
+
+      // Get reasons from car's reasonsShopped field, default to qualification
+      let reasonsArray: string[] = [];
+      try {
+        reasonsArray = JSON.parse(sc.car.reasonsShopped || '[]');
+      } catch {
+        // Fallback to old reasonShopped field
+        if (sc.car.reasonShopped) {
+          reasonsArray = sc.car.reasonShopped.split(',').map((r: string) => r.trim().toLowerCase()).filter(Boolean);
+        }
+      }
+
+      // Default to qualification if no reasons specified
+      if (reasonsArray.length === 0) {
+        reasonsArray = ['qualification'];
+      }
+
+      return {
+        scenarioId: scenario.id,
+        carId: sc.carId,
+        shopId,
+        reasonsShopped: JSON.stringify(reasonsArray),
+        status: 'PLANNED',
+        monthKey: sc.scheduledMonth,
+        estimatedCost: sc.estimatedCost || 15000,
+        estimatedDays: sc.estimatedDays || 14,
+        priority: 3,
+        notes: `Confirmed from scenario: ${scenario.name}`,
+      };
+    });
+
+    await prisma.sOPAssignment.createMany({
+      data: sopAssignmentData,
+    });
+
+    // Update scenario status to indicate assignments are confirmed
+    await prisma.scenario.update({
+      where: { id: scenario.id },
+      data: { status: 'completed' },
+    });
+
+    // Broadcast update via WebSocket
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('assignmentsConfirmed', {
+        scenarioId: scenario.id,
+        assignmentCount: sopAssignmentData.length,
+      });
+    }
+
+    // Return updated scenario with SOPAssignments
+    const updatedScenario = await prisma.scenario.findFirst({
+      where: { id: scenario.id },
+      include: {
+        cars: {
+          include: { car: true },
+        },
+        sopAssignments: {
+          include: { car: true, shop: true },
+        },
+      },
+    });
+
+    // Get shop details for response
+    const shopIds = updatedScenario!.cars
+      .flatMap((c: any) => [c.suggestedShopId, c.assignedShopId])
+      .filter(Boolean) as string[];
+
+    const shops = await prisma.shop.findMany({
+      where: { id: { in: shopIds } },
+    });
+
+    const shopMap = new Map(shops.map((s: any) => [s.id, s]));
+
+    res.status(200).json({
+      success: true,
+      message: `Created ${sopAssignmentData.length} SOP assignments. Scenario is ready for approval.`,
+      scenario: {
+        ...updatedScenario,
+        results: updatedScenario!.results ? JSON.parse(updatedScenario!.results) : null,
+        cars: updatedScenario!.cars.map((c: any) => ({
+          ...c,
+          suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
+          assignedShop: c.assignedShopId ? shopMap.get(c.assignedShopId) : null,
+        })),
+      },
+      sopAssignmentCount: sopAssignmentData.length,
+    });
+  } catch (error: any) {
+    console.error('Confirm assignments error:', error);
+    res.status(500).json({
+      message: error.message || 'Failed to confirm assignments',
+    });
+  }
+});
+
 // Approve scenario and create MasterPlan
 // This is the key endpoint that converts a Scenario into a MasterPlan with commitments
 router.post('/:id/approve', async (req: AuthRequest, res: Response) => {

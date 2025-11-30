@@ -519,6 +519,18 @@ export const scenariosApi = {
     return response.data.recommendations;
   },
 
+  // Confirm shop assignments - converts ScenarioCar to SOPAssignment
+  // This is REQUIRED before approving a scenario
+  confirmAssignments: async (scenarioId: string): Promise<{
+    success: boolean;
+    message: string;
+    scenario: Scenario;
+    sopAssignmentCount: number;
+  }> => {
+    const response = await apiClient.post(`/scenarios/${scenarioId}/confirm-assignments`);
+    return response.data;
+  },
+
   // Approve scenario and create MasterPlan
   approve: async (scenarioId: string, options?: { planName?: string; activate?: boolean }): Promise<{
     success: boolean;

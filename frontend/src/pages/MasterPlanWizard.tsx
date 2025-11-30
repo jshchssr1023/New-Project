@@ -31,7 +31,7 @@ import {
   SignalIcon,
   CheckBadgeIcon,
 } from '@heroicons/react/24/outline';
-import { carsApi, shopsApi, masterPlanWizardApi, masterPlanApi } from '../services/api';
+import { carsApi, shopsApi, masterPlanWizardApi, masterPlanApi, scenariosApi } from '../services/api';
 import type { Car, Shop } from '../types';
 import type {
   WeeklyCapacityData,
@@ -117,6 +117,11 @@ export default function MasterPlanWizard() {
   const [weekKeys, setWeekKeys] = useState<string[]>([]);
   const [weeklyCapacities, setWeeklyCapacities] = useState<Record<string, Record<string, WeeklyCapacityData>>>({});
 
+  // Scenario state - completed scenarios with SOPAssignments
+  const [availableScenarios, setAvailableScenarios] = useState<any[]>([]);
+  const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(new Set());
+  const [scenarioSOPAssignments, setScenarioSOPAssignments] = useState<any[]>([]);
+
   // Wizard state
   const [isDemandLocked, setIsDemandLocked] = useState(false);
   const [isCapacityLocked, setIsCapacityLocked] = useState(false);
@@ -177,16 +182,23 @@ export default function MasterPlanWizard() {
       setIsLoading(true);
       setError(null);
 
-      // Load cars, shops, and week keys in parallel
-      const [carsResponse, shopsResponse, weekKeysResponse] = await Promise.all([
+      // Load cars, shops, week keys, and completed scenarios in parallel
+      const [carsResponse, shopsResponse, weekKeysResponse, scenariosResponse] = await Promise.all([
         carsApi.getAll({ pageSize: 2000 }),
         shopsApi.getAll({ isActive: true }),
         masterPlanWizardApi.getWeekKeys(undefined, 16), // 16 weeks = ~4 months
+        scenariosApi.getAll(), // Get all scenarios
       ]);
 
       setCars(carsResponse.data);
       setShops(shopsResponse);
       setWeekKeys(weekKeysResponse.weekKeys);
+
+      // Filter to completed scenarios (these have SOPAssignments ready for MasterPlan)
+      const completedScenarios = scenariosResponse.filter(
+        (s: any) => s.status === 'completed'
+      );
+      setAvailableScenarios(completedScenarios);
 
       // Build demand register from cars
       const demand = buildDemandRegister(carsResponse.data, shopsResponse);
@@ -332,7 +344,9 @@ export default function MasterPlanWizard() {
   // STEP NAVIGATION
   // =============================================================================
 
-  const canProceedToStep2 = isDemandLocked && isCapacityLocked;
+  // To proceed to Step 2: demand/capacity locked AND either scenarios selected OR no scenarios available
+  const hasScenarioRequirement = availableScenarios.length === 0 || selectedScenarioIds.size > 0;
+  const canProceedToStep2 = isDemandLocked && isCapacityLocked && hasScenarioRequirement;
   const canProceedToStep3 = canProceedToStep2; // Add allocation validation here
 
   const handleNextStep = () => {
@@ -598,6 +612,76 @@ export default function MasterPlanWizard() {
 
   const renderStep1 = () => (
     <div className="space-y-6">
+      {/* Scenario Selection - Source of planning data */}
+      {availableScenarios.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-4">
+          <h3 className="font-semibold flex items-center gap-2 mb-3">
+            <CheckBadgeIcon className="h-5 w-5 text-green-600" />
+            Approved Scenarios (Ready for Master Plan)
+          </h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Select scenarios to include in this Master Plan. Each scenario contains confirmed shop assignments.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            {availableScenarios.map((scenario: any) => (
+              <label
+                key={scenario.id}
+                className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                  selectedScenarioIds.has(scenario.id)
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-blue-300'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedScenarioIds.has(scenario.id)}
+                  onChange={(e) => {
+                    const newSet = new Set(selectedScenarioIds);
+                    if (e.target.checked) {
+                      newSet.add(scenario.id);
+                    } else {
+                      newSet.delete(scenario.id);
+                    }
+                    setSelectedScenarioIds(newSet);
+                  }}
+                  className="mt-1"
+                />
+                <div className="flex-1">
+                  <div className="font-medium text-gray-900">{scenario.name}</div>
+                  <div className="text-sm text-gray-500">
+                    {scenario.projectNumber} • {scenario.carCount || scenario.cars?.length || 0} cars
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Status: {scenario.status}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+          {selectedScenarioIds.size > 0 && (
+            <div className="mt-3 p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-800">
+              <strong>{selectedScenarioIds.size}</strong> scenario(s) selected.
+              SOPAssignments from these scenarios will be used for allocation planning.
+            </div>
+          )}
+        </div>
+      )}
+
+      {availableScenarios.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <ExclamationTriangleIcon className="h-6 w-6 text-amber-500 flex-shrink-0" />
+            <div>
+              <h3 className="font-medium text-amber-800">No Completed Scenarios</h3>
+              <p className="text-sm text-amber-700 mt-1">
+                To use the Master Plan Wizard, first create a scenario in Scenario Manager, assign shops to cars,
+                and click "Confirm & Assign to Shops". Then return here to build your Master Plan.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Demand Summary Cards */}
       <div className="grid grid-cols-5 gap-4">
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-500">
