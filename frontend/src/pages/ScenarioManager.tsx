@@ -14,6 +14,8 @@ import {
   BuildingStorefrontIcon,
   CalendarIcon,
   AdjustmentsHorizontalIcon,
+  DocumentCheckIcon,
+  RocketLaunchIcon,
 } from '@heroicons/react/24/outline';
 import { scenariosApi, plansApi, carsApi, shopsApi } from '../services/api';
 import type { Scenario, Plan, Car, Shop, ScenarioCar, ShopRecommendation, OverloadedShop } from '../types';
@@ -23,6 +25,7 @@ const statusColors: Record<string, string> = {
   draft: 'bg-steel-100 text-steel-800',
   analyzing: 'bg-amber-100 text-amber-800',
   completed: 'bg-green-100 text-green-800',
+  approved: 'bg-rail-100 text-rail-800',
 };
 
 interface ShopAllocation {
@@ -61,6 +64,10 @@ export default function ScenarioManager() {
   const [isRecommendationsModalOpen, setIsRecommendationsModalOpen] = useState(false);
   const [isCommitModalOpen, setIsCommitModalOpen] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isApproveModalOpen, setIsApproveModalOpen] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [approvePlanName, setApprovePlanName] = useState('');
+  const [activateOnApprove, setActivateOnApprove] = useState(true);
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [selectedScenarioCar, setSelectedScenarioCar] = useState<ScenarioCar | null>(null);
   const [recommendations, setRecommendations] = useState<ShopRecommendation[]>([]);
@@ -486,6 +493,59 @@ export default function ScenarioManager() {
     }
   };
 
+  const handleOpenApproveModal = () => {
+    if (!selectedScenario) return;
+
+    // Check if scenario has SOP assignments (needed for MasterPlan creation)
+    // For now, we'll check if it has cars with assignments
+    const hasAssignments = selectedScenario.cars?.some(
+      (sc) => sc.assignedShopId || sc.suggestedShopId
+    );
+
+    if (!hasAssignments) {
+      alert('Please assign shops to cars before approving the scenario.');
+      return;
+    }
+
+    setApprovePlanName(`${selectedScenario.projectNumber} - ${selectedScenario.name}`);
+    setActivateOnApprove(true);
+    setIsApproveModalOpen(true);
+  };
+
+  const handleApproveScenario = async () => {
+    if (!selectedScenario) return;
+
+    setIsApproving(true);
+    try {
+      const result = await scenariosApi.approve(selectedScenario.id, {
+        planName: approvePlanName || `${selectedScenario.projectNumber} - ${selectedScenario.name}`,
+        activate: activateOnApprove,
+      });
+
+      alert(
+        `Success! ${result.message}\n\n` +
+        `Master Plan: ${result.masterPlan.planName}\n` +
+        `Fiscal Year: FY${result.masterPlan.fiscalYear}\n` +
+        `Status: ${result.masterPlan.status}\n` +
+        `Commitments: ${result.masterPlan.commitmentCount}`
+      );
+
+      setIsApproveModalOpen(false);
+      setApprovePlanName('');
+      await loadData();
+
+      // Update selected scenario to show new status
+      if (selectedScenario) {
+        loadScenarioDetails(selectedScenario.id);
+      }
+    } catch (error: any) {
+      console.error('Failed to approve scenario:', error);
+      alert(error.response?.data?.message || 'Failed to approve scenario. Please try again.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   const handleRailcarClick = (railcarNumber: string) => {
     navigate(`/cars?search=${encodeURIComponent(railcarNumber)}`);
   };
@@ -622,13 +682,30 @@ export default function ScenarioManager() {
                         </button>
                       )}
                       {selectedScenario.status === 'completed' && (
-                        <button
-                          onClick={handleOpenCommitModal}
-                          className="btn-primary py-2 px-4 text-sm flex items-center font-medium"
-                        >
-                          <CheckIcon className="mr-2 h-4 w-4" />
-                          Commit Plan
-                        </button>
+                        <>
+                          <button
+                            onClick={handleOpenCommitModal}
+                            className="btn-secondary py-2 px-4 text-sm flex items-center font-medium"
+                          >
+                            <CheckIcon className="mr-2 h-4 w-4" />
+                            Commit Plan
+                          </button>
+                          <button
+                            onClick={handleOpenApproveModal}
+                            className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-green-600 hover:bg-green-700"
+                          >
+                            <RocketLaunchIcon className="mr-2 h-4 w-4" />
+                            Approve Scenario
+                          </button>
+                        </>
+                      )}
+                      {selectedScenario.status === 'approved' && (
+                        <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
+                          <CheckCircleIcon className="h-5 w-5 text-green-600" />
+                          <span className="text-sm font-medium text-green-800">
+                            Approved - Master Plan Created
+                          </span>
+                        </div>
                       )}
                       <button
                         onClick={() => handleDelete(selectedScenario.id)}
@@ -1365,6 +1442,124 @@ export default function ScenarioManager() {
                     <>
                       <CheckIcon className="mr-2 h-4 w-4" />
                       Commit {selectedScenario.cars?.length || 0} Assignments
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Scenario Modal */}
+      {isApproveModalOpen && selectedScenario && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsApproveModalOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-green-100 rounded-full">
+                  <RocketLaunchIcon className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-steel-900">Approve Scenario</h2>
+                  <p className="text-sm text-steel-500">Create Master Plan & Notify Stakeholders</p>
+                </div>
+              </div>
+
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                <h3 className="font-medium text-green-900 mb-2">What happens when you approve:</h3>
+                <ul className="text-sm text-green-800 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
+                    <span>Creates a <strong>MasterPlanCommitment</strong> for each car assignment</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
+                    <span>Generates <strong>Customer PDF schedules</strong> for distribution</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
+                    <span>Creates <strong>Shop Work Orders</strong> for each shop/month</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
+                    <span>Updates the <strong>CFO Dashboard</strong> in real-time</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="bg-steel-50 rounded-lg p-4 mb-4">
+                <h3 className="font-medium text-steel-900 mb-2">{selectedScenario.name}</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <p className="text-steel-600">
+                    <span className="text-steel-500">Project:</span> {selectedScenario.projectNumber}
+                  </p>
+                  <p className="text-steel-600">
+                    <span className="text-steel-500">Cars:</span> {selectedScenario.cars?.length || 0}
+                  </p>
+                  <p className="text-steel-600">
+                    <span className="text-steel-500">Assigned:</span>{' '}
+                    {selectedScenario.cars?.filter(c => c.assignedShopId || c.suggestedShopId).length || 0}
+                  </p>
+                  <p className="text-steel-600">
+                    <span className="text-steel-500">Est. Cost:</span>{' '}
+                    ${(selectedScenario.results?.totalCost || 0).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="label">Master Plan Name</label>
+                  <input
+                    type="text"
+                    value={approvePlanName}
+                    onChange={(e) => setApprovePlanName(e.target.value)}
+                    className="input"
+                    placeholder="e.g., Q4-25-001 - Initial Proposal"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="activateOnApprove"
+                    checked={activateOnApprove}
+                    onChange={(e) => setActivateOnApprove(e.target.checked)}
+                    className="rounded border-steel-300 text-green-600 focus:ring-green-500"
+                  />
+                  <label htmlFor="activateOnApprove" className="text-sm text-steel-700">
+                    <span className="font-medium">Activate immediately</span>
+                    <span className="block text-steel-500">
+                      Set this plan as the active master plan (archives any existing active plan)
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { setIsApproveModalOpen(false); setApprovePlanName(''); }}
+                  className="btn-secondary"
+                  disabled={isApproving}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApproveScenario}
+                  disabled={isApproving}
+                  className="btn-primary bg-green-600 hover:bg-green-700 disabled:opacity-50 flex items-center"
+                >
+                  {isApproving ? (
+                    <>
+                      <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
+                      Approving...
+                    </>
+                  ) : (
+                    <>
+                      <RocketLaunchIcon className="mr-2 h-4 w-4" />
+                      Approve & Create Master Plan
                     </>
                   )}
                 </button>

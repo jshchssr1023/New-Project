@@ -12,8 +12,14 @@ export type WebSocketEvent =
   | 'assignment:deleted'
   | 'scenario:committed'
   | 'scenario:updated'
+  | 'scenario:approved'
   | 'shop:capacityChanged'
-  | 'plan:updated';
+  | 'plan:updated'
+  | 'masterPlan:created'
+  | 'masterPlan:approved'
+  | 'masterPlan:activated'
+  | 'commitment:statusChanged'
+  | 'dashboard:refresh';
 
 export interface WebSocketPayload {
   event: WebSocketEvent;
@@ -140,6 +146,37 @@ class WebSocketService {
   // Shop capacity events
   emitCapacityChanged(companyId: string, shopId: string, month: string, newCapacity: Record<string, unknown>): void {
     this.emitToCompany(companyId, 'shop:capacityChanged', { shopId, month, ...newCapacity });
+  }
+
+  // MasterPlan events
+  emitMasterPlanCreated(companyId: string, masterPlanId: string, data: Record<string, unknown>): void {
+    this.emitToCompany(companyId, 'masterPlan:created', { masterPlanId, ...data });
+    // Also trigger dashboard refresh
+    this.emitToCompany(companyId, 'dashboard:refresh', { reason: 'masterPlan:created', masterPlanId });
+  }
+
+  emitMasterPlanApproved(companyId: string, masterPlanId: string, data: Record<string, unknown>): void {
+    this.emitToCompany(companyId, 'masterPlan:approved', { masterPlanId, ...data });
+    this.emitToCompany(companyId, 'dashboard:refresh', { reason: 'masterPlan:approved', masterPlanId });
+  }
+
+  emitMasterPlanActivated(companyId: string, masterPlanId: string, data: Record<string, unknown>): void {
+    this.emitToCompany(companyId, 'masterPlan:activated', { masterPlanId, ...data });
+    this.emitToCompany(companyId, 'dashboard:refresh', { reason: 'masterPlan:activated', masterPlanId });
+  }
+
+  emitScenarioApproved(companyId: string, scenarioId: string, masterPlanId: string, data: Record<string, unknown>): void {
+    this.emitToCompany(companyId, 'scenario:approved', { scenarioId, masterPlanId, ...data });
+  }
+
+  emitCommitmentStatusChanged(companyId: string, commitmentId: string, oldStatus: string, newStatus: string): void {
+    this.emitToCompany(companyId, 'commitment:statusChanged', { commitmentId, oldStatus, newStatus });
+    this.emitToCompany(companyId, 'dashboard:refresh', { reason: 'commitment:statusChanged', commitmentId });
+  }
+
+  // Dashboard refresh
+  emitDashboardRefresh(companyId: string, reason: string): void {
+    this.emitToCompany(companyId, 'dashboard:refresh', { reason });
   }
 
   getConnectedCount(): number {
