@@ -1,11 +1,23 @@
-import { useState, useEffect, useRef } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { shopsApi } from '../services/api';
 import type { Shop } from '../types';
+
+type ViewMode = 'list' | 'network';
 
 const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Canada', 'Mexico'];
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
+
+// Network group interface
+interface NetworkGroup {
+  network: string;
+  isAitxInternal: boolean;
+  shops: Shop[];
+  totalCapacity: number;
+  activeShops: number;
+  avgCostPerCar: number;
+}
 
 // Import result type matching API response
 interface ImportResults {
@@ -30,7 +42,86 @@ export default function ShopManagement() {
   const [viewingShop, setViewingShop] = useState<Shop | null>(null);
   const [regionFilter, setRegionFilter] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<string>('');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [networkFilter, setNetworkFilter] = useState<string>('');
+  const [ownershipFilter, setOwnershipFilter] = useState<string>(''); // 'aitx', '3p', or ''
+  const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Get unique networks from shops
+  const uniqueNetworks = useMemo(() => {
+    const networks = [...new Set(shops.map(s => s.network).filter(Boolean))].sort();
+    return networks;
+  }, [shops]);
+
+  // Group shops by network
+  const networkGroups = useMemo((): NetworkGroup[] => {
+    const groups: Record<string, NetworkGroup> = {};
+
+    shops.forEach(shop => {
+      const network = shop.network || 'Unassigned';
+      if (!groups[network]) {
+        groups[network] = {
+          network,
+          isAitxInternal: shop.isAitxInternal ?? false,
+          shops: [],
+          totalCapacity: 0,
+          activeShops: 0,
+          avgCostPerCar: 0,
+        };
+      }
+      groups[network].shops.push(shop);
+      groups[network].totalCapacity += shop.capacity || 0;
+      if (shop.isActive) groups[network].activeShops++;
+    });
+
+    // Calculate average cost per car for each network
+    Object.values(groups).forEach(group => {
+      const totalCost = group.shops.reduce((sum, s) => sum + (s.baseCostPerCar || 0), 0);
+      group.avgCostPerCar = group.shops.length > 0 ? totalCost / group.shops.length : 0;
+    });
+
+    // Sort: AITX first, then 3rd party alphabetically
+    return Object.values(groups).sort((a, b) => {
+      if (a.isAitxInternal && !b.isAitxInternal) return -1;
+      if (!a.isAitxInternal && b.isAitxInternal) return 1;
+      return a.network.localeCompare(b.network);
+    });
+  }, [shops]);
+
+  // Filter network groups
+  const filteredNetworkGroups = useMemo(() => {
+    let filtered = networkGroups;
+    if (ownershipFilter === 'aitx') {
+      filtered = filtered.filter(g => g.isAitxInternal);
+    } else if (ownershipFilter === '3p') {
+      filtered = filtered.filter(g => !g.isAitxInternal);
+    }
+    if (networkFilter) {
+      filtered = filtered.filter(g => g.network === networkFilter);
+    }
+    return filtered;
+  }, [networkGroups, ownershipFilter, networkFilter]);
+
+  const toggleNetworkExpanded = (network: string) => {
+    setExpandedNetworks(prev => {
+      const next = new Set(prev);
+      if (next.has(network)) {
+        next.delete(network);
+      } else {
+        next.add(network);
+      }
+      return next;
+    });
+  };
+
+  const expandAllNetworks = () => {
+    setExpandedNetworks(new Set(networkGroups.map(g => g.network)));
+  };
+
+  const collapseAllNetworks = () => {
+    setExpandedNetworks(new Set());
+  };
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -386,35 +477,221 @@ export default function ShopManagement() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center space-x-4">
-        <select
-          value={regionFilter}
-          onChange={(e) => setRegionFilter(e.target.value)}
-          className="input w-40"
-        >
-          <option value="">All Regions</option>
-          {regions.map(region => (
-            <option key={region} value={region}>{region}</option>
-          ))}
-        </select>
-        <select
-          value={activeFilter}
-          onChange={(e) => setActiveFilter(e.target.value)}
-          className="input w-40"
-        >
-          <option value="">All Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
-        <span className="text-sm text-steel-500">{shops.length} shops</span>
+      {/* View Mode Toggle and Filters */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center space-x-4">
+          {/* View Mode Toggle */}
+          <div className="flex rounded-lg border border-steel-300 overflow-hidden">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'list' ? 'bg-rail-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
+            >
+              <ListBulletIcon className="h-4 w-4 mr-1" />
+              List
+            </button>
+            <button
+              onClick={() => setViewMode('network')}
+              className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'network' ? 'bg-rail-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
+            >
+              <BuildingOffice2Icon className="h-4 w-4 mr-1" />
+              By Network
+            </button>
+          </div>
+
+          {viewMode === 'list' ? (
+            <>
+              <select
+                value={regionFilter}
+                onChange={(e) => setRegionFilter(e.target.value)}
+                className="input w-40"
+              >
+                <option value="">All Regions</option>
+                {regions.map(region => (
+                  <option key={region} value={region}>{region}</option>
+                ))}
+              </select>
+              <select
+                value={activeFilter}
+                onChange={(e) => setActiveFilter(e.target.value)}
+                className="input w-40"
+              >
+                <option value="">All Status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </>
+          ) : (
+            <>
+              <select
+                value={ownershipFilter}
+                onChange={(e) => setOwnershipFilter(e.target.value)}
+                className="input w-40"
+              >
+                <option value="">All Ownership</option>
+                <option value="aitx">AITX Owned</option>
+                <option value="3p">3rd Party</option>
+              </select>
+              <select
+                value={networkFilter}
+                onChange={(e) => setNetworkFilter(e.target.value)}
+                className="input w-48"
+              >
+                <option value="">All Networks</option>
+                {uniqueNetworks.map(network => (
+                  <option key={network} value={network}>{network}</option>
+                ))}
+              </select>
+              <div className="flex space-x-2">
+                <button
+                  onClick={expandAllNetworks}
+                  className="text-xs text-rail-600 hover:text-rail-800"
+                >
+                  Expand All
+                </button>
+                <span className="text-steel-300">|</span>
+                <button
+                  onClick={collapseAllNetworks}
+                  className="text-xs text-rail-600 hover:text-rail-800"
+                >
+                  Collapse All
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        <span className="text-sm text-steel-500">
+          {viewMode === 'list'
+            ? `${shops.length} shops`
+            : `${filteredNetworkGroups.length} networks, ${shops.length} shops`}
+        </span>
       </div>
 
       {isLoading ? (
         <div className="card">
           <p className="text-steel-500">Loading shops...</p>
         </div>
+      ) : viewMode === 'network' ? (
+        /* Network Grouped View */
+        <div className="space-y-4">
+          {filteredNetworkGroups.map(group => (
+            <div key={group.network} className="card p-0 overflow-hidden">
+              {/* Network Header */}
+              <button
+                onClick={() => toggleNetworkExpanded(group.network)}
+                className="w-full px-4 py-3 flex items-center justify-between bg-steel-100 hover:bg-steel-200 transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  {expandedNetworks.has(group.network) ? (
+                    <ChevronDownIcon className="h-5 w-5 text-steel-500" />
+                  ) : (
+                    <ChevronRightIcon className="h-5 w-5 text-steel-500" />
+                  )}
+                  <div className="flex items-center space-x-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      group.isAitxInternal
+                        ? 'bg-rail-100 text-rail-800'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {group.isAitxInternal ? 'AITX' : '3rd Party'}
+                    </span>
+                    <span className="font-semibold text-steel-900">{group.network}</span>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-6 text-sm">
+                  <span className="text-steel-600">
+                    <span className="font-medium text-steel-900">{group.shops.length}</span> locations
+                  </span>
+                  <span className="text-steel-600">
+                    <span className="font-medium text-steel-900">{group.activeShops}</span> active
+                  </span>
+                  <span className="text-steel-600">
+                    <span className="font-medium text-steel-900">{group.totalCapacity}</span> capacity/mo
+                  </span>
+                  <span className="text-steel-600">
+                    ~$<span className="font-medium text-steel-900">{Math.round(group.avgCostPerCar).toLocaleString()}</span>/car
+                  </span>
+                </div>
+              </button>
+
+              {/* Expanded Shop List */}
+              {expandedNetworks.has(group.network) && (
+                <div className="border-t border-steel-200">
+                  <table className="min-w-full divide-y divide-steel-200">
+                    <thead className="bg-steel-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Shop</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Location</th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Capacity</th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Cost/Car</th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Status</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-steel-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-steel-100">
+                      {group.shops.map(shop => (
+                        <tr key={shop.id} className="hover:bg-steel-50">
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-steel-900">{shop.name}</div>
+                              <div className="text-xs text-steel-500 font-mono">{shop.code}</div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-steel-700">
+                            {shop.city && shop.state ? `${shop.city}, ${shop.state}` : shop.location}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center text-sm font-medium text-steel-900">
+                            {shop.capacity}/mo
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center text-sm text-steel-700">
+                            ${(shop.baseCostPerCar || 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">
+                            <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
+                              shop.isActive ? 'bg-green-100 text-green-800' : 'bg-steel-200 text-steel-700'
+                            }`}>
+                              {shop.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                            <button
+                              onClick={() => handleViewShop(shop)}
+                              className="text-steel-600 hover:text-steel-900 mr-2"
+                              title="View"
+                            >
+                              <EyeIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleOpenModal(shop)}
+                              className="text-rail-600 hover:text-rail-900 mr-2"
+                              title="Edit"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(shop.id)}
+                              className="text-rail-600 hover:text-rail-900"
+                              title="Delete"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {filteredNetworkGroups.length === 0 && (
+            <div className="card text-center py-8">
+              <p className="text-steel-500">No networks match your filters</p>
+            </div>
+          )}
+        </div>
       ) : (
+        /* List View */
         <div className="card overflow-hidden p-0">
           <table className="min-w-full divide-y divide-steel-200">
             <thead className="bg-steel-800 text-white">
