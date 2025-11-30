@@ -1502,4 +1502,376 @@ export const masterPlanApi = {
   },
 };
 
+// =============================================================================
+// MASTER PLAN WIZARD API (Gold Standard)
+// =============================================================================
+
+export interface WeeklyCapacityData {
+  id: string;
+  shopId: string;
+  weekKey: string;
+  weekStartDate: string;
+  qualCapacity: number;
+  assignCapacity: number;
+  returnCapacity: number;
+  repairCapacity: number;
+  totalCapacity: number;
+  qualUsed: number;
+  assignUsed: number;
+  returnUsed: number;
+  repairUsed: number;
+  totalUsed: number;
+  isLocked: boolean;
+  shop?: {
+    id: string;
+    name: string;
+    code: string;
+    network: string;
+    isAitxInternal: boolean;
+  };
+  capacityAudits?: Array<{
+    id: string;
+    fieldName: string;
+    previousValue: number;
+    newValue: number;
+    justification: string;
+    changeCategory: string;
+    changedByEmail: string;
+    createdAt: string;
+  }>;
+}
+
+export interface MasterPlanVersionData {
+  id: string;
+  masterPlanId: string;
+  versionNumber: string;
+  versionLabel: string;
+  status: string;
+  isLocked: boolean;
+  lockedAt: string | null;
+  lockedByEmail: string;
+  lockReason: string;
+  publishedAt: string | null;
+  publishedByEmail: string;
+  commitmentCount: number;
+  totalCars: number;
+  pushedToScheduling: boolean;
+  createdAt: string;
+}
+
+export interface IntegrationLogData {
+  id: string;
+  integrationType: string;
+  endpoint: string;
+  method: string;
+  responseStatus: number;
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number;
+  status: string;
+  errorMessage: string;
+  triggerAction: string;
+  entityType: string;
+  entityId: string;
+  triggeredByEmail: string;
+  createdAt: string;
+}
+
+export interface ImportSessionData {
+  id: string;
+  sessionType: string;
+  fileName: string;
+  status: string;
+  currentStep: number;
+  totalRows: number;
+  validRows: number;
+  errorRows: number;
+  warningRows: number;
+  validationErrors: Array<{ row: number; field: string; value: string; message: string; severity: string }>;
+  validationWarnings: Array<{ row: number; field: string; value: string; message: string; severity: string }>;
+  detectedHeaders: string[];
+  fieldMappings: Record<string, string>;
+  unmappedFields: string[];
+  previewData: Record<string, unknown>[];
+  importedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  errorReportUrl: string;
+}
+
+export interface ShopHistoryEntry {
+  id: string;
+  shopId: string;
+  name: string;
+  code: string;
+  version: number;
+  validFrom: string;
+  validTo: string | null;
+  status: string;
+  changeReason: string;
+}
+
+export interface MasterPlanAuditEntry {
+  id: string;
+  action: string;
+  category: 'plan' | 'allocation' | 'capacity' | 'export' | 'import' | 'other';
+  userId: string;
+  userEmail: string;
+  timestamp: string;
+  details: Record<string, unknown>;
+  entityType: string;
+  entityId: string;
+  entityName?: string;
+  source: 'audit_log' | 'capacity_audit' | 'allocation_override';
+}
+
+export const masterPlanWizardApi = {
+  // Weekly Capacity
+  getWeekKeys: async (startDate?: string, weeks?: number): Promise<{ weekKeys: string[] }> => {
+    const response = await apiClient.get('/master-plan-wizard/capacity/weeks', {
+      params: { startDate, weeks },
+    });
+    return response.data;
+  },
+
+  getWeeklyCapacities: async (
+    shopIds: string[],
+    weekKeys: string[]
+  ): Promise<{ capacities: Record<string, Record<string, WeeklyCapacityData>> }> => {
+    const response = await apiClient.get('/master-plan-wizard/capacity', {
+      params: {
+        shopIds: shopIds.join(','),
+        weekKeys: weekKeys.join(','),
+      },
+    });
+    return response.data;
+  },
+
+  updateWeeklyCapacity: async (
+    id: string,
+    data: {
+      fieldName: string;
+      newValue: number;
+      justification: string;
+      changeCategory: string;
+    }
+  ): Promise<{ capacity: WeeklyCapacityData }> => {
+    const response = await apiClient.put(`/master-plan-wizard/capacity/${id}`, data);
+    return response.data;
+  },
+
+  lockWeeklyCapacity: async (id: string): Promise<{ capacity: WeeklyCapacityData }> => {
+    const response = await apiClient.post(`/master-plan-wizard/capacity/${id}/lock`);
+    return response.data;
+  },
+
+  // Master Plan Versions
+  getMasterPlanVersions: async (masterPlanId: string): Promise<{ versions: MasterPlanVersionData[] }> => {
+    const response = await apiClient.get(`/master-plan-wizard/versions/${masterPlanId}`);
+    return response.data;
+  },
+
+  createMasterPlanVersion: async (data: {
+    masterPlanId: string;
+    versionLabel?: string;
+    planSnapshot: object;
+  }): Promise<{ version: MasterPlanVersionData }> => {
+    const response = await apiClient.post('/master-plan-wizard/versions', data);
+    return response.data;
+  },
+
+  lockMasterPlanVersion: async (
+    versionId: string,
+    lockReason: string
+  ): Promise<{ version: MasterPlanVersionData }> => {
+    const response = await apiClient.post(`/master-plan-wizard/versions/${versionId}/lock`, {
+      lockReason,
+    });
+    return response.data;
+  },
+
+  publishMasterPlanVersion: async (
+    versionId: string
+  ): Promise<{ version: MasterPlanVersionData; integrationLog: IntegrationLogData }> => {
+    const response = await apiClient.post(`/master-plan-wizard/versions/${versionId}/publish`);
+    return response.data;
+  },
+
+  // Allocation Operations
+  validateAllocation: async (data: {
+    shopId: string;
+    weekKey: string;
+    workType: string;
+    requestedCount: number;
+  }): Promise<{ valid: boolean; available: number; message?: string }> => {
+    const response = await apiClient.post('/master-plan-wizard/allocations/validate', data);
+    return response.data;
+  },
+
+  bulkAllocateCars: async (data: {
+    carIds: string[];
+    shopId: string;
+    weekKey: string;
+    workType: string;
+    justification: string;
+    overrideReason: string;
+  }): Promise<{ allocated: number }> => {
+    const response = await apiClient.post('/master-plan-wizard/allocations/bulk', data);
+    return response.data;
+  },
+
+  // Integration Monitoring
+  getIntegrationLogs: async (limit?: number): Promise<{ logs: IntegrationLogData[] }> => {
+    const response = await apiClient.get('/master-plan-wizard/integrations', {
+      params: { limit },
+    });
+    return response.data;
+  },
+
+  getIntegrationHealth: async (): Promise<{
+    total: number;
+    successful: number;
+    failed: number;
+    successRate: number;
+    avgDurationMs: number;
+  }> => {
+    const response = await apiClient.get('/master-plan-wizard/integrations/health');
+    return response.data;
+  },
+
+  // Import Sessions (3-Step Workflow)
+  createImportSession: async (data: {
+    sessionType: 'cars' | 'shops' | 'capacity';
+    fileName: string;
+    fileSize: number;
+    rawData: string;
+  }): Promise<{ session: ImportSessionData }> => {
+    const response = await apiClient.post('/master-plan-wizard/import/upload', data);
+    return response.data;
+  },
+
+  validateImportSession: async (sessionId: string): Promise<{ session: ImportSessionData }> => {
+    const response = await apiClient.post(`/master-plan-wizard/import/${sessionId}/validate`);
+    return response.data;
+  },
+
+  updateFieldMappings: async (
+    sessionId: string,
+    mappings: Record<string, string>
+  ): Promise<{ session: ImportSessionData }> => {
+    const response = await apiClient.put(`/master-plan-wizard/import/${sessionId}/mappings`, {
+      mappings,
+    });
+    return response.data;
+  },
+
+  executeImport: async (sessionId: string): Promise<{
+    result: {
+      success: boolean;
+      importedCount: number;
+      updatedCount: number;
+      skippedCount: number;
+      errors: Array<{ row: number; field: string; message: string }>;
+    };
+  }> => {
+    const response = await apiClient.post(`/master-plan-wizard/import/${sessionId}/execute`);
+    return response.data;
+  },
+
+  getImportSession: async (sessionId: string): Promise<{ session: ImportSessionData }> => {
+    const response = await apiClient.get(`/master-plan-wizard/import/${sessionId}`);
+    return response.data;
+  },
+
+  getImportSessions: async (limit?: number): Promise<{ sessions: ImportSessionData[] }> => {
+    const response = await apiClient.get('/master-plan-wizard/import', {
+      params: { limit },
+    });
+    return response.data;
+  },
+
+  getErrorReportUrl: async (sessionId: string): Promise<{ downloadUrl: string }> => {
+    const response = await apiClient.get(`/master-plan-wizard/import/${sessionId}/error-report`);
+    return response.data;
+  },
+
+  // Shop History
+  getShopHistory: async (shopId: string): Promise<{ history: ShopHistoryEntry[] }> => {
+    const response = await apiClient.get(`/master-plan-wizard/shops/${shopId}/history`);
+    return response.data;
+  },
+
+  renameShop: async (
+    shopId: string,
+    data: { newName: string; newCode?: string; changeReason: string }
+  ): Promise<{ shop: unknown }> => {
+    const response = await apiClient.post(`/master-plan-wizard/shops/${shopId}/rename`, data);
+    return response.data;
+  },
+
+  deactivateShop: async (
+    shopId: string,
+    data: { changeReason: string; successorShopId?: string }
+  ): Promise<{ shop: unknown }> => {
+    const response = await apiClient.post(`/master-plan-wizard/shops/${shopId}/deactivate`, data);
+    return response.data;
+  },
+
+  mergeShops: async (data: {
+    sourceShopId: string;
+    targetShopId: string;
+    mergeReason: string;
+  }): Promise<{ success: boolean }> => {
+    const response = await apiClient.post('/master-plan-wizard/shops/merge', data);
+    return response.data;
+  },
+
+  getShopNameAtTime: async (shopId: string, timestamp: string): Promise<{ name: string }> => {
+    const response = await apiClient.get(`/master-plan-wizard/shops/${shopId}/name-at-time`, {
+      params: { timestamp },
+    });
+    return response.data;
+  },
+
+  getPreviousShopNames: async (shopId: string): Promise<{ names: string[] }> => {
+    const response = await apiClient.get(`/master-plan-wizard/shops/${shopId}/previous-names`);
+    return response.data;
+  },
+
+  // Audit Log (Non-Editable System Log)
+  getAuditLogs: async (filters?: {
+    action?: string;
+    userId?: string;
+    entityType?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
+    data: MasterPlanAuditEntry[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }> => {
+    const response = await apiClient.get('/master-plan-wizard/audit', {
+      params: filters,
+    });
+    return response.data;
+  },
+
+  getAuditStatistics: async (): Promise<{
+    last30Days: {
+      planLocks: number;
+      allocationOverrides: number;
+      capacityChanges: number;
+      imports: number;
+      exports: number;
+    };
+  }> => {
+    const response = await apiClient.get('/master-plan-wizard/audit/statistics');
+    return response.data;
+  },
+};
+
 export default apiClient;

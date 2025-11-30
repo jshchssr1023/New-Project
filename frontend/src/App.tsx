@@ -21,6 +21,11 @@ import MasterPlanView from './pages/MasterPlanView';
 import CustomerSchedule from './pages/CustomerSchedule';
 import ShopSchedule from './pages/ShopSchedule';
 
+// Gold Standard Master Plan Wizard components
+import MasterPlanWizard from './pages/MasterPlanWizard';
+import MasterPlanAuditLog from './components/MasterPlanAuditLog';
+import ImportWorkflow from './components/ImportWorkflow';
+
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -73,6 +78,10 @@ export default function App() {
         <Route path="lease-qualification" element={<LeaseQualificationEngine />} />
         <Route path="masterplan" element={<MasterPlanView />} />
         <Route path="masterplan/:id" element={<MasterPlanView />} />
+        <Route path="master-plan-wizard" element={<MasterPlanWizard />} />
+        <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} />
+        <Route path="master-plan-audit" element={<MasterPlanAuditLog />} />
+        <Route path="import-workflow" element={<ImportWorkflow />} />
         <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
         <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
