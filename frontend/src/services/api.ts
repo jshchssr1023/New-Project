@@ -1150,69 +1150,6 @@ export const sopApi = {
 // MASTER PLAN API
 // =============================================================================
 
-export interface MasterPlan {
-  id: string;
-  companyId: string;
-  planName: string;
-  fiscalYear: number;
-  version: number;
-  status: 'draft' | 'under_review' | 'approved' | 'active' | 'archived';
-  baseScenarioId: string | null;
-  approvedAt: string | null;
-  approvedById: string | null;
-  validFrom: string;
-  validTo: string;
-  createdAt: string;
-  updatedAt: string;
-  commitments?: MasterPlanCommitment[];
-}
-
-export interface MasterPlanCommitment {
-  id: string;
-  masterPlanId: string;
-  carId: string;
-  shopId: string;
-  customerId: string;
-  scheduledMonth: string;
-  plannedArrival: string | null;
-  plannedRelease: string | null;
-  workTypes: string;
-  isBundled: boolean;
-  estimatedCost: number | null;
-  priority: number;
-  status: 'committed' | 'scheduled' | 'in_transit' | 'arrived' | 'in_progress' | 'released';
-  notes: string;
-  car: {
-    id: string;
-    railcarNumber: string;
-    carType: string;
-    isTankCar: boolean;
-    commodity: string;
-    customer: string;
-  };
-  shop: {
-    id: string;
-    name: string;
-    code: string;
-    location: string;
-    region: string;
-  };
-  customer: {
-    id: string;
-    name: string;
-    code: string;
-  };
-}
-
-export interface MasterPlanSummary {
-  totalCommitments: number;
-  totalEstimatedCost: number;
-  commitmentsByMonth: Record<string, number>;
-  commitmentsByShop: Record<string, number>;
-  commitmentsByStatus: Record<string, number>;
-  commitmentsByWorkType: Record<string, number>;
-}
-
 export const masterPlansApi = {
   // Get all master plans
   getAll: async (params?: { fiscalYear?: number; status?: string }): Promise<MasterPlan[]> => {

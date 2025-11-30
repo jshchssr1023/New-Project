@@ -137,7 +137,7 @@ export interface Scenario {
   description: string;
   customerFilter: string;
   basePlanId: string | null;
-  status: 'draft' | 'analyzing' | 'completed';
+  status: 'draft' | 'analyzing' | 'completed' | 'approved';
   cars: ScenarioCar[];
   carCount?: number;
   modifications: ScenarioModification[];

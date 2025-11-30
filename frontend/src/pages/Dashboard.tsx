@@ -14,7 +14,7 @@ import {
   CalendarDaysIcon,
   DocumentChartBarIcon,
 } from '@heroicons/react/24/outline';
-import { analyticsApi, carsApi, masterPlansApi } from '../services/api';
+import { analyticsApi, carsApi } from '../services/api';
 import type { AnalyticsData, Car } from '../types';
 import { useCarUpdates, useDashboardUpdates } from '../contexts/WebSocketContext';
 import { useActiveMasterPlan, useMasterPlanSummary } from '../hooks/useQueryWithCompany';

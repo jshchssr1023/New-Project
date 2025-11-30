@@ -15,11 +15,9 @@
 
 import type { Car, Shop } from '../types';
 import type {
-  DemandType,
   AITXShop,
   ThirdPartyNetwork,
   MonthlyAllocation,
-  MonthlyDemandForecast,
   SystemMetrics,
   Priority,
 } from '../types/sop';
