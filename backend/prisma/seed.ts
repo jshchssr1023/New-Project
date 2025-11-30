@@ -1,15 +1,82 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const prisma = new PrismaClient();
 
-// Railcar types and data
+// CSV file path
+const CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
+
+// Helper function to parse CSV
+function parseCSV(content: string): Record<string, string>[] {
+  const lines = content.split('\n').filter(line => line.trim());
+  if (lines.length === 0) return [];
+
+  // Parse header - handle potential BOM and whitespace
+  const headerLine = lines[0].replace(/^\uFEFF/, ''); // Remove BOM if present
+  const headers = headerLine.split(',').map(h => h.trim());
+
+  const records: Record<string, string>[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',').map(v => v.trim());
+    const record: Record<string, string> = {};
+
+    headers.forEach((header, index) => {
+      record[header] = values[index] || '';
+    });
+
+    records.push(record);
+  }
+
+  return records;
+}
+
+// Helper function to parse date from various formats
+function parseDate(dateStr: string): Date | null {
+  if (!dateStr || dateStr.trim() === '') return null;
+
+  // Try parsing various date formats
+  const cleaned = dateStr.trim();
+
+  // Try MM/DD/YYYY or M/D/YYYY
+  const mdyMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (mdyMatch) {
+    const month = parseInt(mdyMatch[1]) - 1;
+    const day = parseInt(mdyMatch[2]);
+    let year = parseInt(mdyMatch[3]);
+    if (year < 100) year += 2000; // Convert 2-digit year
+    return new Date(year, month, day);
+  }
+
+  // Try YYYY-MM-DD
+  const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+  }
+
+  // Fallback to Date.parse
+  const parsed = Date.parse(cleaned);
+  if (!isNaN(parsed)) {
+    return new Date(parsed);
+  }
+
+  return null;
+}
+
+// Helper function to parse boolean
+function parseBoolean(value: string): boolean {
+  const v = value.toLowerCase().trim();
+  return v === 'yes' || v === 'y' || v === 'true' || v === '1';
+}
+
+// Fallback data for random generation if CSV not found
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const commodities = ['Crude Oil', 'Ethanol', 'Corn', 'Wheat', 'Coal', 'Lumber', 'Steel', 'Chemicals', 'Fertilizer', 'Plastics'];
 const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
 const reasonsShopped = ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'];
-const carStatuses = ['available', 'in_service', 'scheduled', 'retired'];
 const qualificationTypes = ['full', 'partial', ''];
 const planStatuses = ['planned', 'in_progress', 'completed', 'pending', ''];
 
@@ -54,13 +121,30 @@ const shopData = [
 async function main() {
   console.log('🌱 Starting seed...');
 
-  // Clear existing data
+  // Clear existing data (order matters due to foreign key constraints)
+  // Delete in order from leaf tables to root tables
+
+  // Qualification planning engine tables (deepest leaves first)
+  await prisma.qualificationPlanDocument.deleteMany();
+  await prisma.qualificationPlanAssignment.deleteMany();
+  await prisma.qualificationScenario.deleteMany();
+  await prisma.qualificationPlanEvent.deleteMany();
+  await prisma.leaseQualificationEntry.deleteMany();
+  await prisma.leaseContract.deleteMany();
+
+  // S&OP tables
+  await prisma.sOPAssignment.deleteMany();
+  await prisma.shopCapacitySlot.deleteMany();
+
+  // Core planning tables
   await prisma.carShopEligibility.deleteMany();
   await prisma.scenarioModification.deleteMany();
   await prisma.scenarioCar.deleteMany();
   await prisma.scenario.deleteMany();
   await prisma.planAssignment.deleteMany();
   await prisma.plan.deleteMany();
+
+  // Master data tables
   await prisma.car.deleteMany();
   await prisma.shop.deleteMany();
   await prisma.shopRule.deleteMany();
@@ -123,47 +207,48 @@ async function main() {
 
   console.log('✓ Created users: admin, planner, viewer');
 
-  // Create 25 shops with actual data
-  const shops = await Promise.all(
-    shopData.map(async (shop, index) => {
-      // Convert annual capacity to monthly (divide by 12)
-      const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
-      const isAitx = shop.network === 'AITX-Own';
-      // Tank qualified based on certifications (shops with Qualification cert are tank qualified)
-      const tankQualified = shop.certifications.includes('Qualification');
-      // Network tier: AITX = 1 (preferred), 3P varies by index
-      const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
+  // Create 25 shops with actual data (sequential to avoid SQLite crashes)
+  const shops = [];
+  for (let index = 0; index < shopData.length; index++) {
+    const shop = shopData[index];
+    // Convert annual capacity to monthly (divide by 12)
+    const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
+    const isAitx = shop.network === 'AITX-Own';
+    // Tank qualified based on certifications (shops with Qualification cert are tank qualified)
+    const tankQualified = shop.certifications.includes('Qualification');
+    // Network tier: AITX = 1 (preferred), 3P varies by index
+    const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
 
-      return prisma.shop.create({
-        data: {
-          id: uuidv4(),
-          name: shop.name,
-          code: shop.code,
-          location: `${shop.city}, ${shop.state}`,
-          city: shop.city,
-          state: shop.state,
-          region: shop.region,
-          network: shop.network,
-          isAitxInternal: isAitx,
-          tankQualified,
-          networkTier,
-          shopStatus: 'active',
-          capacity: monthlyCapacity,
-          utilizationTarget: 0.90,
-          baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
-          laborRate: isAitx ? 95 : 75,
-          costIndex: isAitx ? 1.379 : 1.0,
-          baseTurnTime: shop.turnTime,
-          certifications: JSON.stringify(shop.certifications.split(', ')),
-          contactName: shop.contact.split(' (')[0],
-          contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
-          notes: shop.notes,
-          isActive: true,
-          companyId: company.id,
-        },
-      });
-    })
-  );
+    const createdShop = await prisma.shop.create({
+      data: {
+        id: uuidv4(),
+        name: shop.name,
+        code: shop.code,
+        location: `${shop.city}, ${shop.state}`,
+        city: shop.city,
+        state: shop.state,
+        region: shop.region,
+        network: shop.network,
+        isAitxInternal: isAitx,
+        tankQualified,
+        networkTier,
+        shopStatus: 'active',
+        capacity: monthlyCapacity,
+        utilizationTarget: 0.90,
+        baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
+        laborRate: isAitx ? 95 : 75,
+        costIndex: isAitx ? 1.379 : 1.0,
+        baseTurnTime: shop.turnTime,
+        certifications: JSON.stringify(shop.certifications.split(', ')),
+        contactName: shop.contact.split(' (')[0],
+        contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
+        notes: shop.notes,
+        isActive: true,
+        companyId: company.id,
+      },
+    });
+    shops.push(createdShop);
+  }
 
   console.log(`✓ Created ${shops.length} shops`);
 
@@ -171,16 +256,102 @@ async function main() {
   const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
   const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
 
-  // Create 200 railcars with new car database fields
-  const cars = await Promise.all(
-    Array.from({ length: 200 }, (_, i) => {
+  // Create railcars - from CSV if available, otherwise generate random data
+  const cars = [];
+
+  // Try to load from CSV file
+  let csvRecords: Record<string, string>[] = [];
+  if (fs.existsSync(CSV_FILE_PATH)) {
+    console.log(`📄 Loading cars from CSV: ${CSV_FILE_PATH}`);
+    const csvContent = fs.readFileSync(CSV_FILE_PATH, 'utf-8');
+    csvRecords = parseCSV(csvContent);
+    console.log(`   Found ${csvRecords.length} records in CSV`);
+  } else {
+    console.log(`⚠️  CSV file not found at ${CSV_FILE_PATH}, generating random data...`);
+  }
+
+  if (csvRecords.length > 0) {
+    // Import from CSV
+    for (let i = 0; i < csvRecords.length; i++) {
+      const record = csvRecords[i];
+
+      // Map CSV columns to database fields
+      // CSV: Car Init, Car No, Car Type, Commodity, Lessee, Contract #, Cont Exp, Jacketed?, Lined?, Build Yr, Qual Type, Tank Qual, Tank Qual Due, Perf Sched, Plan Status
+      const carInit = record['Car Init'] || 'AITX';
+      const carNo = record['Car No'] || String(10000 + i);
+      const railcarNumber = `${carInit}${carNo}`;
+
+      const carType = record['Car Type'] || 'Tank Car';
+      const isTankCar = carType.toLowerCase().includes('tank');
+      const commodity = record['Commodity'] || '';
+      const customer = record['Lessee'] || '';
+      const contractNumber = record['Contract #'] || '';
+      const contractExpiration = parseDate(record['Cont Exp']);
+      const isJacketed = parseBoolean(record['Jacketed?'] || '');
+      const isLined = parseBoolean(record['Lined?'] || '');
+      const buildYear = parseInt(record['Build Yr']) || null;
+      const qualificationType = record['Qual Type'] || '';
+      const tankQualified = parseBoolean(record['Tank Qual'] || '');
+      const tankQualDueDate = parseDate(record['Tank Qual Due']);
+      const performScheduled = parseBoolean(record['Perf Sched'] || '');
+      const planStatus = record['Plan Status'] || '';
+
+      // Generate some reasonable defaults for fields not in CSV
+      const region = regions[Math.floor(Math.random() * regions.length)];
+      const status = 'available'; // Default status
+
+      const createdCar = await prisma.car.create({
+        data: {
+          id: uuidv4(),
+          railcarNumber,
+          carType,
+          isTankCar,
+          commodity,
+          customer,
+          projectNumber: '',
+          reasonShopped: isTankCar && tankQualDueDate ? 'qualification' : '',
+          status,
+          currentLocation: locations[Math.floor(Math.random() * locations.length)],
+          homeRegion: region,
+          originRegion: region,
+          projectedCost: null,
+          daysInShop: 0,
+          shopEntryDate: null,
+          lastServiceDate: null,
+          nextServiceDue: tankQualDueDate, // Use tank qual due as next service due
+          notes: '',
+          contractNumber,
+          contractExpiration,
+          isJacketed,
+          isLined,
+          buildYear,
+          qualificationType,
+          tankQualified,
+          tankQualDueDate,
+          performScheduled,
+          planStatus,
+          companyId: company.id,
+        },
+      });
+      cars.push(createdCar);
+
+      // Log progress every 100 cars
+      if ((i + 1) % 100 === 0) {
+        console.log(`  ... imported ${i + 1}/${csvRecords.length} railcars from CSV`);
+      }
+    }
+    console.log(`✓ Imported ${cars.length} railcars from CSV`);
+  } else {
+    // Generate random data as fallback
+    const carStatusesList = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
+    const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05];
+
+    for (let i = 0; i < 200; i++) {
       const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
       const isTankCar = carType === 'Tank Car';
       const commodity = commodities[Math.floor(Math.random() * commodities.length)];
       const customer = customers[Math.floor(Math.random() * customers.length)];
       const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
-      const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05]; // available, in_service, in_shop, scheduled, retired
-      const carStatuses = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
       const rand = Math.random();
       let statusIndex = 0;
       let cumulative = 0;
@@ -191,33 +362,37 @@ async function main() {
           break;
         }
       }
-      const status = carStatuses[statusIndex];
+      const status = carStatusesList[statusIndex];
       const region = regions[Math.floor(Math.random() * regions.length)];
       const nextServiceDue = new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000);
-
-      // Some cars overdue (for testing red highlighting)
       const isOverdue = Math.random() > 0.85;
       const adjustedNextServiceDue = isOverdue
-        ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000) // overdue by up to 30 days
+        ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000)
         : nextServiceDue;
-
-      // Days in shop for in_shop status
       const daysInShop = status === 'in_shop' ? Math.floor(Math.random() * 20) + 1 : 0;
-      const shopEntryDate = status === 'in_shop'
-        ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000)
-        : null;
-
-      // New car database fields
-      const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000); // Up to 2 years
-      const buildYear = 1990 + Math.floor(Math.random() * 35); // 1990-2024
-      const isJacketed = isTankCar ? Math.random() > 0.5 : false; // Only tank cars can be jacketed
-      const isLined = isTankCar ? Math.random() > 0.6 : false; // Only tank cars can be lined
+      const shopEntryDate = status === 'in_shop' ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000) : null;
+      const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000);
+      const buildYear = 1990 + Math.floor(Math.random() * 35);
+      const isJacketed = isTankCar ? Math.random() > 0.5 : false;
+      const isLined = isTankCar ? Math.random() > 0.6 : false;
       const qualificationType = qualificationTypes[Math.floor(Math.random() * qualificationTypes.length)];
-      const tankQualified = isTankCar ? Math.random() > 0.2 : false; // Most tank cars are tank qualified
+      const tankQualified = isTankCar ? Math.random() > 0.2 : false;
       const performScheduled = Math.random() > 0.7;
       const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
 
-      return prisma.car.create({
+      let tankQualDueDate: Date | null = null;
+      if (isTankCar) {
+        const qualRand = Math.random();
+        if (qualRand < 0.2) {
+          tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
+        } else if (qualRand < 0.5) {
+          tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
+        } else {
+          tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
+        }
+      }
+
+      const createdCar = await prisma.car.create({
         data: {
           id: uuidv4(),
           railcarNumber: `AITX${String(100000 + i).slice(1)}`,
@@ -237,7 +412,6 @@ async function main() {
           lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
           nextServiceDue: adjustedNextServiceDue,
           notes: Math.random() > 0.7 ? 'Priority service required' : '',
-          // New car database fields
           contractNumber: `CTR-${2024}-${String(10000 + i)}`,
           contractExpiration,
           isJacketed,
@@ -245,15 +419,20 @@ async function main() {
           buildYear,
           qualificationType,
           tankQualified,
+          tankQualDueDate,
           performScheduled,
           planStatus,
           companyId: company.id,
         },
       });
-    })
-  );
+      cars.push(createdCar);
 
-  console.log(`✓ Created ${cars.length} railcars`);
+      if ((i + 1) % 50 === 0) {
+        console.log(`  ... created ${i + 1}/200 railcars`);
+      }
+    }
+    console.log(`✓ Created ${cars.length} railcars (random data)`);
+  }
 
   // Create shop eligibility records for cars
   // Each car will be eligible for a random subset of shops based on region and tank qualification
@@ -515,8 +694,19 @@ async function main() {
   for (const shop of shops.slice(0, 10)) {
     for (const monthKey of capacityMonths) {
       // Qualification slots
-      await prisma.shopCapacitySlot.create({
-        data: {
+      await prisma.shopCapacitySlot.upsert({
+        where: {
+          shopId_monthKey_slotType: {
+            shopId: shop.id,
+            monthKey,
+            slotType: 'qualification',
+          },
+        },
+        update: {
+          capacity: shop.capacity,
+          used: Math.floor(Math.random() * shop.capacity * 0.3),
+        },
+        create: {
           id: uuidv4(),
           shopId: shop.id,
           monthKey,
@@ -527,8 +717,19 @@ async function main() {
       });
 
       // Assignment slots
-      await prisma.shopCapacitySlot.create({
-        data: {
+      await prisma.shopCapacitySlot.upsert({
+        where: {
+          shopId_monthKey_slotType: {
+            shopId: shop.id,
+            monthKey,
+            slotType: 'assignment',
+          },
+        },
+        update: {
+          capacity: Math.floor(shop.capacity * 0.8),
+          used: Math.floor(Math.random() * shop.capacity * 0.2),
+        },
+        create: {
           id: uuidv4(),
           shopId: shop.id,
           monthKey,
@@ -539,8 +740,19 @@ async function main() {
       });
 
       // Repair slots
-      await prisma.shopCapacitySlot.create({
-        data: {
+      await prisma.shopCapacitySlot.upsert({
+        where: {
+          shopId_monthKey_slotType: {
+            shopId: shop.id,
+            monthKey,
+            slotType: 'repair',
+          },
+        },
+        update: {
+          capacity: Math.floor(shop.capacity * 0.4),
+          used: Math.floor(Math.random() * shop.capacity * 0.1),
+        },
+        create: {
           id: uuidv4(),
           shopId: shop.id,
           monthKey,

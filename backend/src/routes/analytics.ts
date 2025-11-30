@@ -163,7 +163,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         status: 'pending',
       },
       include: {
-        car: { select: { id: true, vehicleNumber: true, railcarNumber: true } },
+        car: { select: { id: true, railcarNumber: true } },
         shop: { select: { name: true } },
       },
       take: 10,
@@ -172,8 +172,8 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
 
     const upcomingServices = upcomingAssignments.map((a) => ({
       carId: a.car.id,
-      vehicleNumber: a.car.railcarNumber || a.car.vehicleNumber,
-      railcarNumber: a.car.railcarNumber || a.car.vehicleNumber,
+      vehicleNumber: a.car.railcarNumber,
+      railcarNumber: a.car.railcarNumber,
       scheduledDate: `${a.scheduledMonth}-15`,
       shopName: a.shop.name,
     }));
