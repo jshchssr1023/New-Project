@@ -12,9 +12,7 @@ import {
   XMarkIcon,
   CheckIcon,
   BuildingStorefrontIcon,
-  CalendarIcon,
   AdjustmentsHorizontalIcon,
-  DocumentCheckIcon,
   RocketLaunchIcon,
 } from '@heroicons/react/24/outline';
 import { scenariosApi, plansApi, carsApi, shopsApi } from '../services/api';

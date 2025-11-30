@@ -137,7 +137,7 @@ export interface Scenario {
   description: string;
   customerFilter: string;
   basePlanId: string | null;
-  status: 'draft' | 'analyzing' | 'completed';
+  status: 'draft' | 'analyzing' | 'completed' | 'approved';
   cars: ScenarioCar[];
   carCount?: number;
   modifications: ScenarioModification[];
@@ -319,4 +319,85 @@ export interface ReportData {
   }>;
   recipientType: RecipientType;
   generatedAt: string;
+}
+
+// =============================================================================
+// MASTERPLAN TYPES
+// =============================================================================
+
+export type MasterPlanStatus = 'draft' | 'under_review' | 'approved' | 'active' | 'archived';
+export type CommitmentStatus = 'committed' | 'scheduled' | 'in_transit' | 'arrived' | 'in_progress' | 'released';
+export type WorkType = 'qualification' | 'assignment' | 'return' | 'repair' | 'maintenance';
+
+export interface MasterPlan {
+  id: string;
+  companyId: string;
+  planName: string;
+  fiscalYear: number;
+  version: number;
+  status: MasterPlanStatus;
+  baseScenarioId: string | null;
+  approvedAt: string | null;
+  approvedById: string | null;
+  validFrom: string;
+  validTo: string;
+  createdAt: string;
+  updatedAt: string;
+  commitments?: MasterPlanCommitment[];
+  company?: { id: string; name: string; code: string };
+  baseScenario?: { id: string; name: string; projectNumber: string } | null;
+  approvedBy?: { id: string; firstName: string; lastName: string; email: string } | null;
+  _count?: { commitments: number };
+}
+
+export interface MasterPlanCommitment {
+  id: string;
+  masterPlanId: string;
+  carId: string;
+  shopId: string;
+  customerId: string;
+  scheduledMonth: string;
+  plannedArrival: string | null;
+  plannedRelease: string | null;
+  workTypes: string;
+  isBundled: boolean;
+  estimatedCost: number | null;
+  priority: number;
+  status: CommitmentStatus;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+  car: {
+    id: string;
+    railcarNumber: string;
+    carType: string;
+    isTankCar: boolean;
+    commodity: string;
+    customer: string;
+  };
+  shop: {
+    id: string;
+    name: string;
+    code: string;
+    location: string;
+    region: string;
+  };
+  customer: {
+    id: string;
+    name: string;
+    code: string;
+  };
+}
+
+export interface MasterPlanSummary {
+  totalCommitments: number;
+  totalEstimatedCost: number;
+  commitmentsByMonth: Record<string, number>;
+  commitmentsByShop: Record<string, number>;
+  commitmentsByStatus: Record<string, number>;
+  commitmentsByWorkType: Record<string, number>;
+}
+
+export interface MasterPlanWithCommitments extends MasterPlan {
+  commitments: MasterPlanCommitment[];
 }

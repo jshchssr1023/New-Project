@@ -10,11 +10,16 @@ type SortDirection = 'asc' | 'desc' | null;
 
 // Import result type matching API response
 interface ImportResults {
-  status: 'success' | 'partial_success' | 'failed';
+  status: 'success' | 'partial_success' | 'failed' | 'mapping_required';
   newCarsAdded: number;
   existingCarsUpdated: number;
   failedRows: number;
   errors: { row: number; reason: string }[];
+  warnings?: { row: number; message: string }[];
+  detected_headers?: string[];
+  missing_required_fields?: string[];
+  unmapped_headers?: string[];
+  suggested_mappings?: Record<string, string[]>;
 }
 
 // Softer, muted status colors for better visual comfort
@@ -60,7 +65,7 @@ const carTypeOptions = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', '
 const reasonShoppedOptions = ['Annual Inspection', 'Wheel Repair', 'Tank Cleaning', 'Valve Replacement', 'Frame Repair', 'Safety Retrofit', 'DOT Compliance', 'Corrosion Repair', 'Coupler Replacement', 'Brake System'];
 
 export default function CarManagement() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [cars, setCars] = useState<Car[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);

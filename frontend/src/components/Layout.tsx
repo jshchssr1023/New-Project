@@ -6,7 +6,6 @@ import {
   HomeIcon,
   TruckIcon,
   BuildingStorefrontIcon,
-  CalendarDaysIcon,
   ArrowsRightLeftIcon,
   BeakerIcon,
   ChartBarIcon,
@@ -19,6 +18,7 @@ import {
   ArrowUpTrayIcon,
   BellAlertIcon,
   KeyIcon,
+  DocumentChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -27,7 +27,7 @@ const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon },
   { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
-  { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
+  { name: 'Master Plan', href: '/masterplan', icon: DocumentChartBarIcon },
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
   { name: 'Lease Qualification', href: '/lease-qualification', icon: ClipboardDocumentCheckIcon },
