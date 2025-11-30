@@ -68,11 +68,12 @@ const reasonShoppedOptions = ['Annual Inspection', 'Wheel Repair', 'Tank Cleanin
 export default function CarManagement() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { selectMultiple, clearSelection, selectedCarIds: globalSelectedIds, hasSelection: hasGlobalSelection } = useCarSelection();
+  const { selectMultiple, clearSelection, selectedCarIds: globalSelectedIds, deselectMultiple } = useCarSelection();
   const [cars, setCars] = useState<Car[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCar, setEditingCar] = useState<Car | null>(null);
+  // Local selection state - kept in sync with global context
   const [selectedCars, setSelectedCars] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [carTypeFilter, setCarTypeFilter] = useState<string>('');
@@ -118,6 +119,13 @@ export default function CarManagement() {
   useEffect(() => {
     loadCars();
   }, [page, statusFilter, carTypeFilter, customerFilter, reasonFilter]);
+
+  // Sync local selection state from global context on mount
+  useEffect(() => {
+    if (globalSelectedIds.size > 0) {
+      setSelectedCars(new Set(globalSelectedIds));
+    }
+  }, []);
 
   const loadCars = async () => {
     try {
@@ -224,6 +232,7 @@ export default function CarManagement() {
     try {
       await carsApi.bulkUpdate(Array.from(selectedCars), { status });
       setSelectedCars(new Set());
+      clearSelection(); // Clear global selection too
       loadCars();
     } catch (error) {
       console.error('Failed to update railcars:', error);
@@ -236,6 +245,7 @@ export default function CarManagement() {
     try {
       await carsApi.bulkDelete(Array.from(selectedCars));
       setSelectedCars(new Set());
+      clearSelection(); // Clear global selection too
       loadCars();
     } catch (error) {
       console.error('Failed to delete railcars:', error);
@@ -538,20 +548,33 @@ export default function CarManagement() {
   const uniqueCustomers = [...new Set(cars.map(c => c.customer).filter(Boolean))].sort();
 
   const toggleCarSelection = (id: string) => {
+    const car = cars.find(c => c.id === id);
     const newSelected = new Set(selectedCars);
     if (newSelected.has(id)) {
       newSelected.delete(id);
+      // Also update global context
+      deselectMultiple([id]);
     } else {
       newSelected.add(id);
+      // Also update global context
+      if (car) {
+        selectMultiple([car]);
+      }
     }
     setSelectedCars(newSelected);
   };
 
   const toggleAllSelection = () => {
     if (selectedCars.size === filteredCars.length && filteredCars.length > 0) {
+      // Deselect all - update both local and global
+      const idsToDeselect = Array.from(selectedCars);
       setSelectedCars(new Set());
+      deselectMultiple(idsToDeselect);
     } else {
-      setSelectedCars(new Set(filteredCars.map((c) => c.id)));
+      // Select all filtered cars - update both local and global
+      const newSelection = new Set(filteredCars.map((c) => c.id));
+      setSelectedCars(newSelection);
+      selectMultiple(filteredCars);
     }
   };
 
@@ -725,7 +748,10 @@ export default function CarManagement() {
               Delete
             </button>
             <button
-              onClick={() => setSelectedCars(new Set())}
+              onClick={() => {
+                setSelectedCars(new Set());
+                clearSelection();
+              }}
               className="text-sm text-steel-500 hover:text-steel-700"
             >
               Clear

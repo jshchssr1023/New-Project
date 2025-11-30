@@ -28,20 +28,30 @@ import { useCarSelection } from '../contexts/CarSelectionContext';
 import NotificationBell from './NotificationBell';
 
 
-const navigation = [
+// Operations & Planning - Core scheduling/logistics functions
+const operationsNavigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon },
   { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: 'Master Plan', href: '/masterplan', icon: DocumentChartBarIcon },
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
-  { name: 'Lease Qualification', href: '/lease-qualification', icon: ClipboardDocumentCheckIcon },
-  { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
-  { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
-  { name: 'Import/Export', href: '/import-export', icon: ArrowUpTrayIcon },
 ];
 
+// Financial & Qualification - Specific functional areas
+const financialNavigation = [
+  { name: 'Lease Qualification', href: '/lease-qualification', icon: ClipboardDocumentCheckIcon },
+];
+
+// Reporting & Rules - Data review and configuration
+const reportingNavigation = [
+  { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
+  { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
+];
+
+// System Administration - System and user management (admin only)
 const adminNavigation = [
+  { name: 'Import/Export', href: '/import-export', icon: ArrowUpTrayIcon },
   { name: 'Users', href: '/users', icon: UsersIcon },
   { name: 'Webhooks', href: '/webhooks', icon: BellAlertIcon },
   { name: 'API Keys', href: '/api-keys', icon: KeyIcon },
@@ -58,7 +68,7 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { hasSelection, selectionCount, selectedCars, clearSelection, getSelectionSummary } = useCarSelection();
+  const { hasSelection, clearSelection, getSelectionSummary } = useCarSelection();
 
   const handleLogout = async () => {
     await logout();
@@ -74,9 +84,13 @@ export default function Layout() {
     }
   }, [globalSearch, navigate]);
 
-  const allNavigation = user?.role === 'admin'
-    ? [...navigation, ...adminNavigation]
-    : navigation;
+  // Build navigation sections based on user role
+  const navSections = [
+    { title: 'Operations & Planning', items: operationsNavigation },
+    { title: 'Financial', items: financialNavigation },
+    { title: 'Reporting & Rules', items: reportingNavigation },
+    ...(user?.role === 'admin' ? [{ title: 'Administration', items: adminNavigation }] : []),
+  ];
 
   return (
     <div className="min-h-screen bg-steel-50">
@@ -115,28 +129,33 @@ export default function Layout() {
                     />
                   </div>
                   <nav className="flex flex-1 flex-col">
-                    <ul role="list" className="flex flex-1 flex-col gap-y-7">
-                      <li>
-                        <ul role="list" className="-mx-2 space-y-1">
-                          {allNavigation.map((item) => (
-                            <li key={item.name}>
-                              <Link
-                                to={item.href}
-                                onClick={() => setSidebarOpen(false)}
-                                className={classNames(
-                                  location.pathname === item.href
-                                    ? 'bg-rail-600 text-white'
-                                    : 'text-steel-300 hover:bg-steel-700 hover:text-white',
-                                  'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6'
-                                )}
-                              >
-                                <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
-                                {item.name}
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                      </li>
+                    <ul role="list" className="flex flex-1 flex-col gap-y-4">
+                      {navSections.map((section) => (
+                        <li key={section.title}>
+                          <div className="text-xs font-semibold leading-6 text-steel-400 uppercase tracking-wider px-2 mb-1">
+                            {section.title}
+                          </div>
+                          <ul role="list" className="-mx-2 space-y-1">
+                            {section.items.map((item) => (
+                              <li key={item.name}>
+                                <Link
+                                  to={item.href}
+                                  onClick={() => setSidebarOpen(false)}
+                                  className={classNames(
+                                    location.pathname === item.href
+                                      ? 'bg-rail-600 text-white'
+                                      : 'text-steel-300 hover:bg-steel-700 hover:text-white',
+                                    'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6'
+                                  )}
+                                >
+                                  <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+                                  {item.name}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      ))}
                     </ul>
                   </nav>
                 </div>
@@ -157,27 +176,32 @@ export default function Layout() {
             />
           </div>
           <nav className="flex flex-1 flex-col">
-            <ul role="list" className="flex flex-1 flex-col gap-y-7">
-              <li>
-                <ul role="list" className="-mx-2 space-y-1">
-                  {allNavigation.map((item) => (
-                    <li key={item.name}>
-                      <Link
-                        to={item.href}
-                        className={classNames(
-                          location.pathname === item.href
-                            ? 'bg-rail-600 text-white'
-                            : 'text-steel-300 hover:bg-steel-700 hover:text-white',
-                          'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6'
-                        )}
-                      >
-                        <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
-                        {item.name}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </li>
+            <ul role="list" className="flex flex-1 flex-col gap-y-4">
+              {navSections.map((section) => (
+                <li key={section.title}>
+                  <div className="text-xs font-semibold leading-6 text-steel-400 uppercase tracking-wider px-2 mb-1">
+                    {section.title}
+                  </div>
+                  <ul role="list" className="-mx-2 space-y-1">
+                    {section.items.map((item) => (
+                      <li key={item.name}>
+                        <Link
+                          to={item.href}
+                          className={classNames(
+                            location.pathname === item.href
+                              ? 'bg-rail-600 text-white'
+                              : 'text-steel-300 hover:bg-steel-700 hover:text-white',
+                            'group flex gap-x-3 rounded-md p-2 text-sm font-medium leading-6'
+                          )}
+                        >
+                          <item.icon className="h-6 w-6 shrink-0" aria-hidden="true" />
+                          {item.name}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
             </ul>
           </nav>
         </div>
