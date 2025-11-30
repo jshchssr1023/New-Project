@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './services/db';
 import authRoutes from './routes/auth';
 import carsRoutes from './routes/cars';
 import shopsRoutes from './routes/shops';
@@ -19,7 +19,6 @@ import websocketService from './services/websocketService';
 
 const app = express();
 const httpServer = createServer(app);
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 
 // Initialize WebSocket

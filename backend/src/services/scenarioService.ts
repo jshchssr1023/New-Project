@@ -10,7 +10,7 @@
  * @version 1.0.0
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 
 // Type definitions for new models (until prisma generate is run)
 interface Scenario {
@@ -143,7 +143,7 @@ export interface CreateScenarioInput {
  * ScenarioService - Manages S&OP planning scenarios
  */
 export class ScenarioService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: any) {}
 
   // ===========================================================================
   // SCENARIO CRUD OPERATIONS
@@ -646,7 +646,7 @@ export class ScenarioService {
 /**
  * Create a scenario service instance
  */
-export function createScenarioService(prisma: PrismaClient): ScenarioService {
+export function createScenarioService(prisma: any): ScenarioService {
   return new ScenarioService(prisma);
 }
 

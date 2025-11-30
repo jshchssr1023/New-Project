@@ -13,7 +13,6 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import {
   LeaseQualificationEngine,
@@ -36,13 +35,13 @@ router.use(authenticate);
 // =============================================================================
 
 function getEngine(req: AuthRequest): LeaseQualificationEngine {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const companyId = req.user!.companyId;
   return createLeaseQualificationEngine(prisma, companyId);
 }
 
 function getDocGenerator(req: AuthRequest): QualificationDocumentGenerator {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const companyId = req.user!.companyId;
   return createQualificationDocumentGenerator(prisma, companyId);
 }
@@ -136,7 +135,7 @@ router.get('/capacity', async (req: AuthRequest, res: Response) => {
  */
 router.get('/scenarios', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
 
     const scenarios = await prisma.qualificationScenario.findMany({
@@ -165,7 +164,7 @@ router.get('/scenarios', async (req: AuthRequest, res: Response) => {
  */
 router.get('/scenarios/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { id } = req.params;
 
@@ -548,7 +547,7 @@ router.post('/documents/shop-plan', async (req: AuthRequest, res: Response) => {
  */
 router.get('/documents', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { scenarioId, documentType } = req.query;
 
@@ -591,7 +590,7 @@ router.get('/documents', async (req: AuthRequest, res: Response) => {
  */
 router.get('/documents/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { id } = req.params;
 
@@ -623,7 +622,7 @@ router.get('/documents/:id', async (req: AuthRequest, res: Response) => {
  */
 router.get('/documents/:id/markdown', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { id } = req.params;
 
@@ -656,7 +655,7 @@ router.get('/documents/:id/markdown', async (req: AuthRequest, res: Response) =>
  */
 router.get('/contracts', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { status, customerId, limit } = req.query;
 
@@ -691,7 +690,7 @@ router.get('/contracts', async (req: AuthRequest, res: Response) => {
  */
 router.post('/contracts', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const {
       carId,
@@ -754,7 +753,7 @@ router.post('/contracts', async (req: AuthRequest, res: Response) => {
  */
 router.put('/contracts/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { id } = req.params;
     const updates = req.body;
@@ -799,7 +798,7 @@ router.put('/contracts/:id', async (req: AuthRequest, res: Response) => {
  */
 router.post('/contracts/:id/confirm-release', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { id } = req.params;
     const { releaseDate, delayDays } = req.body;
@@ -835,7 +834,7 @@ router.post('/contracts/:id/confirm-release', async (req: AuthRequest, res: Resp
  */
 router.get('/queue', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { status, targetMonth, shopId, customerId, limit } = req.query;
 
@@ -876,7 +875,7 @@ router.get('/queue', async (req: AuthRequest, res: Response) => {
  */
 router.put('/queue/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const prisma: PrismaClient = req.app.locals.prisma;
+    const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
     const { id } = req.params;
     const updates = req.body;

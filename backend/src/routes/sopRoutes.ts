@@ -11,7 +11,6 @@
  */
 
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { ScenarioService, createScenarioService } from '../services/scenarioService';
 
@@ -28,7 +27,7 @@ router.use(authenticate);
  * Get ScenarioService instance from request
  */
 function getScenarioService(req: AuthRequest): ScenarioService {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   return createScenarioService(prisma);
 }
 
@@ -282,7 +281,7 @@ router.delete('/scenarios/:id/assignments/:aid', async (req: AuthRequest, res: R
  * GET /api/sop/shops - List all shops with capacity
  */
 router.get('/shops', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const shops = await prisma.shop.findMany({
@@ -322,7 +321,7 @@ router.get('/shops', async (req: AuthRequest, res: Response) => {
  * GET /api/sop/shops/:id/capacity - Get shop capacity for a month
  */
 router.get('/shops/:id/capacity', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { month } = req.query;
 
   try {
@@ -411,7 +410,7 @@ router.get('/shops/:id/capacity', async (req: AuthRequest, res: Response) => {
  * POST /api/sop/capacity-check - Run capacity pre-check for a project
  */
 router.post('/capacity-check', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { carIds, targetShops, startMonth, flowRatePerWeek } = req.body;
 
   if (!carIds || !Array.isArray(carIds) || carIds.length === 0) {
@@ -544,7 +543,7 @@ router.post('/capacity-check', async (req: AuthRequest, res: Response) => {
  * GET /api/sop/allocations - Get saved S&OP monthly allocations
  */
 router.get('/allocations', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     // Get all SOPAssignments grouped by shop and month
@@ -600,7 +599,7 @@ router.get('/allocations', async (req: AuthRequest, res: Response) => {
  * It creates a baseline scenario if one doesn't exist.
  */
 router.post('/allocations', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { allocations, shopCapacities } = req.body;
 
   // allocations format: { monthKey: { shopId: numberOfCars } }
@@ -740,7 +739,7 @@ router.post('/allocations', async (req: AuthRequest, res: Response) => {
  * PUT /api/sop/allocations/capacity - Update shop capacities
  */
 router.put('/allocations/capacity', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { shopCapacities } = req.body;
 
   if (!shopCapacities || typeof shopCapacities !== 'object') {

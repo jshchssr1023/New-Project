@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -8,7 +7,7 @@ router.use(authenticate);
 
 // Get all plans
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { status } = req.query;
 
   try {
@@ -44,7 +43,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
 // Get plan by ID
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -76,7 +75,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // Get plan grid data
 router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -135,7 +134,7 @@ router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
 
 // Create plan
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { name, description, startDate, endDate } = req.body;
 
   try {
@@ -162,7 +161,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // Update plan
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { name, description, startDate, endDate, status } = req.body;
 
   try {
@@ -199,7 +198,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // Delete plan
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.plan.deleteMany({
@@ -223,7 +222,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
 // Add assignment to plan
 router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { carId, shopId, scheduledMonth, estimatedCost, estimatedDuration } = req.body;
 
   try {
@@ -263,7 +262,7 @@ router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
 
 // Update assignment
 router.put('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { shopId, scheduledMonth, estimatedCost, estimatedDuration, status } = req.body;
 
   try {
@@ -291,7 +290,7 @@ router.put('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Respo
 
 // Remove assignment
 router.delete('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     await prisma.planAssignment.delete({
@@ -307,7 +306,7 @@ router.delete('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Re
 
 // Activate plan
 router.post('/:id/activate', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.plan.updateMany({
@@ -337,7 +336,7 @@ router.post('/:id/activate', async (req: AuthRequest, res: Response) => {
 
 // Archive plan
 router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.plan.updateMany({
@@ -367,7 +366,7 @@ router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
 
 // Bulk add assignments to plan
 router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { assignments } = req.body;
 
   if (!Array.isArray(assignments) || assignments.length === 0) {
@@ -429,7 +428,7 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
 
 // Export plan to Excel (CSV format)
 router.get('/:id/export', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -520,7 +519,7 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
 
 // Generate report with recipient type configuration
 router.post('/:id/generate-report', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { recipientType, dateRange, includeConfidentialStatement, hideCostData } = req.body;
 
   try {
@@ -586,7 +585,7 @@ router.post('/:id/generate-report', async (req: AuthRequest, res: Response) => {
 
 // Get report data for printing
 router.get('/:id/report-data', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const recipientType = req.query.recipientType as string || 'internal';
 
   try {
@@ -652,7 +651,7 @@ router.get('/:id/report-data', async (req: AuthRequest, res: Response) => {
 
 // Export plan to Excel (JSON data for frontend Excel generation)
 router.get('/:id/export-data', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({

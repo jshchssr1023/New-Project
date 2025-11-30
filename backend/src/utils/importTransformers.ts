@@ -372,6 +372,88 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'note_txt': 'notes',
   'comment_txt': 'notes',
   'rmk_txt': 'notes',
+
+  // Qual Planner Master CSV fields
+  // tankQualDueDate synonyms
+  'tankqualduedate': 'tankQualDueDate',
+  'tank_qual_due_date': 'tankQualDueDate',
+  'tank qual due': 'tankQualDueDate',
+  'tankqualdue': 'tankQualDueDate',
+  'tank_qual_due': 'tankQualDueDate',
+  'qual_due': 'tankQualDueDate',
+  'qual_due_date': 'tankQualDueDate',
+  'qualification_due': 'tankQualDueDate',
+  'qualification_due_date': 'tankQualDueDate',
+
+  // contractNumber synonyms
+  'contractnumber': 'contractNumber',
+  'contract_number': 'contractNumber',
+  'contract number': 'contractNumber',
+  'contract#': 'contractNumber',
+  'contract #': 'contractNumber',
+  'contract': 'contractNumber',
+  'contract_no': 'contractNumber',
+
+  // contractExpiration synonyms
+  'contractexpiration': 'contractExpiration',
+  'contract_expiration': 'contractExpiration',
+  'contract expiration': 'contractExpiration',
+  'contexp': 'contractExpiration',
+  'cont_exp': 'contractExpiration',
+  'cont exp': 'contractExpiration',
+  'lease_end': 'contractExpiration',
+  'lease_expiry': 'contractExpiration',
+
+  // isJacketed synonyms
+  'isjacketed': 'isJacketed',
+  'is_jacketed': 'isJacketed',
+  'jacketed': 'isJacketed',
+  'jacketed?': 'isJacketed',
+
+  // isLined synonyms
+  'islined': 'isLined',
+  'is_lined': 'isLined',
+  'lined': 'isLined',
+  'lined?': 'isLined',
+
+  // buildYear synonyms
+  'buildyear': 'buildYear',
+  'build_year': 'buildYear',
+  'build year': 'buildYear',
+  'buildyr': 'buildYear',
+  'build_yr': 'buildYear',
+  'build yr': 'buildYear',
+  'year_built': 'buildYear',
+  'yearbuilt': 'buildYear',
+
+  // qualificationType synonyms
+  'qualificationtype': 'qualificationType',
+  'qualification_type': 'qualificationType',
+  'qualification type': 'qualificationType',
+  'qualtype': 'qualificationType',
+  'qual_type': 'qualificationType',
+  'qual type': 'qualificationType',
+
+  // tankQualified synonyms
+  'tankqualified': 'tankQualified',
+  'tank_qualified': 'tankQualified',
+  'tank qualified': 'tankQualified',
+  'tankqual': 'tankQualified',
+  'tank_qual': 'tankQualified',
+  'tank qual': 'tankQualified',
+
+  // performScheduled synonyms
+  'performscheduled': 'performScheduled',
+  'perform_scheduled': 'performScheduled',
+  'perform scheduled': 'performScheduled',
+  'perfsched': 'performScheduled',
+  'perf_sched': 'performScheduled',
+  'perf sched': 'performScheduled',
+
+  // planStatus synonyms
+  'planstatus': 'planStatus',
+  'plan_status': 'planStatus',
+  'plan status': 'planStatus',
 };
 
 // Required fields that must be present (or mappable) for import
@@ -397,6 +479,17 @@ export const VALID_SYSTEM_FIELDS = [
   'nextServiceDue',
   'assignedShopCode',
   'notes',
+  // Qual Planner Master CSV fields
+  'contractNumber',
+  'contractExpiration',
+  'isJacketed',
+  'isLined',
+  'buildYear',
+  'qualificationType',
+  'tankQualified',
+  'tankQualDueDate',
+  'performScheduled',
+  'planStatus',
 ];
 
 // ============================================================================

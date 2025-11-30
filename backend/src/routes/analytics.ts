@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -8,7 +7,7 @@ router.use(authenticate);
 
 // Get dashboard analytics
 router.get('/dashboard', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const companyId = req.user!.companyId;
@@ -226,7 +225,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
 
 // Get shop performance details
 router.get('/shops/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { start, end } = req.query;
 
   try {
@@ -288,7 +287,7 @@ router.get('/shops/:id', async (req: AuthRequest, res: Response) => {
 
 // Get car service history
 router.get('/cars/:id/history', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const car = await prisma.car.findFirst({
@@ -338,7 +337,7 @@ router.get('/cars/:id/history', async (req: AuthRequest, res: Response) => {
 
 // Get cost analysis
 router.get('/costs', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { planId } = req.query;
 
   try {
