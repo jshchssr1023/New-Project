@@ -279,39 +279,47 @@ export default function CarManagement() {
       values.push(current.trim().replace(/^"|"$/g, ''));
 
       const carObj: Record<string, unknown> = {};
+      let carInit = '';
+      let carNo = '';
 
       headers.forEach((header, index) => {
         const value = values[index] || '';
-        switch (header) {
-          case 'railcar_number':
+        const lowerHeader = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        switch (lowerHeader) {
+          // Railcar number variations
           case 'railcarnumber':
           case 'railcar':
-          case 'vehicle_number':
           case 'vehiclenumber':
             carObj.railcarNumber = value;
             break;
-          case 'car_type':
+          case 'carno':
+            carNo = value;
+            break;
+          case 'carinit':
+            carInit = value;
+            break;
+          // Car type variations
           case 'cartype':
           case 'type':
             carObj.carType = value;
             break;
-          case 'is_tank_car':
           case 'istankcar':
-          case 'tank_car':
+          case 'tankcar':
             carObj.isTankCar = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
             break;
           case 'commodity':
             carObj.commodity = value;
             break;
+          // Customer/Lessee variations
           case 'customer':
+          case 'lessee':
             carObj.customer = value;
             break;
-          case 'project_number':
           case 'projectnumber':
           case 'project':
             carObj.projectNumber = value;
             break;
-          case 'reason_shopped':
           case 'reasonshopped':
           case 'reason':
             carObj.reasonShopped = value;
@@ -319,39 +327,84 @@ export default function CarManagement() {
           case 'status':
             carObj.status = value.toLowerCase();
             break;
-          case 'current_location':
+          case 'currentlocation':
           case 'location':
             carObj.currentLocation = value;
             break;
-          case 'home_region':
           case 'homeregion':
             carObj.homeRegion = value;
             break;
-          case 'origin_region':
           case 'originregion':
             carObj.originRegion = value;
             break;
-          case 'projected_cost':
+          case 'projectedcost':
           case 'cost':
             carObj.projectedCost = parseFloat(value) || 0;
             break;
-          case 'days_in_shop':
           case 'daysinshop':
             carObj.daysInShop = parseInt(value) || 0;
             break;
           case 'notes':
             carObj.notes = value;
             break;
-          case 'last_service_date':
           case 'lastservicedate':
             if (value) carObj.lastServiceDate = value;
             break;
-          case 'next_service_due':
           case 'nextservicedue':
             if (value) carObj.nextServiceDue = value;
             break;
+          // New fields from Qual Planner Master CSV
+          case 'contract':
+          case 'contractnumber':
+            carObj.contractNumber = value;
+            break;
+          case 'contexp':
+          case 'contractexpiration':
+            if (value) carObj.contractExpiration = value;
+            break;
+          case 'jacketed':
+            carObj.isJacketed = value.toLowerCase() === 'yes' || value.toLowerCase() === 'y' || value === '1';
+            break;
+          case 'lined':
+            carObj.isLined = value.toLowerCase() === 'yes' || value.toLowerCase() === 'y' || value === '1';
+            break;
+          case 'buildyr':
+          case 'buildyear':
+            carObj.buildYear = parseInt(value) || null;
+            break;
+          case 'qualtype':
+          case 'qualificationtype':
+            carObj.qualificationType = value;
+            break;
+          case 'tankqual':
+          case 'tankqualified':
+            carObj.tankQualified = value.toLowerCase() === 'yes' || value.toLowerCase() === 'y' || value === '1';
+            break;
+          case 'tankqualdue':
+          case 'tankqualduedate':
+            if (value) carObj.tankQualDueDate = value;
+            break;
+          case 'perfsched':
+          case 'performscheduled':
+            carObj.performScheduled = value.toLowerCase() === 'yes' || value.toLowerCase() === 'y' || value === '1';
+            break;
+          case 'planstatus':
+            carObj.planStatus = value;
+            break;
         }
       });
+
+      // Combine Car Init + Car No if railcarNumber not directly set
+      if (!carObj.railcarNumber && carInit && carNo) {
+        carObj.railcarNumber = `${carInit}${carNo}`;
+      } else if (!carObj.railcarNumber && carNo) {
+        carObj.railcarNumber = carNo;
+      }
+
+      // Auto-detect tank car from car type
+      if (carObj.carType && typeof carObj.carType === 'string' && !carObj.isTankCar) {
+        carObj.isTankCar = carObj.carType.toLowerCase().includes('tank');
+      }
 
       if (carObj.railcarNumber) {
         carList.push(carObj as Partial<Car>);
