@@ -14,7 +14,7 @@
  * @version 1.0.0
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 
 // =============================================================================
 // SECTION 1 - ENUMERATIONS
@@ -440,10 +440,10 @@ function daysBetween(start: Date, end: Date): number {
  * LeaseQualificationEngine - Core engine for qualification planning
  */
 export class LeaseQualificationEngine {
-  private prisma: PrismaClient;
+  private prisma: any;
   private companyId: string;
 
-  constructor(prisma: PrismaClient, companyId: string) {
+  constructor(prisma: any, companyId: string) {
     this.prisma = prisma;
     this.companyId = companyId;
   }
@@ -1796,7 +1796,7 @@ export class LeaseQualificationEngine {
  * Create a new LeaseQualificationEngine instance
  */
 export function createLeaseQualificationEngine(
-  prisma: PrismaClient,
+  prisma: any,
   companyId: string
 ): LeaseQualificationEngine {
   return new LeaseQualificationEngine(prisma, companyId);

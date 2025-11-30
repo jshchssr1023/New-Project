@@ -12,7 +12,7 @@
  * @version 1.0.0
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 
 // Type definitions for Prisma models (until prisma generate is run with new schema)
 interface Car {
@@ -188,7 +188,7 @@ function mapSOPToShopAssignment(
  */
 export class PrismaPlanningDataStore {
   constructor(
-    private prisma: PrismaClient,
+    private prisma: any,
     private companyId: string,
     private scenarioId?: string
   ) {}
@@ -711,9 +711,9 @@ export class PrismaPlanningDataStore {
   /**
    * Execute a function within a transaction.
    */
-  async withTransaction<T>(fn: (tx: PrismaClient) => Promise<T>): Promise<T> {
-    return this.prisma.$transaction(async (tx) => {
-      return fn(tx as unknown as PrismaClient);
+  async withTransaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx: any) => {
+      return fn(tx);
     });
   }
 }
@@ -726,7 +726,7 @@ export class PrismaPlanningDataStore {
  * Create a Prisma planning data store instance.
  */
 export function createPrismaPlanningDataStore(
-  prisma: PrismaClient,
+  prisma: any,
   companyId: string,
   scenarioId?: string
 ): PrismaPlanningDataStore {

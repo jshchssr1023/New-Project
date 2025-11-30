@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { recommendShopsForCar, recommendShopsForMultipleCars } from '../services/ruleEngine';
 
@@ -9,7 +8,7 @@ router.use(authenticate);
 
 // Get all scenarios
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { customer } = req.query;
 
   try {
@@ -50,7 +49,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
 // Get scenario by ID with full details
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const scenario = await prisma.scenario.findFirst({
@@ -105,7 +104,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // Create scenario
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { projectNumber, name, description, customerFilter, basePlanId } = req.body;
 
   // Validate required projectNumber
@@ -166,7 +165,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // Add cars to scenario
 router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { carIds, scheduledMonth, autoSuggestShops } = req.body;
 
   try {
@@ -284,7 +283,7 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
 
 // Add cars by customer filter
 router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { customer, scheduledMonth, limit, autoSuggestShops } = req.body;
 
   try {
@@ -409,7 +408,7 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
 
 // Remove car from scenario
 router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     await prisma.scenarioCar.deleteMany({
@@ -428,7 +427,7 @@ router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
 
 // Update scenario car (assign shop, change month)
 router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { assignedShopId, scheduledMonth, estimatedCost, estimatedDays } = req.body;
 
   try {
@@ -492,7 +491,7 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
 
 // Get shop recommendations for a scenario car
 router.get('/:id/cars/:scenarioCarId/recommendations', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { month } = req.query;
 
   try {
@@ -532,7 +531,7 @@ router.get('/:id/cars/:scenarioCarId/recommendations', async (req: AuthRequest, 
 
 // Analyze scenario - enhanced shop capacity analysis
 router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const scenario = await prisma.scenario.findFirst({
@@ -726,7 +725,7 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
 
 // Apply scenario to plan
 router.post('/:id/apply', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { planId } = req.body;
 
   try {
@@ -806,7 +805,7 @@ router.post('/:id/apply', async (req: AuthRequest, res: Response) => {
 
 // Update scenario
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { name, description, customerFilter } = req.body;
 
   try {
@@ -837,7 +836,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // Delete scenario
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.scenario.deleteMany({
@@ -861,7 +860,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
 // Get unique customers from cars
 router.get('/meta/customers', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const cars = await prisma.car.findMany({

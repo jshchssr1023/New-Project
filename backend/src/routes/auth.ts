@@ -1,12 +1,11 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, generateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
 router.post('/login', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma = req.app.locals.prisma;
   const { email, password } = req.body;
 
   try {
@@ -59,7 +58,7 @@ router.post('/logout', authenticate, (_req: AuthRequest, res: Response) => {
 });
 
 router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma = req.app.locals.prisma;
 
   try {
     const user = await prisma.user.findUnique({

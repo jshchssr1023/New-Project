@@ -1,7 +1,6 @@
 // Role-based permissions and field-level security service
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 
-const prisma = new PrismaClient();
 
 // Default role hierarchy and permissions
 export const ROLES = {

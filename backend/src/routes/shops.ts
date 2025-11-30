@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -8,7 +7,7 @@ router.use(authenticate);
 
 // Get all shops with optional filters
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { region, network, servingRailroad, isActive, hasCapacity, month } = req.query;
 
   try {
@@ -56,7 +55,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
 // Batch capacity check for multiple shops and months
 router.post('/capacity/batch', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { shopIds, months } = req.body;
 
   try {
@@ -116,7 +115,7 @@ router.post('/capacity/batch', async (req: AuthRequest, res: Response) => {
 
 // Get shop by ID with capacity info
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const shop = await prisma.shop.findFirst({
@@ -175,7 +174,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // Get shop capacity for a specific month
 router.get('/:id/capacity', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { month } = req.query;
 
   try {
@@ -212,7 +211,7 @@ router.get('/:id/capacity', async (req: AuthRequest, res: Response) => {
 
 // Get capacity summary for all shops for a date range
 router.get('/capacity/summary', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { startMonth, endMonth } = req.query;
 
   try {
@@ -280,7 +279,7 @@ router.get('/capacity/summary', async (req: AuthRequest, res: Response) => {
 
 // Create shop
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const {
     name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
@@ -325,7 +324,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // Bulk import shops with detailed results
 router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { shops } = req.body;
 
   // Valid regions for validation
@@ -485,7 +484,7 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 
 // Export shops to CSV
 router.get('/export', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { format = 'csv', region, network, isActive } = req.query;
 
   try {
@@ -560,7 +559,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
 
 // Update shop
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const {
     name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
@@ -617,7 +616,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // Delete shop
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     // Check if shop has assignments
@@ -654,7 +653,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
 // Get unique regions
 router.get('/meta/regions', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const shops = await prisma.shop.findMany({
@@ -673,7 +672,7 @@ router.get('/meta/regions', async (req: AuthRequest, res: Response) => {
 
 // Get unique networks
 router.get('/meta/networks', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const shops = await prisma.shop.findMany({
@@ -692,7 +691,7 @@ router.get('/meta/networks', async (req: AuthRequest, res: Response) => {
 
 // Get unique serving railroads
 router.get('/meta/railroads', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const shops = await prisma.shop.findMany({
@@ -711,7 +710,7 @@ router.get('/meta/railroads', async (req: AuthRequest, res: Response) => {
 
 // Get all filter options (regions, networks, railroads) in one call
 router.get('/meta/filters', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const shops = await prisma.shop.findMany({

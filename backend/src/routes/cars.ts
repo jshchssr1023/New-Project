@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import {
   analyzeHeaders,
@@ -21,7 +20,7 @@ router.use(authenticate);
 
 // Get all cars with pagination
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { page = '1', pageSize = '20', status, customer, reasonShopped, carType } = req.query;
   const pageNum = parseInt(page as string);
   const pageSizeNum = parseInt(pageSize as string);
@@ -72,7 +71,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 // Export railcars to CSV
 // Supports two formats: 'standard' (human-readable) and 'umler' (system abbreviations)
 router.get('/export', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { ids, status, customer, reasonShopped, carType, format = 'umler' } = req.query;
 
   try {
@@ -159,7 +158,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
 
 // Get car by ID
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const car = await prisma.car.findFirst({
@@ -183,7 +182,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // Create railcar
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
@@ -212,7 +211,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // Update railcar
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
@@ -253,7 +252,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // Delete car
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.car.deleteMany({
@@ -277,7 +276,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
 // Bulk update cars
 router.patch('/bulk', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { carIds, updates } = req.body;
 
   try {
@@ -302,7 +301,7 @@ router.patch('/bulk', async (req: AuthRequest, res: Response) => {
 
 // Bulk delete cars
 router.delete('/bulk', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { carIds } = req.body;
 
   try {
@@ -338,7 +337,7 @@ router.post('/bulk-import/analyze', async (req: AuthRequest, res: Response) => {
 
 // Bulk import railcars with data mapping intelligence and detailed results
 router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { cars, fieldMappings } = req.body;
 
   // Extended result type to include mapping_required status

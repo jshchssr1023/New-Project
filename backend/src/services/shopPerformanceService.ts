@@ -1,8 +1,6 @@
 // Shop Performance Scorecard Service
 // Calculates TAT, OTP, Dwell Time, Rework Rate, Cost Variance
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from './db';
 
 // Weight configuration for composite score
 const PERFORMANCE_WEIGHTS = {
