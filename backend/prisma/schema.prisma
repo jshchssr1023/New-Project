@@ -20,6 +20,9 @@ model User {
   scenarios Scenario[] @relation("ScenarioCreator")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // MasterPlan relations - plans approved by this user
+  approvedMasterPlans MasterPlan[] @relation("MasterPlanApprover")
 }
 
 model Company {
@@ -42,6 +45,9 @@ model Company {
   qualificationEvents     QualificationPlanEvent[]
   qualificationScenarios  QualificationScenario[]
   qualificationDocuments  QualificationPlanDocument[]
+
+  // MasterPlan relations
+  masterPlans             MasterPlan[]
 }
 
 // Customer master for tracking lessees/owners
@@ -63,6 +69,9 @@ model Customer {
   // Lease Qualification Engine relations
   leaseContracts       LeaseContract[]
   qualificationEntries LeaseQualificationEntry[]
+
+  // MasterPlan relations
+  masterCommitments    MasterPlanCommitment[]
 
   @@unique([code, companyId])
 }
@@ -114,6 +123,9 @@ model Car {
   // Lease Qualification Engine relations
   leaseContracts           LeaseContract[]
   qualificationEntries     LeaseQualificationEntry[]
+
+  // MasterPlan relations
+  masterCommitments        MasterPlanCommitment[]
 
   @@unique([railcarNumber, companyId])
 }
@@ -168,6 +180,9 @@ model Shop {
 
   // Lease Qualification Engine relations
   qualificationEntries LeaseQualificationEntry[]
+
+  // MasterPlan relations
+  masterCommitments    MasterPlanCommitment[]
 
   @@unique([code, companyId])
 }
@@ -267,6 +282,9 @@ model Scenario {
   parent         Scenario?              @relation("ScenarioClones", fields: [parentId], references: [id])
   clones         Scenario[]             @relation("ScenarioClones")
   sopAssignments SOPAssignment[]        // S&OP shop assignments
+
+  // MasterPlan relations - scenarios used as base for master plans
+  masterPlans    MasterPlan[]
 
   @@index([projectNumber, companyId])
 }
@@ -709,4 +727,112 @@ model QualificationPlanDocument {
 
   @@index([scenarioId, documentType])
   @@index([companyId])
+}
+
+// =============================================================================
+// MASTER PLAN MODELS
+// =============================================================================
+// The MasterPlan is the single source of truth for the official, approved plan
+// that feeds: Customer PDFs, Planning team dashboards, Shop work orders, All reporting
+// =============================================================================
+
+// MasterPlan - The approved, authoritative plan for a fiscal year
+// Workflow: draft → under_review → approved → active → archived
+model MasterPlan {
+  id             String   @id @default(uuid())
+  companyId      String
+  company        Company  @relation(fields: [companyId], references: [id])
+
+  planName       String   // e.g. "2026 Qualification Plan – Final v2"
+  fiscalYear     Int      // e.g. 2026
+  version        Int      @default(1) // Auto-increments for same fiscalYear
+
+  // Status workflow: draft → under_review → approved → active → archived
+  // - draft: Initial creation, can be edited freely
+  // - under_review: Submitted for approval, locked for edits
+  // - approved: Approved by authorized user, but not yet active
+  // - active: The current operative plan for this fiscal year
+  // - archived: Superseded by a newer version or closed fiscal year
+  status         String   @default("draft")
+
+  // Link to the scenario this plan was generated from
+  baseScenarioId String?
+  baseScenario   Scenario? @relation(fields: [baseScenarioId], references: [id])
+
+  // Approval tracking
+  approvedAt     DateTime?
+  approvedById   String?
+  approvedBy     User?    @relation("MasterPlanApprover", fields: [approvedById], references: [id])
+
+  // Plan coverage period
+  validFrom      DateTime // First month covered (e.g., 2026-01-01)
+  validTo        DateTime // Last month covered (e.g., 2026-12-31)
+
+  // Commitment records for each car assignment
+  commitments    MasterPlanCommitment[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Constraints:
+  // - Unique combination of company + fiscal year + version
+  // - Only one "active" plan per company per fiscal year (enforced at service level)
+  @@unique([companyId, fiscalYear, version])
+  @@index([companyId, status])
+  @@index([companyId, validFrom])
+}
+
+// MasterPlanCommitment - Individual car assignment within a MasterPlan
+// Represents a committed shop visit for a specific car
+model MasterPlanCommitment {
+  id              String    @id @default(uuid())
+  masterPlanId    String
+  masterPlan      MasterPlan @relation(fields: [masterPlanId], references: [id], onDelete: Cascade)
+
+  // Car being scheduled
+  carId           String
+  car             Car       @relation(fields: [carId], references: [id])
+
+  // Shop where work will be performed
+  shopId          String
+  shop            Shop      @relation(fields: [shopId], references: [id])
+
+  // Customer who owns/leases the car
+  customerId      String
+  customer        Customer  @relation(fields: [customerId], references: [id])
+
+  // Scheduling details
+  scheduledMonth  String    // YYYY-MM format for the target month
+  plannedArrival  DateTime? // Specific planned arrival date (if known)
+  plannedRelease  DateTime? // Specific planned release date (if known)
+
+  // Work specification
+  // JSON array as string: ["qualification", "assignment", "repair"]
+  workTypes       String
+  isBundled       Boolean   @default(false) // Multiple work types bundled together
+
+  // Cost and priority
+  estimatedCost   Float?    // Estimated total cost for this commitment
+  priority        Int       @default(3) // 1=CRITICAL, 2=HIGH, 3=MEDIUM, 4=LOW, 5=DEFERRED
+
+  // Commitment status workflow:
+  // - committed: Locked in the plan, not yet operationally scheduled
+  // - scheduled: Shop has been notified, dates confirmed
+  // - in_transit: Car is en route to shop
+  // - arrived: Car has arrived at shop
+  // - in_progress: Work is underway
+  // - released: Work complete, car released from shop
+  status          String    @default("committed")
+
+  notes           String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Constraints:
+  // - Each car can only appear once per master plan
+  // - Index for shop scheduling queries (shop + month)
+  @@unique([masterPlanId, carId])
+  @@index([shopId, scheduledMonth])
+  @@index([customerId])
+  @@index([status])
 }
