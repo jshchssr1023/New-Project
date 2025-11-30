@@ -12,6 +12,11 @@ import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
 import LeaseQualificationEngine from './pages/LeaseQualificationEngine';
+
+import RuleBuilder from './pages/RuleBuilder';
+import ImportExport from './pages/ImportExport';
+import Webhooks from './pages/Webhooks';
+import ApiKeys from './pages/ApiKeys';
 import MasterPlanView from './pages/MasterPlanView';
 import CustomerSchedule from './pages/CustomerSchedule';
 import ShopSchedule from './pages/ShopSchedule';
@@ -71,11 +76,29 @@ export default function App() {
         <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
         <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
+        <Route path="rules" element={<RuleBuilder />} />
+        <Route path="import-export" element={<ImportExport />} />
         <Route
           path="users"
           element={
             <AdminRoute>
               <UserManagement />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="webhooks"
+          element={
+            <AdminRoute>
+              <Webhooks />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="api-keys"
+          element={
+            <AdminRoute>
+              <ApiKeys />
             </AdminRoute>
           }
         />

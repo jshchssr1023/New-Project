@@ -61,3 +61,6 @@ export function generateToken(user: AuthUser): string {
     { expiresIn: '24h' }
   );
 }
+
+// Alias for backwards compatibility
+export const authenticateToken = authenticate;

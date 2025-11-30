@@ -837,3 +837,69 @@ model MasterPlanCommitment {
   @@index([customerId])
   @@index([status])
 }
+
+// =============================================================================
+// WEBHOOK ALERTING
+// =============================================================================
+
+model WebhookConfig {
+  id          String   @id @default(uuid())
+  name        String
+  type        String   // slack, teams, custom
+  url         String
+  isActive    Boolean  @default(true)
+  categories  String   // JSON array: ["security", "capacity", "performance", "system", "data_change"]
+  severities  String   // JSON array: ["info", "warning", "critical"]
+  companyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId, isActive])
+}
+
+// =============================================================================
+// PUBLIC API KEYS
+// =============================================================================
+
+model ApiKey {
+  id              String    @id @default(uuid())
+  name            String
+  keyHash         String    @unique // SHA-256 hash of the full key
+  keyPrefix       String    // First 12 chars for display (chr_live_xxx)
+  permissions     String    // JSON array of permissions
+  rateLimit       Int       @default(1000) // Requests per window
+  rateLimitWindow Int       @default(3600) // Window in seconds (default 1 hour)
+  isActive        Boolean   @default(true)
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
+  companyId       String
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([companyId, isActive])
+  @@index([keyHash])
+}
+
+// =============================================================================
+// NOTIFICATIONS
+// =============================================================================
+
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  type        String    // info, success, warning, error, action_required
+  category    String    // assignment, approval, alert, system, report
+  title       String
+  message     String
+  link        String?   // Optional link to related resource
+  metadata    String    @default("{}") // JSON: additional data
+  isRead      Boolean   @default(false)
+  readAt      DateTime?
+  expiresAt   DateTime? // Optional expiration for time-sensitive notifications
+  companyId   String
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([companyId, createdAt])
+}
