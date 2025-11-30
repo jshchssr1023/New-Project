@@ -18,9 +18,11 @@ import {
   TruckIcon,
   LockClosedIcon,
   PaperAirplaneIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { carsApi, shopsApi, reportsApi, sopApi } from '../services/api';
 import type { Car, Shop } from '../types';
+import { useCarSelection } from '../contexts/CarSelectionContext';
 import type {
   DemandType,
   AITXShop,
@@ -72,12 +74,16 @@ import {
 type TabType = 'dashboard' | 'demand' | 'supply' | 'plan' | 'assumptions' | 'allocations' | 'scheduling';
 
 export default function CarFlowPlanning() {
+  const { selectedCars: globalSelectedCars, hasSelection: hasGlobalSelection, clearSelection, getSelectionSummary } = useCarSelection();
+
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [showImportBanner, setShowImportBanner] = useState(false);
+  const [importHandled, setImportHandled] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -301,6 +307,28 @@ export default function CarFlowPlanning() {
     };
     fetchData();
   }, [filterYear]); // Re-fetch when year filter changes
+
+  // Show import banner when arriving with global selection
+  useEffect(() => {
+    if (hasGlobalSelection && !importHandled) {
+      setShowImportBanner(true);
+    }
+  }, [hasGlobalSelection, importHandled]);
+
+  // Handle applying globally selected cars as filter
+  const handleApplyGlobalSelection = useCallback(() => {
+    // Switch to demand tab and highlight the selected cars
+    setActiveTab('demand');
+    // The global selection bar will show what cars are selected
+    // Users can work with those cars in the demand register
+    setShowImportBanner(false);
+    setImportHandled(true);
+  }, []);
+
+  const dismissImportBanner = useCallback(() => {
+    setShowImportBanner(false);
+    setImportHandled(true);
+  }, []);
 
   // Calculate metrics
   const metrics = useMemo(() => {
@@ -642,6 +670,42 @@ export default function CarFlowPlanning() {
                 ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Global Car Selection Import Banner */}
+      {showImportBanner && hasGlobalSelection && (
+        <div className="bg-rail-50 border border-rail-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <TruckIcon className="h-6 w-6 text-rail-600" />
+              <div>
+                <p className="font-medium text-rail-900">Cars Selected from Railcars Page</p>
+                <p className="text-sm text-rail-700">{getSelectionSummary()}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleApplyGlobalSelection}
+                className="btn-primary py-2 px-4 text-sm"
+              >
+                View in Demand Register
+              </button>
+              <button
+                onClick={() => { clearSelection(); dismissImportBanner(); }}
+                className="btn-secondary py-2 px-4 text-sm"
+              >
+                Clear Selection
+              </button>
+              <button
+                onClick={dismissImportBanner}
+                className="text-rail-500 hover:text-rail-700 p-1"
+                title="Dismiss"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

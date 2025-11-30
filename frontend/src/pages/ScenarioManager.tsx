@@ -14,10 +14,12 @@ import {
   BuildingStorefrontIcon,
   AdjustmentsHorizontalIcon,
   RocketLaunchIcon,
+  TruckIcon,
 } from '@heroicons/react/24/outline';
 import { scenariosApi, plansApi, carsApi, shopsApi } from '../services/api';
 import type { Scenario, Plan, Car, Shop, ScenarioCar, ShopRecommendation, OverloadedShop } from '../types';
 import { useWebSocket, useAssignmentUpdates } from '../contexts/WebSocketContext';
+import { useCarSelection } from '../contexts/CarSelectionContext';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-steel-100 text-steel-800',
@@ -47,6 +49,11 @@ interface CapacityCheckResult {
 export default function ScenarioManager() {
   const navigate = useNavigate();
   const { isConnected } = useWebSocket();
+  const { selectedCars: globalSelectedCars, hasSelection: hasGlobalSelection, clearSelection, getSelectionSummary } = useCarSelection();
+
+  // Track if we've shown the import prompt for this session
+  const [showImportBanner, setShowImportBanner] = useState(false);
+  const [importHandled, setImportHandled] = useState(false);
 
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -111,6 +118,35 @@ export default function ScenarioManager() {
       loadScenarioDetails(selectedScenario.id);
     }
   }, [selectedScenario?.id]);
+
+  // Show import banner when arriving with global selection
+  useEffect(() => {
+    if (hasGlobalSelection && !importHandled) {
+      setShowImportBanner(true);
+    }
+  }, [hasGlobalSelection, importHandled]);
+
+  // Handle importing globally selected cars into a scenario
+  const handleImportGlobalSelection = async () => {
+    if (!selectedScenario || globalSelectedCars.length === 0) return;
+
+    const defaultMonth = getNextMonths()[0]?.value || '';
+    try {
+      const carIds = globalSelectedCars.map(c => c.id);
+      const updated = await scenariosApi.addCars(selectedScenario.id, carIds, defaultMonth);
+      setSelectedScenario(updated);
+      clearSelection();
+      setShowImportBanner(false);
+      setImportHandled(true);
+    } catch (error) {
+      console.error('Failed to import cars:', error);
+    }
+  };
+
+  const dismissImportBanner = () => {
+    setShowImportBanner(false);
+    setImportHandled(true);
+  };
 
   const loadData = async () => {
     try {
@@ -583,6 +619,40 @@ export default function ScenarioManager() {
           New Scenario
         </button>
       </div>
+
+      {/* Global Car Selection Import Banner */}
+      {showImportBanner && hasGlobalSelection && (
+        <div className="bg-rail-50 border border-rail-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <TruckIcon className="h-6 w-6 text-rail-600" />
+              <div>
+                <p className="font-medium text-rail-900">Cars Selected from Railcars Page</p>
+                <p className="text-sm text-rail-700">{getSelectionSummary()}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedScenario ? (
+                <button
+                  onClick={handleImportGlobalSelection}
+                  className="btn-primary py-2 px-4 text-sm"
+                >
+                  Add to Current Scenario
+                </button>
+              ) : (
+                <span className="text-sm text-rail-600">Select or create a scenario first</span>
+              )}
+              <button
+                onClick={dismissImportBanner}
+                className="text-rail-500 hover:text-rail-700 p-1"
+                title="Dismiss"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="card">
