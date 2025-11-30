@@ -469,36 +469,13 @@ async function main() {
     console.log(`✓ Created ${cars.length} railcars (random data)`);
   }
 
-  // Create shop eligibility records for cars
-  // Each car will be eligible for a random subset of shops based on region and tank qualification
-  let eligibilityCount = 0;
-  for (const car of cars) {
-    // Get eligible shops based on region and tank qualification
-    const eligibleShops = shops.filter(shop => {
-      // Tank cars can only go to tank-qualified shops
-      if (car.isTankCar && !shop.tankQualified) return false;
-      // 70% chance to be eligible for shops in same region
-      if (shop.region === car.homeRegion && Math.random() > 0.3) return true;
-      // 30% chance to be eligible for shops in other regions
-      return Math.random() > 0.7;
-    });
-
-    // Create eligibility records
-    for (const shop of eligibleShops) {
-      await prisma.carShopEligibility.create({
-        data: {
-          id: uuidv4(),
-          carId: car.id,
-          shopId: shop.id,
-          isEligible: true,
-          notes: '',
-        },
-      });
-      eligibilityCount++;
-    }
-  }
-
-  console.log(`✓ Created ${eligibilityCount} car-shop eligibility records`);
+  // Skip shop eligibility records during initial import for performance
+  // With 97K cars × 10+ shops = nearly 1 million records - too slow for one-by-one inserts
+  // Shop eligibility should be:
+  // 1. Imported from CSV if available (dedicated eligibility columns)
+  // 2. Calculated on-demand when needed
+  // 3. Generated in a background job after import
+  console.log(`⏭️  Skipping shop eligibility records (calculate on-demand for large datasets)`);
 
   // Create 2 plans
   const plan2024 = await prisma.plan.create({
