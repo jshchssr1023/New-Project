@@ -27,7 +27,6 @@ import {
 import {
   leaseQualificationApi,
   QualificationScenario,
-  ScenarioMetrics,
   AvailableCar,
   AvailableShop,
   AvailableCustomer,
@@ -37,10 +36,7 @@ import {
 } from '../services/api';
 import type { Car } from '../types';
 import {
-  get120DayPlanningHorizon,
   getQualificationDeadlines,
-  getQualificationPriority,
-  filterCarsByReasonShopped,
   getUniqueReasonsShopped,
   QUALIFICATION_PRIORITY,
   PLANNING_HORIZON_DAYS,
@@ -112,10 +108,6 @@ export default function LeaseQualificationEngine() {
   const uniqueReasons = useMemo(() => {
     return getUniqueReasonsShopped(cars);
   }, [cars]);
-
-  const planningHorizon = useMemo(() => {
-    return get120DayPlanningHorizon();
-  }, []);
 
   const loadScenarios = async () => {
     setIsLoading(true);

@@ -13,6 +13,12 @@ import type {
   ShopRecommendation,
   ReportGenerationConfig,
   ReportData,
+  MasterPlan,
+  MasterPlanWithCommitments,
+  MasterPlanCommitment,
+  MasterPlanSummary,
+  MasterPlanStatus,
+  CommitmentStatus,
 } from '../types';
 
 // Import result types for car bulk import
@@ -1144,69 +1150,6 @@ export const sopApi = {
 // MASTER PLAN API
 // =============================================================================
 
-export interface MasterPlan {
-  id: string;
-  companyId: string;
-  planName: string;
-  fiscalYear: number;
-  version: number;
-  status: 'draft' | 'under_review' | 'approved' | 'active' | 'archived';
-  baseScenarioId: string | null;
-  approvedAt: string | null;
-  approvedById: string | null;
-  validFrom: string;
-  validTo: string;
-  createdAt: string;
-  updatedAt: string;
-  commitments?: MasterPlanCommitment[];
-}
-
-export interface MasterPlanCommitment {
-  id: string;
-  masterPlanId: string;
-  carId: string;
-  shopId: string;
-  customerId: string;
-  scheduledMonth: string;
-  plannedArrival: string | null;
-  plannedRelease: string | null;
-  workTypes: string;
-  isBundled: boolean;
-  estimatedCost: number | null;
-  priority: number;
-  status: 'committed' | 'scheduled' | 'in_transit' | 'arrived' | 'in_progress' | 'released';
-  notes: string;
-  car: {
-    id: string;
-    railcarNumber: string;
-    carType: string;
-    isTankCar: boolean;
-    commodity: string;
-    customer: string;
-  };
-  shop: {
-    id: string;
-    name: string;
-    code: string;
-    location: string;
-    region: string;
-  };
-  customer: {
-    id: string;
-    name: string;
-    code: string;
-  };
-}
-
-export interface MasterPlanSummary {
-  totalCommitments: number;
-  totalEstimatedCost: number;
-  commitmentsByMonth: Record<string, number>;
-  commitmentsByShop: Record<string, number>;
-  commitmentsByStatus: Record<string, number>;
-  commitmentsByWorkType: Record<string, number>;
-}
-
 export const masterPlansApi = {
   // Get all master plans
   getAll: async (params?: { fiscalYear?: number; status?: string }): Promise<MasterPlan[]> => {
@@ -1426,6 +1369,135 @@ export const leaseQualificationApi = {
   // Queue
   getQueue: async (params?: { status?: string; targetMonth?: string }): Promise<{ data: Array<{ id: string; car: { railcarNumber: string }; customer: { name: string }; targetQualMonth: string; queueStatus: string; priority: number; workTypes: string[] }>; count: number }> => {
     const response = await apiClient.get('/lease-qualification/queue', { params });
+    return response.data;
+  },
+};
+
+// =============================================================================
+// MASTERPLAN API
+// =============================================================================
+
+export const masterPlanApi = {
+  // Get all MasterPlans
+  getAll: async (params?: {
+    fiscalYear?: number;
+    status?: MasterPlanStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<MasterPlan[]> => {
+    const response = await apiClient.get<MasterPlan[]>('/masterplans', { params });
+    return response.data;
+  },
+
+  // Get active MasterPlan
+  getActive: async (): Promise<MasterPlanWithCommitments> => {
+    const response = await apiClient.get<MasterPlanWithCommitments>('/masterplans/active');
+    return response.data;
+  },
+
+  // Get MasterPlan by ID
+  getById: async (id: string): Promise<MasterPlanWithCommitments> => {
+    const response = await apiClient.get<MasterPlanWithCommitments>(`/masterplans/${id}`);
+    return response.data;
+  },
+
+  // Get MasterPlan summary
+  getSummary: async (id: string): Promise<MasterPlanSummary> => {
+    const response = await apiClient.get<MasterPlanSummary>(`/masterplans/${id}/summary`);
+    return response.data;
+  },
+
+  // Get MasterPlan commitments
+  getCommitments: async (id: string): Promise<MasterPlanCommitment[]> => {
+    const response = await apiClient.get<MasterPlanCommitment[]>(`/masterplans/${id}/commitments`);
+    return response.data;
+  },
+
+  // Create MasterPlan from Scenario (Approve Scenario)
+  createFromScenario: async (
+    scenarioId: string,
+    planName: string
+  ): Promise<MasterPlanWithCommitments> => {
+    const response = await apiClient.post<MasterPlanWithCommitments>('/masterplans/from-scenario', {
+      scenarioId,
+      planName,
+    });
+    return response.data;
+  },
+
+  // Approve a MasterPlan
+  approve: async (id: string, activate: boolean = false): Promise<MasterPlan> => {
+    const response = await apiClient.post<MasterPlan>(`/masterplans/${id}/approve`, { activate });
+    return response.data;
+  },
+
+  // Activate a MasterPlan
+  activate: async (id: string): Promise<MasterPlan> => {
+    const response = await apiClient.post<MasterPlan>(`/masterplans/${id}/activate`);
+    return response.data;
+  },
+
+  // Archive a MasterPlan
+  archive: async (id: string): Promise<MasterPlan> => {
+    const response = await apiClient.post<MasterPlan>(`/masterplans/${id}/archive`);
+    return response.data;
+  },
+
+  // Update commitment status
+  updateCommitmentStatus: async (
+    masterPlanId: string,
+    commitmentId: string,
+    status: CommitmentStatus
+  ): Promise<MasterPlanCommitment> => {
+    const response = await apiClient.put<MasterPlanCommitment>(
+      `/masterplans/${masterPlanId}/commitments/${commitmentId}/status`,
+      { status }
+    );
+    return response.data;
+  },
+
+  // Get customer schedule
+  getCustomerSchedule: async (
+    customerId: string,
+    masterPlanId?: string
+  ): Promise<MasterPlanCommitment[]> => {
+    const response = await apiClient.get<MasterPlanCommitment[]>(
+      `/masterplans/customer/${customerId}/schedule`,
+      { params: { masterPlanId } }
+    );
+    return response.data;
+  },
+
+  // Get shop work orders
+  getShopWorkOrders: async (shopId: string, month: string): Promise<MasterPlanCommitment[]> => {
+    const response = await apiClient.get<MasterPlanCommitment[]>(
+      `/masterplans/shop/${shopId}/workorders`,
+      { params: { month } }
+    );
+    return response.data;
+  },
+
+  // Get customers with commitments
+  getCustomers: async (): Promise<Array<{
+    id: string;
+    name: string;
+    code: string;
+    _count: { masterCommitments: number };
+  }>> => {
+    const response = await apiClient.get('/masterplans/data/customers');
+    return response.data;
+  },
+
+  // Get shops data
+  getShops: async (): Promise<Array<{
+    id: string;
+    name: string;
+    code: string;
+    region: string;
+    qualCapacity: number;
+    assignCapacity: number;
+  }>> => {
+    const response = await apiClient.get('/masterplans/data/shops');
     return response.data;
   },
 };
