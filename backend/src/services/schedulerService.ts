@@ -8,7 +8,7 @@
  */
 
 import cron, { ScheduledTask } from 'node-cron';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import pdfService from './pdfService';
 import emailService, { EmailAttachment, ReportEmailData } from './emailService';
 import reportBuilderService from './reportBuilderService';
@@ -41,13 +41,16 @@ export interface JobExecutionResult {
 // =============================================================================
 
 class SchedulerService {
-  private prisma: PrismaClient;
   private jobs: Map<string, ScheduledJob> = new Map();
   private isRunning: boolean = false;
   private reportCheckJob: ScheduledTask | null = null;
 
   constructor() {
-    this.prisma = new PrismaClient();
+    // Using imported prisma instance
+  }
+
+  private get prisma() {
+    return prisma;
   }
 
   /**

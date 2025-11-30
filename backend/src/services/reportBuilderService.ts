@@ -1,8 +1,7 @@
 // Custom Report Builder Service
 // Supports custom column selection, filters, and multiple output formats
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 
-const prisma = new PrismaClient();
 
 // Available columns for each entity type
 export const ENTITY_COLUMNS: Record<string, {

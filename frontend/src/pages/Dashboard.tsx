@@ -14,9 +14,9 @@ import {
   CalendarDaysIcon,
   DocumentChartBarIcon,
 } from '@heroicons/react/24/outline';
-import { analyticsApi, carsApi } from '../services/api';
+import { analyticsApi, carsApi, masterPlansApi } from '../services/api';
 import type { AnalyticsData, Car } from '../types';
-import { useCarUpdates } from '../contexts/WebSocketContext';
+import { useCarUpdates, useDashboardUpdates } from '../contexts/WebSocketContext';
 import { useActiveMasterPlan, useMasterPlanSummary } from '../hooks/useQueryWithCompany';
 
 const DAYS_IN_SHOP_THRESHOLD = 10;
@@ -136,6 +136,14 @@ export default function Dashboard() {
   }, [loadAnalytics]);
 
   useCarUpdates(handleCarUpdate);
+
+  // Dashboard-specific updates (MasterPlan changes, etc.)
+  const handleDashboardUpdate = useCallback(() => {
+    console.log('Dashboard refresh triggered via WebSocket');
+    loadAnalytics();
+  }, [loadAnalytics]);
+
+  useDashboardUpdates(handleDashboardUpdate);
 
   // KPI Card click handlers with navigation and filters
   const handleKPIClick = (kpiType: string) => {

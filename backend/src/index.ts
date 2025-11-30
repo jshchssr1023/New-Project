@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './services/db';
 import authRoutes from './routes/auth';
 import carsRoutes from './routes/cars';
 import shopsRoutes from './routes/shops';
@@ -14,13 +14,12 @@ import auditRoutes from './routes/audit';
 import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
-import masterPlanRoutes from './routes/masterPlanRoutes';
+import masterPlansRoutes from './routes/masterPlans';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 
 const app = express();
 const httpServer = createServer(app);
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 4000;
 
 // Initialize WebSocket
@@ -48,7 +47,7 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api/sop', sopRoutes);
 app.use('/api/lease-qualification', leaseQualificationRoutes);
-app.use('/api/masterplans', masterPlanRoutes);
+app.use('/api/masterplans', masterPlansRoutes);
 
 // Health check
 app.get('/api/health', (_, res) => {

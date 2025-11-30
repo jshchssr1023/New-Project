@@ -1,15 +1,92 @@
 import { Router, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { recommendShopsForCar, recommendShopsForMultipleCars } from '../services/ruleEngine';
+import { createMasterPlanService } from '../services/masterPlanService';
 
 const router = Router();
 
 router.use(authenticate);
 
+// Get alternative shop recommendations for car(s)
+// Used when a shop is at capacity and alternatives are needed
+router.post('/alternative-shops', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+  const { carIds, excludeShopId, month } = req.body;
+
+  try {
+    if (!carIds || !Array.isArray(carIds) || carIds.length === 0) {
+      res.status(400).json({ message: 'carIds array is required' });
+      return;
+    }
+
+    // Get car details
+    const cars = await prisma.car.findMany({
+      where: {
+        id: { in: carIds },
+        companyId: req.user!.companyId,
+      },
+    });
+
+    if (cars.length === 0) {
+      res.status(404).json({ message: 'No cars found' });
+      return;
+    }
+
+    // Get recommendations
+    const currentMonth = month || new Date().toISOString().slice(0, 7);
+    const allRecommendations = await recommendShopsForMultipleCars(
+      prisma,
+      req.user!.companyId,
+      cars as any,
+      currentMonth
+    );
+
+    // Filter out the excluded shop and flatten recommendations
+    const shopScores = new Map<string, { shop: any; totalScore: number; count: number }>();
+
+    allRecommendations.forEach((rec) => {
+      rec.recommendations
+        .filter((r: any) => r.shopId !== excludeShopId && r.score > 0)
+        .forEach((r: any) => {
+          const existing = shopScores.get(r.shopId);
+          if (existing) {
+            existing.totalScore += r.score;
+            existing.count += 1;
+          } else {
+            shopScores.set(r.shopId, {
+              shop: r.shop,
+              totalScore: r.score,
+              count: 1,
+            });
+          }
+        });
+    });
+
+    // Sort by average score
+    const recommendations = Array.from(shopScores.values())
+      .map((item) => ({
+        shopId: item.shop.id,
+        shopName: item.shop.name,
+        shopCode: item.shop.code,
+        region: item.shop.region,
+        tankQualified: item.shop.tankQualified,
+        capacity: item.shop.capacity,
+        averageScore: Math.round(item.totalScore / item.count),
+        matchCount: item.count,
+      }))
+      .sort((a, b) => b.averageScore - a.averageScore)
+      .slice(0, 5);
+
+    res.json({ recommendations });
+  } catch (error) {
+    console.error('Get alternative shops error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Get all scenarios
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { customer } = req.query;
 
   try {
@@ -50,7 +127,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
 // Get scenario by ID with full details
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const scenario = await prisma.scenario.findFirst({
@@ -105,7 +182,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // Create scenario
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { projectNumber, name, description, customerFilter, basePlanId } = req.body;
 
   // Validate required projectNumber
@@ -166,7 +243,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // Add cars to scenario
 router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { carIds, scheduledMonth, autoSuggestShops } = req.body;
 
   try {
@@ -284,7 +361,7 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
 
 // Add cars by customer filter
 router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { customer, scheduledMonth, limit, autoSuggestShops } = req.body;
 
   try {
@@ -409,7 +486,7 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
 
 // Remove car from scenario
 router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     await prisma.scenarioCar.deleteMany({
@@ -428,7 +505,7 @@ router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
 
 // Update scenario car (assign shop, change month)
 router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { assignedShopId, scheduledMonth, estimatedCost, estimatedDays } = req.body;
 
   try {
@@ -492,7 +569,7 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
 
 // Get shop recommendations for a scenario car
 router.get('/:id/cars/:scenarioCarId/recommendations', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { month } = req.query;
 
   try {
@@ -532,7 +609,7 @@ router.get('/:id/cars/:scenarioCarId/recommendations', async (req: AuthRequest, 
 
 // Analyze scenario - enhanced shop capacity analysis
 router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const scenario = await prisma.scenario.findFirst({
@@ -724,9 +801,97 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Approve scenario and create MasterPlan
+// This is the key endpoint that converts a Scenario into a MasterPlan with commitments
+router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+  const masterPlanService = createMasterPlanService(prisma);
+  const { planName, activate } = req.body;
+
+  try {
+    // Validate scenario exists and belongs to company
+    const scenario = await prisma.scenario.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+      include: {
+        sopAssignments: {
+          include: { car: true, shop: true },
+        },
+      },
+    });
+
+    if (!scenario) {
+      res.status(404).json({ message: 'Scenario not found' });
+      return;
+    }
+
+    if (!scenario.sopAssignments || scenario.sopAssignments.length === 0) {
+      res.status(400).json({
+        message: 'Scenario has no SOP assignments. Please add cars and assign shops before approving.',
+      });
+      return;
+    }
+
+    // Create the MasterPlan from the scenario
+    const masterPlan = await masterPlanService.createMasterPlanFromScenario(
+      scenario.id,
+      req.user!.id,
+      planName || `${scenario.projectNumber} - ${scenario.name}`
+    );
+
+    // Optionally approve and activate the plan immediately
+    if (activate) {
+      await masterPlanService.approveMasterPlan(masterPlan.id, req.user!.id, true);
+    }
+
+    // Update scenario status
+    await prisma.scenario.update({
+      where: { id: scenario.id },
+      data: { status: 'approved' },
+    });
+
+    // Broadcast update via WebSocket
+    const io = req.app.locals.io;
+    if (io) {
+      io.emit('scenarioApproved', {
+        scenarioId: scenario.id,
+        masterPlanId: masterPlan.id,
+        status: activate ? 'active' : 'draft',
+        commitmentCount: masterPlan.commitments.length,
+      });
+
+      // Also notify dashboard to refresh
+      io.emit('dashboardUpdate', {
+        type: 'masterPlanCreated',
+        masterPlanId: masterPlan.id,
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `MasterPlan created with ${masterPlan.commitments.length} commitments`,
+      masterPlan: {
+        id: masterPlan.id,
+        planName: masterPlan.planName,
+        fiscalYear: masterPlan.fiscalYear,
+        version: masterPlan.version,
+        status: masterPlan.status,
+        commitmentCount: masterPlan.commitments.length,
+      },
+    });
+  } catch (error: any) {
+    console.error('Approve scenario error:', error);
+    res.status(500).json({
+      message: error.message || 'Failed to approve scenario',
+    });
+  }
+});
+
 // Apply scenario to plan
 router.post('/:id/apply', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { planId } = req.body;
 
   try {
@@ -806,7 +971,7 @@ router.post('/:id/apply', async (req: AuthRequest, res: Response) => {
 
 // Update scenario
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { name, description, customerFilter } = req.body;
 
   try {
@@ -837,7 +1002,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // Delete scenario
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.scenario.deleteMany({
@@ -861,7 +1026,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
 // Get unique customers from cars
 router.get('/meta/customers', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const cars = await prisma.car.findMany({

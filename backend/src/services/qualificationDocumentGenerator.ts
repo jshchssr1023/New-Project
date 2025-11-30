@@ -12,7 +12,7 @@
  * @version 1.0.0
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 
 // =============================================================================
 // INTERFACES
@@ -275,10 +275,10 @@ function formatCurrency(amount: number): string {
 // =============================================================================
 
 export class QualificationDocumentGenerator {
-  private prisma: PrismaClient;
+  private prisma: any;
   private companyId: string;
 
-  constructor(prisma: PrismaClient, companyId: string) {
+  constructor(prisma: any, companyId: string) {
     this.prisma = prisma;
     this.companyId = companyId;
   }
@@ -1309,7 +1309,7 @@ export class QualificationDocumentGenerator {
 // =============================================================================
 
 export function createQualificationDocumentGenerator(
-  prisma: PrismaClient,
+  prisma: any,
   companyId: string
 ): QualificationDocumentGenerator {
   return new QualificationDocumentGenerator(prisma, companyId);

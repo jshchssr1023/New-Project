@@ -1,9 +1,8 @@
 // Scheduled Report Service
 // Manages scheduled report jobs with cron-like scheduling
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import reportBuilderService from './reportBuilderService';
 
-const prisma = new PrismaClient();
 
 // Common schedule presets
 export const SCHEDULE_PRESETS = {

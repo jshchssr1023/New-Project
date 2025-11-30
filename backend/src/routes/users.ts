@@ -1,6 +1,5 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { PrismaClient } from '@prisma/client';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 
 const router = Router();
@@ -9,7 +8,7 @@ router.use(authenticate);
 
 // Get all users (admin only)
 router.get('/', requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   try {
     const users = await prisma.user.findMany({
@@ -36,7 +35,7 @@ router.get('/', requireRole('admin'), async (req: AuthRequest, res: Response) =>
 
 // Get user by ID
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   // Users can only view their own profile unless admin
   if (req.params.id !== req.user!.id && req.user!.role !== 'admin') {
@@ -76,7 +75,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 // Create user (admin only)
 router.post('/', requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { email, password, firstName, lastName, role } = req.body;
 
   try {
@@ -122,7 +121,7 @@ router.post('/', requireRole('admin'), async (req: AuthRequest, res: Response) =
 
 // Update user
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { firstName, lastName, email, role } = req.body;
 
   // Users can only update their own profile unless admin
@@ -179,7 +178,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
 // Update password
 router.put('/:id/password', async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
   const { currentPassword, newPassword } = req.body;
 
   // Users can only update their own password unless admin
@@ -226,7 +225,7 @@ router.put('/:id/password', async (req: AuthRequest, res: Response) => {
 
 // Delete user (admin only)
 router.delete('/:id', requireRole('admin'), async (req: AuthRequest, res: Response) => {
-  const prisma: PrismaClient = req.app.locals.prisma;
+  const prisma: any = req.app.locals.prisma;
 
   // Prevent self-deletion
   if (req.params.id === req.user!.id) {

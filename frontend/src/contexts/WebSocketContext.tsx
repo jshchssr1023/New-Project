@@ -13,8 +13,14 @@ export type WebSocketEvent =
   | 'assignment:deleted'
   | 'scenario:committed'
   | 'scenario:updated'
+  | 'scenario:approved'
   | 'shop:capacityChanged'
-  | 'plan:updated';
+  | 'plan:updated'
+  | 'masterPlan:created'
+  | 'masterPlan:approved'
+  | 'masterPlan:activated'
+  | 'commitment:statusChanged'
+  | 'dashboard:refresh';
 
 export interface WebSocketPayload {
   event: WebSocketEvent;
@@ -93,8 +99,14 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       'assignment:deleted',
       'scenario:committed',
       'scenario:updated',
+      'scenario:approved',
       'shop:capacityChanged',
       'plan:updated',
+      'masterPlan:created',
+      'masterPlan:approved',
+      'masterPlan:activated',
+      'commitment:statusChanged',
+      'dashboard:refresh',
     ];
 
     events.forEach((event) => {
@@ -191,6 +203,43 @@ export function useAssignmentUpdates(onUpdate: () => void): void {
       subscribe('assignment:updated', onUpdate),
       subscribe('assignment:deleted', onUpdate),
       subscribe('scenario:committed', onUpdate),
+    ];
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [subscribe, onUpdate]);
+}
+
+// Custom hook for subscribing to dashboard refresh events
+export function useDashboardUpdates(onUpdate: () => void): void {
+  const { subscribe } = useWebSocket();
+
+  useEffect(() => {
+    const unsubscribers = [
+      subscribe('dashboard:refresh', onUpdate),
+      subscribe('masterPlan:created', onUpdate),
+      subscribe('masterPlan:approved', onUpdate),
+      subscribe('masterPlan:activated', onUpdate),
+      subscribe('commitment:statusChanged', onUpdate),
+    ];
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [subscribe, onUpdate]);
+}
+
+// Custom hook for subscribing to master plan events
+export function useMasterPlanUpdates(onUpdate: () => void): void {
+  const { subscribe } = useWebSocket();
+
+  useEffect(() => {
+    const unsubscribers = [
+      subscribe('masterPlan:created', onUpdate),
+      subscribe('masterPlan:approved', onUpdate),
+      subscribe('masterPlan:activated', onUpdate),
+      subscribe('scenario:approved', onUpdate),
     ];
 
     return () => {

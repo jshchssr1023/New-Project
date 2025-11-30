@@ -1,8 +1,7 @@
 // Audit logging service for tracking all data changes
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import { Request } from 'express';
 
-const prisma = new PrismaClient();
 
 export interface AuditLogEntry {
   userId: string;

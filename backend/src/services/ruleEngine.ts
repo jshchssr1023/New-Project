@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import shopPerformanceService from './shopPerformanceService';
 
 interface Car {
@@ -163,7 +163,7 @@ async function getShopPerformanceScore(
 }
 
 export async function evaluateShopForCar(
-  prisma: PrismaClient,
+  prisma: any,
   car: Car,
   shop: Shop,
   month: string,
@@ -292,7 +292,7 @@ export async function evaluateShopForCar(
 }
 
 export async function recommendShopsForCar(
-  prisma: PrismaClient,
+  prisma: any,
   companyId: string,
   car: Car,
   month: string
@@ -359,7 +359,7 @@ export async function recommendShopsForCar(
 }
 
 export async function recommendShopsForMultipleCars(
-  prisma: PrismaClient,
+  prisma: any,
   companyId: string,
   cars: Car[],
   month: string
