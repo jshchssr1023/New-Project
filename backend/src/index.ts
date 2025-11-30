@@ -19,6 +19,7 @@ import shopRulesRoutes from './routes/shopRules';
 import importExportRoutes from './routes/importExport';
 import notificationsRoutes from './routes/notifications';
 import webhooksRoutes from './routes/webhooks';
+import multiYearPlanningRoutes from './routes/multiYearPlanning';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 
@@ -56,6 +57,7 @@ app.use('/api/shop-rules', shopRulesRoutes);
 app.use('/api/import-export', importExportRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
+app.use('/api/multi-year-planning', multiYearPlanningRoutes);
 
 // Health check
 app.get('/api/health', (_, res) => {
