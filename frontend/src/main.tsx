@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
+import { CarSelectionProvider } from './contexts/CarSelectionContext';
 import './index.css';
 
 // Create a QueryClient with default options
@@ -24,7 +25,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <AuthProvider>
           <WebSocketProvider>
-            <App />
+            <CarSelectionProvider>
+              <App />
+            </CarSelectionProvider>
           </WebSocketProvider>
         </AuthProvider>
       </BrowserRouter>

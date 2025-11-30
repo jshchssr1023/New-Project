@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ChevronUpIcon, ChevronDownIcon, ChevronUpDownIcon } from '@heroicons/react/24/outline';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, MagnifyingGlassIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ChevronUpIcon, ChevronDownIcon, ChevronUpDownIcon, BeakerIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import { carsApi } from '../services/api';
+import { useCarSelection } from '../contexts/CarSelectionContext';
 import type { Car } from '../types';
 
 // Sort configuration type
@@ -66,6 +67,8 @@ const reasonShoppedOptions = ['Annual Inspection', 'Wheel Repair', 'Tank Cleanin
 
 export default function CarManagement() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { selectMultiple, clearSelection, selectedCarIds: globalSelectedIds, hasSelection: hasGlobalSelection } = useCarSelection();
   const [cars, setCars] = useState<Car[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -672,6 +675,30 @@ export default function CarManagement() {
         {selectedCars.size > 0 && (
           <div className="flex items-center space-x-3 bg-rail-50 px-4 py-2 rounded-lg border border-rail-200">
             <span className="text-sm font-medium text-rail-700">{selectedCars.size} selected</span>
+            <div className="h-4 w-px bg-rail-300" />
+            {/* Navigation buttons for cross-page selection */}
+            <button
+              onClick={() => {
+                const selectedCarObjects = filteredCars.filter(c => selectedCars.has(c.id));
+                selectMultiple(selectedCarObjects);
+                navigate('/scenarios');
+              }}
+              className="flex items-center text-sm text-rail-600 hover:text-rail-800 font-medium bg-white px-2 py-1 rounded border border-rail-300 hover:bg-rail-100"
+            >
+              <BeakerIcon className="h-4 w-4 mr-1" />
+              Use in Scenario
+            </button>
+            <button
+              onClick={() => {
+                const selectedCarObjects = filteredCars.filter(c => selectedCars.has(c.id));
+                selectMultiple(selectedCarObjects);
+                navigate('/car-flow');
+              }}
+              className="flex items-center text-sm text-rail-600 hover:text-rail-800 font-medium bg-white px-2 py-1 rounded border border-rail-300 hover:bg-rail-100"
+            >
+              <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
+              Use in Car Flow
+            </button>
             <div className="h-4 w-px bg-rail-300" />
             <button
               onClick={() => handleExport(true)}

@@ -15,8 +15,10 @@ import {
   MagnifyingGlassIcon,
   ClipboardDocumentCheckIcon,
   DocumentChartBarIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
+import { useCarSelection } from '../contexts/CarSelectionContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
@@ -44,6 +46,7 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { hasSelection, selectionCount, selectedCars, clearSelection, getSelectionSummary } = useCarSelection();
 
   const handleLogout = async () => {
     await logout();
@@ -265,6 +268,41 @@ export default function Layout() {
             </div>
           </div>
         </div>
+
+        {/* Global Car Selection Bar */}
+        {hasSelection && (
+          <div className="sticky top-16 z-30 bg-rail-600 text-white px-4 py-2 shadow-md">
+            <div className="flex items-center justify-between max-w-7xl mx-auto">
+              <div className="flex items-center space-x-4">
+                <TruckIcon className="h-5 w-5" />
+                <span className="text-sm font-medium">{getSelectionSummary()}</span>
+              </div>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => navigate('/scenarios')}
+                  className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
+                >
+                  <BeakerIcon className="h-4 w-4 mr-1" />
+                  Scenario Builder
+                </button>
+                <button
+                  onClick={() => navigate('/car-flow')}
+                  className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
+                >
+                  <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
+                  Car Flow
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className="text-sm text-rail-200 hover:text-white flex items-center"
+                >
+                  <XMarkIcon className="h-4 w-4 mr-1" />
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Page content - reduced padding for more real estate */}
         <main className="py-4">
