@@ -71,20 +71,26 @@ export function useMasterPlans(
  * Fetch the active MasterPlan
  */
 export function useActiveMasterPlan(
-  options?: Omit<UseQueryOptions<MasterPlanWithCommitments, Error>, 'queryKey' | 'queryFn'>
+  options?: Omit<UseQueryOptions<MasterPlanWithCommitments | null, Error>, 'queryKey' | 'queryFn'>
 ) {
   const { user } = useAuth();
 
   return useQuery({
     queryKey: queryKeys.masterPlans.active(),
-    queryFn: () => masterPlanApi.getActive(),
+    queryFn: async () => {
+      try {
+        return await masterPlanApi.getActive();
+      } catch (error: any) {
+        // Return null instead of throwing for 404 (no active plan)
+        if (error?.response?.status === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
     enabled: !!user?.companyId,
     staleTime: 60000, // 1 minute
-    retry: (failureCount, error: any) => {
-      // Don't retry on 404 (no active plan)
-      if (error?.response?.status === 404) return false;
-      return failureCount < 3;
-    },
+    retry: false, // Don't retry - either it exists or it doesn't
     ...options,
   });
 }
