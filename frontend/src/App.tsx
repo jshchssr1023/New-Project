@@ -12,6 +12,9 @@ import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
 import LeaseQualificationEngine from './pages/LeaseQualificationEngine';
+import MasterPlanView from './pages/MasterPlanView';
+import CustomerSchedule from './pages/CustomerSchedule';
+import ShopSchedule from './pages/ShopSchedule';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -63,6 +66,10 @@ export default function App() {
         <Route path="car-flow" element={<CarFlowPlanning />} />
         <Route path="scenarios" element={<ScenarioManager />} />
         <Route path="lease-qualification" element={<LeaseQualificationEngine />} />
+        <Route path="masterplan" element={<MasterPlanView />} />
+        <Route path="masterplan/:id" element={<MasterPlanView />} />
+        <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
+        <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
         <Route
           path="users"
