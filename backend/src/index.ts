@@ -14,6 +14,7 @@ import auditRoutes from './routes/audit';
 import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
+import masterPlansRoutes from './routes/masterPlans';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 
@@ -46,6 +47,7 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api/sop', sopRoutes);
 app.use('/api/lease-qualification', leaseQualificationRoutes);
+app.use('/api/masterplans', masterPlansRoutes);
 
 // Health check
 app.get('/api/health', (_, res) => {

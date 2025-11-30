@@ -14,7 +14,7 @@ import {
   ExclamationCircleIcon,
   NoSymbolIcon,
 } from '@heroicons/react/24/outline';
-import { plansApi, shopsApi, carsApi } from '../services/api';
+import { plansApi, shopsApi, carsApi, scenariosApi } from '../services/api';
 import type { Plan, Shop, PlanAssignment, Car, ReportGenerationConfig, ReportData, RecipientType } from '../types';
 import { getCellColorClasses, getBorderColorClass, getUtilizationLevel } from '../utils/utilizationColors';
 import ReportGenerationModal from '../components/ReportGenerationModal';
@@ -84,6 +84,18 @@ export default function PlanningGrid() {
   const [dragValidation, setDragValidation] = useState<{ isValid: boolean; level: string; canDrop: boolean } | null>(null);
   const dragGhostRef = useRef<HTMLDivElement>(null);
   const draggedCarIdsRef = useRef<string[]>([]);
+
+  // Alternative shop suggestions state (shown when capacity exceeded)
+  const [alternativeShops, setAlternativeShops] = useState<{
+    shopId: string;
+    shopName: string;
+    shopCode: string;
+    region: string;
+    capacity: number;
+    averageScore: number;
+  }[]>([]);
+  const [showAlternatives, setShowAlternatives] = useState(false);
+  const [loadingAlternatives, setLoadingAlternatives] = useState(false);
 
   // Report generation state
   const [showReportModal, setShowReportModal] = useState(false);
@@ -282,14 +294,37 @@ export default function PlanningGrid() {
     };
   }, [assignments, cars, shops, selectedYear]);
 
+  // Fetch alternative shop suggestions when capacity is exceeded
+  const fetchAlternativeShops = async (carIds: string[], excludeShopId: string) => {
+    setLoadingAlternatives(true);
+    try {
+      const suggestions = await scenariosApi.getAlternativeShops(carIds, excludeShopId);
+      setAlternativeShops(suggestions as any);
+      setShowAlternatives(true);
+    } catch (error) {
+      console.error('Failed to fetch alternative shops:', error);
+    } finally {
+      setLoadingAlternatives(false);
+    }
+  };
+
+  // Handle clicking on an alternative shop suggestion
+  const handleSelectAlternativeShop = (shopId: string) => {
+    setSelectedShopId(shopId);
+    setShowAlternatives(false);
+    setAlternativeShops([]);
+  };
+
   // Handle cell click for selection
   const handleCellClick = (shopId: string, monthIndex: number) => {
     if (selectedShopId === shopId && selectedMonth === monthIndex) {
       setSelectedShopId(null);
       setSelectedMonth(null);
+      setShowAlternatives(false);
     } else {
       setSelectedShopId(shopId);
       setSelectedMonth(monthIndex);
+      setShowAlternatives(false);
     }
   };
 
@@ -797,6 +832,62 @@ export default function PlanningGrid() {
                     {error}
                   </div>
                 ))}
+
+                {/* Show "Find Alternatives" button when capacity is exceeded */}
+                {validationErrors.some(e => e.includes('exceed capacity')) && !showAlternatives && (
+                  <button
+                    onClick={() => fetchAlternativeShops(Array.from(selectedCarIds), selectedShopId!)}
+                    disabled={loadingAlternatives}
+                    className="mt-2 w-full text-sm px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md border border-blue-200 flex items-center justify-center gap-2"
+                  >
+                    {loadingAlternatives ? (
+                      'Finding alternatives...'
+                    ) : (
+                      <>
+                        <MagnifyingGlassIcon className="w-4 h-4" />
+                        Find Alternative Shops
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Alternative Shop Suggestions */}
+            {showAlternatives && alternativeShops.length > 0 && (
+              <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium text-blue-900">Suggested Alternatives</h4>
+                  <button
+                    onClick={() => { setShowAlternatives(false); setAlternativeShops([]); }}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <XMarkIcon className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-xs text-blue-700 mb-2">Click a shop to select it:</p>
+                <div className="space-y-1">
+                  {alternativeShops.map((shop) => (
+                    <button
+                      key={shop.shopId}
+                      onClick={() => handleSelectAlternativeShop(shop.shopId)}
+                      className="w-full text-left px-3 py-2 bg-white hover:bg-blue-100 rounded-md border border-blue-200 transition-colors"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-medium text-steel-900">{shop.shopName}</span>
+                          <span className="text-xs text-steel-500 ml-2">({shop.shopCode})</span>
+                        </div>
+                        <div className="text-xs text-green-600 font-medium">
+                          Score: {shop.averageScore}
+                        </div>
+                      </div>
+                      <div className="text-xs text-steel-500">
+                        {shop.region} • Capacity: {shop.capacity}/mo
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <button
