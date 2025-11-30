@@ -474,6 +474,22 @@ class WebSocketService {
     // Also refresh dashboard
     this.emitToCompany(companyId, 'dashboard:refresh', { reason: 'bulk_assignments', count: assignments.length });
   }
+
+  // Emit to a specific user (by userId)
+  emitToUser(userId: string, event: string, data: Record<string, unknown>): void {
+    if (!this.io) return;
+
+    // Find all sockets for this user
+    for (const [socketId, presence] of this.presenceMap) {
+      if (presence.userId === userId) {
+        this.io.to(socketId).emit(event, {
+          event,
+          data,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    }
+  }
 }
 
 // Singleton instance

@@ -12,6 +12,8 @@ import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
 import LeaseQualificationEngine from './pages/LeaseQualificationEngine';
+import RuleBuilder from './pages/RuleBuilder';
+import ImportExport from './pages/ImportExport';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -64,6 +66,8 @@ export default function App() {
         <Route path="scenarios" element={<ScenarioManager />} />
         <Route path="lease-qualification" element={<LeaseQualificationEngine />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />
+        <Route path="rules" element={<RuleBuilder />} />
+        <Route path="import-export" element={<ImportExport />} />
         <Route
           path="users"
           element={

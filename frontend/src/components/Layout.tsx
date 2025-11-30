@@ -15,8 +15,11 @@ import {
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon,
   ClipboardDocumentCheckIcon,
+  AdjustmentsHorizontalIcon,
+  ArrowUpTrayIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
@@ -27,6 +30,8 @@ const navigation = [
   { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
   { name: 'Lease Qualification', href: '/lease-qualification', icon: ClipboardDocumentCheckIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
+  { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
+  { name: 'Import/Export', href: '/import-export', icon: ArrowUpTrayIcon },
 ];
 
 const adminNavigation = [
@@ -206,6 +211,9 @@ export default function Layout() {
                 alt="Chronos"
                 className="h-8 w-auto"
               />
+
+              {/* Notifications */}
+              <NotificationBell />
 
               {/* User menu */}
               <Menu as="div" className="relative">

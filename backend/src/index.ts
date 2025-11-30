@@ -15,6 +15,9 @@ import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
 import masterPlansRoutes from './routes/masterPlans';
+import shopRulesRoutes from './routes/shopRules';
+import importExportRoutes from './routes/importExport';
+import notificationsRoutes from './routes/notifications';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 
@@ -48,6 +51,9 @@ app.use('/api/permissions', permissionsRoutes);
 app.use('/api/sop', sopRoutes);
 app.use('/api/lease-qualification', leaseQualificationRoutes);
 app.use('/api/masterplans', masterPlansRoutes);
+app.use('/api/shop-rules', shopRulesRoutes);
+app.use('/api/import-export', importExportRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Health check
 app.get('/api/health', (_, res) => {
