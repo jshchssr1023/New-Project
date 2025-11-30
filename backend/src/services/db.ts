@@ -256,6 +256,19 @@ export const prisma = {
   qualificationPlanAssignment: createTableHandler('QualificationPlanAssignment'),
   qualificationPlanDocument: createTableHandler('QualificationPlanDocument'),
 
+  // MasterPlan tables (Gold Standard feature)
+  masterPlan: createTableHandler('MasterPlan'),
+  masterPlanCommitment: createTableHandler('MasterPlanCommitment'),
+
+  // Gold Standard Wizard tables
+  weeklyCapacity: createTableHandler('WeeklyCapacity'),
+  capacityAudit: createTableHandler('CapacityAudit'),
+  shopHistory: createTableHandler('ShopHistory'),
+  masterPlanVersion: createTableHandler('MasterPlanVersion'),
+  integrationLog: createTableHandler('IntegrationLog'),
+  importSession: createTableHandler('ImportSession'),
+  allocationOverride: createTableHandler('AllocationOverride'),
+
   // Raw query support
   $queryRaw: async (query: string, ...params: any[]) => {
     return db.prepare(query).all(...params);

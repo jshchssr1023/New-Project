@@ -550,6 +550,50 @@ CREATE TABLE IF NOT EXISTS QualificationPlanDocument (
   FOREIGN KEY (companyId) REFERENCES Company(id)
 );
 
+-- MasterPlan (Gold Standard feature)
+CREATE TABLE IF NOT EXISTS MasterPlan (
+  id TEXT PRIMARY KEY,
+  companyId TEXT NOT NULL,
+  planName TEXT NOT NULL,
+  fiscalYear INTEGER NOT NULL,
+  version INTEGER DEFAULT 1,
+  status TEXT DEFAULT 'draft',
+  baseScenarioId TEXT,
+  approvedAt TEXT,
+  approvedById TEXT,
+  validFrom TEXT NOT NULL,
+  validTo TEXT NOT NULL,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (companyId) REFERENCES Company(id),
+  FOREIGN KEY (baseScenarioId) REFERENCES Scenario(id),
+  FOREIGN KEY (approvedById) REFERENCES User(id)
+);
+
+-- MasterPlanCommitment (Gold Standard feature)
+CREATE TABLE IF NOT EXISTS MasterPlanCommitment (
+  id TEXT PRIMARY KEY,
+  masterPlanId TEXT NOT NULL,
+  carId TEXT NOT NULL,
+  shopId TEXT NOT NULL,
+  customerId TEXT NOT NULL,
+  scheduledMonth TEXT NOT NULL,
+  plannedArrival TEXT,
+  plannedRelease TEXT,
+  workTypes TEXT NOT NULL,
+  isBundled INTEGER DEFAULT 0,
+  estimatedCost REAL,
+  priority INTEGER DEFAULT 3,
+  status TEXT DEFAULT 'committed',
+  notes TEXT DEFAULT '',
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (masterPlanId) REFERENCES MasterPlan(id) ON DELETE CASCADE,
+  FOREIGN KEY (carId) REFERENCES Car(id),
+  FOREIGN KEY (shopId) REFERENCES Shop(id),
+  FOREIGN KEY (customerId) REFERENCES Customer(id)
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_car_company ON Car(companyId);
 CREATE INDEX IF NOT EXISTS idx_shop_company ON Shop(companyId);
@@ -581,6 +625,12 @@ CREATE INDEX IF NOT EXISTS idx_qualplandoc_company ON QualificationPlanDocument(
 CREATE INDEX IF NOT EXISTS idx_auditlog_company ON AuditLog(companyId, entityType, createdAt);
 CREATE INDEX IF NOT EXISTS idx_auditlog_user ON AuditLog(userId, createdAt);
 CREATE INDEX IF NOT EXISTS idx_shopperf_shop ON ShopPerformance(shopId, periodType, createdAt);
+CREATE INDEX IF NOT EXISTS idx_masterplan_company ON MasterPlan(companyId, status);
+CREATE INDEX IF NOT EXISTS idx_masterplan_fiscal ON MasterPlan(fiscalYear, version);
+CREATE INDEX IF NOT EXISTS idx_masterplancommit_plan ON MasterPlanCommitment(masterPlanId, scheduledMonth);
+CREATE INDEX IF NOT EXISTS idx_masterplancommit_shop ON MasterPlanCommitment(shopId, scheduledMonth);
+CREATE INDEX IF NOT EXISTS idx_masterplancommit_car ON MasterPlanCommitment(carId);
+CREATE INDEX IF NOT EXISTS idx_masterplancommit_customer ON MasterPlanCommitment(customerId);
 `;
 
 // Execute schema
