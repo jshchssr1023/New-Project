@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
@@ -9,22 +9,253 @@ const prisma = new PrismaClient();
 // CSV file path
 const CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
 
-// Helper function to normalize header names for matching
-function normalizeHeader(header: string): string {
-  return header.toLowerCase().replace(/[^a-z0-9]/g, '');
+// =============================================================================
+// CSV IMPORT TYPES AND INTERFACES
+// =============================================================================
+
+interface HeaderValidationResult {
+  isValid: boolean;
+  mappedHeaders: Map<string, string>; // CSV header -> normalized field name
+  missingRequired: string[];
+  missingOptional: string[];
+  unmappedHeaders: string[];
+  warnings: string[];
 }
 
-// Helper function to parse CSV with flexible header matching
-function parseCSV(content: string): Record<string, string>[] {
+interface ImportStatistics {
+  totalRows: number;
+  successfulUpserts: number;
+  failedRows: number;
+  skippedRows: number;
+  createdCount: number;
+  updatedCount: number;
+  errors: Array<{ row: number; error: string; data?: Record<string, string> }>;
+  warnings: string[];
+  duration: number;
+}
+
+interface CarImportData {
+  railcarNumber: string;
+  carInit: string;
+  carNo: string;
+  carType: string;
+  isTankCar: boolean;
+  commodity: string;
+  customer: string;
+  contractNumber: string;
+  contractExpiration: Date | null;
+  isJacketed: boolean;
+  isLined: boolean;
+  buildYear: number | null;
+  qualificationType: string;
+  tankQualified: boolean;
+  tankQualDueDate: Date | null;
+  performScheduled: boolean;
+  planStatus: string;
+  // Additional fields from extended CSV
+  currentLocation: string;
+  homeRegion: string;
+  reasonShopped: string;
+  status: string;
+  projectedCost: number;
+  notes: string;
+}
+
+// =============================================================================
+// HEADER MAPPING CONFIGURATION
+// =============================================================================
+
+// Required fields that MUST be present in the CSV
+const REQUIRED_HEADERS: Record<string, string[]> = {
+  'railcarNumber': ['car number', 'railcar number', 'railcar', 'car no', 'carno', 'car_number', 'railcar_number', 'car #', 'car#'],
+};
+
+// Optional fields with their possible CSV header variations
+const OPTIONAL_HEADERS: Record<string, string[]> = {
+  'carInit': ['car init', 'carinit', 'car_init', 'init', 'car initial', 'reporting mark', 'mark'],
+  'carNo': ['car no', 'carno', 'car_no', 'number', 'car number only', 'car num'],
+  'carType': ['car type', 'cartype', 'car_type', 'type', 'equipment type', 'equip type', 'railcar type'],
+  'commodity': ['commodity', 'product', 'lading', 'cargo', 'material', 'contents'],
+  'customer': ['customer', 'lessee', 'shipper', 'owner', 'client', 'company name'],
+  'contractNumber': ['contract', 'contract #', 'contract number', 'contract no', 'contractnumber', 'contract_number', 'agreement', 'lease #'],
+  'contractExpiration': ['cont exp', 'contract expiration', 'contract exp', 'expiration', 'exp date', 'expiry', 'lease end', 'end date'],
+  'isJacketed': ['jacketed', 'jacketed?', 'is jacketed', 'jacket', 'has jacket'],
+  'isLined': ['lined', 'lined?', 'is lined', 'lining', 'has lining'],
+  'buildYear': ['build yr', 'build year', 'buildyr', 'built', 'year built', 'mfg year', 'manufacture year'],
+  'qualificationType': ['qual type', 'qualification type', 'qualtype', 'qual_type', 'type of qual'],
+  'tankQualified': ['tank qual', 'tank qualified', 'tankqual', 'qualified', 'is qualified'],
+  'tankQualDueDate': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due', 'tankqualdue', 'due date', 'next qualification'],
+  'performScheduled': ['perf sched', 'performance scheduled', 'scheduled', 'is scheduled', 'planned'],
+  'planStatus': ['plan status', 'planstatus', 'status', 'planning status', 'plan_status'],
+  'currentLocation': ['location', 'current location', 'currentlocation', 'city', 'current city'],
+  'homeRegion': ['region', 'home region', 'homeregion', 'home_region', 'area'],
+  'reasonShopped': ['reason', 'reason shopped', 'shop reason', 'reasonshopped', 'work type'],
+  'projectedCost': ['cost', 'projected cost', 'estimated cost', 'projectedcost', 'est cost'],
+  'notes': ['notes', 'comments', 'remarks', 'memo', 'additional info'],
+};
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+// Normalize header names for matching (lowercase, remove special chars)
+function normalizeHeader(header: string): string {
+  return header.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+}
+
+// Calculate similarity between two strings (Levenshtein-based)
+function stringSimilarity(a: string, b: string): number {
+  const an = normalizeHeader(a);
+  const bn = normalizeHeader(b);
+  if (an === bn) return 1.0;
+  if (an.includes(bn) || bn.includes(an)) return 0.8;
+
+  // Simple character overlap score
+  const aSet = new Set(an.split(''));
+  const bSet = new Set(bn.split(''));
+  const intersection = [...aSet].filter(c => bSet.has(c)).length;
+  const union = new Set([...aSet, ...bSet]).size;
+  return intersection / union;
+}
+
+// =============================================================================
+// DELIVERABLE #3: validateHeaders UTILITY FUNCTION
+// =============================================================================
+
+/**
+ * Validates CSV headers against required and optional field mappings.
+ * Uses fuzzy matching to handle variations in header names.
+ *
+ * @param headers - Array of header strings from the CSV file
+ * @returns HeaderValidationResult with mapping information and validation status
+ */
+function validateHeaders(headers: string[]): HeaderValidationResult {
+  const mappedHeaders = new Map<string, string>();
+  const missingRequired: string[] = [];
+  const missingOptional: string[] = [];
+  const unmappedHeaders: string[] = [];
+  const warnings: string[] = [];
+
+  // Normalize all input headers
+  const normalizedInputHeaders = headers.map(h => ({
+    original: h,
+    normalized: normalizeHeader(h),
+  }));
+
+  // Track which headers have been mapped
+  const usedHeaders = new Set<string>();
+
+  // Helper: Find best match for a field from its possible variations
+  const findBestMatch = (fieldName: string, variations: string[]): string | null => {
+    // First, try exact normalized match
+    for (const variation of variations) {
+      const normalizedVariation = normalizeHeader(variation);
+      for (const input of normalizedInputHeaders) {
+        if (input.normalized === normalizedVariation && !usedHeaders.has(input.original)) {
+          return input.original;
+        }
+      }
+    }
+
+    // Second, try contains match (for partial matches)
+    for (const variation of variations) {
+      const normalizedVariation = normalizeHeader(variation);
+      for (const input of normalizedInputHeaders) {
+        if ((input.normalized.includes(normalizedVariation) ||
+             normalizedVariation.includes(input.normalized)) &&
+            !usedHeaders.has(input.original)) {
+          return input.original;
+        }
+      }
+    }
+
+    // Third, try fuzzy matching with similarity threshold
+    const SIMILARITY_THRESHOLD = 0.7;
+    let bestMatch: { header: string; score: number } | null = null;
+
+    for (const variation of variations) {
+      for (const input of normalizedInputHeaders) {
+        if (usedHeaders.has(input.original)) continue;
+        const score = stringSimilarity(input.normalized, variation);
+        if (score >= SIMILARITY_THRESHOLD && (!bestMatch || score > bestMatch.score)) {
+          bestMatch = { header: input.original, score };
+        }
+      }
+    }
+
+    if (bestMatch && bestMatch.score >= SIMILARITY_THRESHOLD) {
+      warnings.push(`Fuzzy matched "${bestMatch.header}" to field "${fieldName}" (${(bestMatch.score * 100).toFixed(0)}% confidence)`);
+      return bestMatch.header;
+    }
+
+    return null;
+  };
+
+  // Map required headers
+  for (const [fieldName, variations] of Object.entries(REQUIRED_HEADERS)) {
+    const match = findBestMatch(fieldName, variations);
+    if (match) {
+      mappedHeaders.set(match, fieldName);
+      usedHeaders.add(match);
+    } else {
+      missingRequired.push(fieldName);
+    }
+  }
+
+  // Map optional headers
+  for (const [fieldName, variations] of Object.entries(OPTIONAL_HEADERS)) {
+    const match = findBestMatch(fieldName, variations);
+    if (match) {
+      mappedHeaders.set(match, fieldName);
+      usedHeaders.add(match);
+    } else {
+      missingOptional.push(fieldName);
+    }
+  }
+
+  // Identify unmapped headers
+  for (const input of normalizedInputHeaders) {
+    if (!usedHeaders.has(input.original)) {
+      unmappedHeaders.push(input.original);
+    }
+  }
+
+  // Add warnings for unmapped headers (might be important data we're missing)
+  if (unmappedHeaders.length > 0) {
+    warnings.push(`${unmappedHeaders.length} headers could not be mapped: ${unmappedHeaders.slice(0, 5).join(', ')}${unmappedHeaders.length > 5 ? '...' : ''}`);
+  }
+
+  // Validation is successful if all required headers are mapped
+  const isValid = missingRequired.length === 0;
+
+  return {
+    isValid,
+    mappedHeaders,
+    missingRequired,
+    missingOptional,
+    unmappedHeaders,
+    warnings,
+  };
+}
+
+// =============================================================================
+// CSV PARSING UTILITIES
+// =============================================================================
+
+/**
+ * Parse CSV content into records with proper handling of:
+ * - BOM (Byte Order Mark)
+ * - Quoted fields with commas
+ * - Mixed line endings (CRLF, LF)
+ * - Escaped quotes
+ */
+function parseCSV(content: string): { headers: string[]; records: Record<string, string>[] } {
   const lines = content.split(/\r?\n/).filter(line => line.trim());
-  if (lines.length === 0) return [];
+  if (lines.length === 0) return { headers: [], records: [] };
 
   // Parse header - handle potential BOM, quotes, and whitespace
   const headerLine = lines[0].replace(/^\uFEFF/, ''); // Remove BOM if present
-  const rawHeaders = headerLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-
-  // Log headers for debugging
-  console.log('   CSV Headers found:', rawHeaders.slice(0, 5).join(', '), '...');
+  const headers = parseCSVLine(headerLine);
 
   const records: Record<string, string>[] = [];
 
@@ -32,42 +263,56 @@ function parseCSV(content: string): Record<string, string>[] {
     const line = lines[i];
     if (!line.trim()) continue;
 
-    // Parse values, handling quoted fields
-    const values: string[] = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (const char of line) {
-      if (char === '"') {
-        inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
-        values.push(current.trim().replace(/^"|"$/g, ''));
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    values.push(current.trim().replace(/^"|"$/g, ''));
-
+    const values = parseCSVLine(line);
     const record: Record<string, string> = {};
 
-    rawHeaders.forEach((header, index) => {
-      // Store both original and normalized versions
+    headers.forEach((header, index) => {
       record[header] = values[index] || '';
-      record[normalizeHeader(header)] = values[index] || '';
     });
 
     records.push(record);
   }
 
-  return records;
+  return { headers, records };
+}
+
+/**
+ * Parse a single CSV line, handling quoted fields properly
+ */
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Escaped quote
+        current += '"';
+        i++;
+      } else {
+        // Toggle quote state
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      values.push(current.trim().replace(/^"|"$/g, ''));
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  values.push(current.trim().replace(/^"|"$/g, ''));
+
+  return values;
 }
 
 // Helper function to parse date from various formats
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || dateStr.trim() === '') return null;
 
-  // Try parsing various date formats
   const cleaned = dateStr.trim();
 
   // Try MM/DD/YYYY or M/D/YYYY
@@ -76,7 +321,7 @@ function parseDate(dateStr: string): Date | null {
     const month = parseInt(mdyMatch[1]) - 1;
     const day = parseInt(mdyMatch[2]);
     let year = parseInt(mdyMatch[3]);
-    if (year < 100) year += 2000; // Convert 2-digit year
+    if (year < 100) year += 2000;
     return new Date(year, month, day);
   }
 
@@ -84,6 +329,24 @@ function parseDate(dateStr: string): Date | null {
   const isoMatch = cleaned.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
     return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]));
+  }
+
+  // Try DD-MMM-YY or DD-MMM-YYYY (e.g., 15-Jan-24)
+  const dMyMatch = cleaned.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (dMyMatch) {
+    const day = parseInt(dMyMatch[1]);
+    const monthStr = dMyMatch[2].toLowerCase();
+    let year = parseInt(dMyMatch[3]);
+    if (year < 100) year += 2000;
+
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
+    const month = months[monthStr];
+    if (month !== undefined) {
+      return new Date(year, month, day);
+    }
   }
 
   // Fallback to Date.parse
@@ -95,19 +358,473 @@ function parseDate(dateStr: string): Date | null {
   return null;
 }
 
-// Helper function to parse boolean
+// Helper function to parse boolean from various formats
 function parseBoolean(value: string): boolean {
+  if (!value) return false;
   const v = value.toLowerCase().trim();
-  return v === 'yes' || v === 'y' || v === 'true' || v === '1';
+  return v === 'yes' || v === 'y' || v === 'true' || v === '1' || v === 'x';
 }
 
-// Fallback data for random generation if CSV not found
+// Helper function to parse integer with fallback
+function parseIntSafe(value: string, fallback: number | null = null): number | null {
+  if (!value || value.trim() === '') return fallback;
+  const parsed = parseInt(value.trim(), 10);
+  return isNaN(parsed) ? fallback : parsed;
+}
+
+// Helper function to parse float with fallback
+function parseFloatSafe(value: string, fallback: number = 0): number {
+  if (!value || value.trim() === '') return fallback;
+  // Remove currency symbols and commas
+  const cleaned = value.replace(/[$,]/g, '').trim();
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? fallback : parsed;
+}
+
+// =============================================================================
+// DELIVERABLE #2: importCarsFromCSV WITH BULK UPSERT
+// =============================================================================
+
+/**
+ * Import cars from CSV file with robust validation and bulk UPSERT pattern.
+ *
+ * Features:
+ * - Header validation with fuzzy matching
+ * - Batch processing for performance (configurable batch size)
+ * - UPSERT on railcarNumber (unique constraint)
+ * - Comprehensive error handling per row
+ * - Detailed import statistics
+ *
+ * @param csvPath - Path to the CSV file
+ * @param companyId - Company ID to associate with imported cars
+ * @param options - Import options (batchSize, dryRun, etc.)
+ * @returns ImportStatistics with detailed results
+ */
+async function importCarsFromCSV(
+  csvPath: string,
+  companyId: string,
+  options: {
+    batchSize?: number;
+    dryRun?: boolean;
+    continueOnError?: boolean;
+  } = {}
+): Promise<ImportStatistics> {
+  const startTime = Date.now();
+  const { batchSize = 100, dryRun = false, continueOnError = true } = options;
+
+  const stats: ImportStatistics = {
+    totalRows: 0,
+    successfulUpserts: 0,
+    failedRows: 0,
+    skippedRows: 0,
+    createdCount: 0,
+    updatedCount: 0,
+    errors: [],
+    warnings: [],
+    duration: 0,
+  };
+
+  // Check if file exists
+  if (!fs.existsSync(csvPath)) {
+    stats.errors.push({ row: 0, error: `CSV file not found: ${csvPath}` });
+    stats.duration = Date.now() - startTime;
+    return stats;
+  }
+
+  // Read and parse CSV
+  console.log(`   📄 Reading CSV file: ${csvPath}`);
+  const csvContent = fs.readFileSync(csvPath, 'utf-8');
+  const { headers, records } = parseCSV(csvContent);
+
+  if (headers.length === 0) {
+    stats.errors.push({ row: 0, error: 'CSV file is empty or has no headers' });
+    stats.duration = Date.now() - startTime;
+    return stats;
+  }
+
+  stats.totalRows = records.length;
+  console.log(`   📊 Found ${stats.totalRows} data rows with ${headers.length} columns`);
+
+  // Validate headers
+  console.log(`   🔍 Validating headers...`);
+  const headerValidation = validateHeaders(headers);
+
+  if (!headerValidation.isValid) {
+    stats.errors.push({
+      row: 0,
+      error: `Missing required headers: ${headerValidation.missingRequired.join(', ')}`,
+    });
+    stats.duration = Date.now() - startTime;
+    return stats;
+  }
+
+  // Log validation results
+  console.log(`   ✓ Header validation passed`);
+  console.log(`   • Mapped ${headerValidation.mappedHeaders.size} fields`);
+  if (headerValidation.missingOptional.length > 0) {
+    console.log(`   • Optional fields not found: ${headerValidation.missingOptional.slice(0, 5).join(', ')}${headerValidation.missingOptional.length > 5 ? '...' : ''}`);
+  }
+  headerValidation.warnings.forEach(w => {
+    stats.warnings.push(w);
+    console.log(`   ⚠ ${w}`);
+  });
+
+  // Helper to get field value from record using mapped header
+  const getField = (record: Record<string, string>, fieldName: string): string => {
+    for (const [csvHeader, mappedField] of headerValidation.mappedHeaders) {
+      if (mappedField === fieldName) {
+        return record[csvHeader] || '';
+      }
+    }
+    return '';
+  };
+
+  // Get existing railcar numbers for update vs create tracking
+  const existingCars = await prisma.car.findMany({
+    where: { companyId },
+    select: { railcarNumber: true },
+  });
+  const existingRailcarNumbers = new Set(existingCars.map(c => c.railcarNumber));
+  console.log(`   📦 Found ${existingRailcarNumbers.size} existing cars in database`);
+
+  // Process records in batches
+  const batches: Record<string, string>[][] = [];
+  for (let i = 0; i < records.length; i += batchSize) {
+    batches.push(records.slice(i, i + batchSize));
+  }
+
+  console.log(`   🔄 Processing ${batches.length} batches of up to ${batchSize} records each...`);
+
+  // Regions and locations for defaults
+  const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
+  const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    const upsertOperations: Prisma.Prisma__CarClient<any>[] = [];
+    const batchData: Array<{ railcarNumber: string; data: any; rowIndex: number }> = [];
+
+    for (let i = 0; i < batch.length; i++) {
+      const record = batch[i];
+      const globalRowIndex = batchIndex * batchSize + i + 2; // +2 for 1-indexed and header row
+
+      try {
+        // Extract and validate railcar number
+        let railcarNumber = getField(record, 'railcarNumber').trim();
+        const carInit = getField(record, 'carInit').trim();
+        const carNo = getField(record, 'carNo').trim();
+
+        // Construct railcar number from init + no if not directly available
+        if (!railcarNumber && carInit && carNo) {
+          railcarNumber = `${carInit}${carNo}`;
+        } else if (!railcarNumber && carNo) {
+          railcarNumber = carNo;
+        }
+
+        // Skip if no valid railcar number
+        if (!railcarNumber) {
+          stats.skippedRows++;
+          stats.warnings.push(`Row ${globalRowIndex}: Skipped - no railcar number found`);
+          continue;
+        }
+
+        // Parse all fields
+        const carType = getField(record, 'carType') || 'Tank Car';
+        const isTankCar = carType.toLowerCase().includes('tank');
+        const commodity = getField(record, 'commodity');
+        const customer = getField(record, 'customer');
+        const contractNumber = getField(record, 'contractNumber');
+        const contractExpiration = parseDate(getField(record, 'contractExpiration'));
+        const isJacketed = parseBoolean(getField(record, 'isJacketed'));
+        const isLined = parseBoolean(getField(record, 'isLined'));
+        const buildYear = parseIntSafe(getField(record, 'buildYear'));
+        const qualificationType = getField(record, 'qualificationType');
+        const tankQualified = parseBoolean(getField(record, 'tankQualified'));
+        const tankQualDueDate = parseDate(getField(record, 'tankQualDueDate'));
+        const performScheduled = parseBoolean(getField(record, 'performScheduled'));
+        const planStatus = getField(record, 'planStatus');
+        const currentLocation = getField(record, 'currentLocation') || locations[Math.floor(Math.random() * locations.length)];
+        const homeRegion = getField(record, 'homeRegion') || regions[Math.floor(Math.random() * regions.length)];
+        const reasonShopped = getField(record, 'reasonShopped') || (isTankCar && tankQualDueDate ? 'qualification' : '');
+        const projectedCost = parseFloatSafe(getField(record, 'projectedCost'));
+        const notes = getField(record, 'notes');
+
+        // Track if this is an update or create
+        const isUpdate = existingRailcarNumbers.has(railcarNumber);
+
+        // Prepare upsert data
+        const carData = {
+          carType,
+          isTankCar,
+          commodity,
+          customer,
+          projectNumber: '',
+          reasonShopped,
+          status: 'available',
+          currentLocation,
+          homeRegion,
+          originRegion: homeRegion,
+          projectedCost,
+          daysInShop: 0,
+          shopEntryDate: null,
+          lastServiceDate: null,
+          nextServiceDue: tankQualDueDate,
+          notes,
+          contractNumber,
+          contractExpiration,
+          isJacketed,
+          isLined,
+          buildYear,
+          qualificationType,
+          tankQualified,
+          tankQualDueDate,
+          performScheduled,
+          planStatus,
+        };
+
+        batchData.push({
+          railcarNumber,
+          data: carData,
+          rowIndex: globalRowIndex,
+        });
+
+        if (isUpdate) {
+          stats.updatedCount++;
+        } else {
+          stats.createdCount++;
+          existingRailcarNumbers.add(railcarNumber); // Track for subsequent rows in same batch
+        }
+
+      } catch (error) {
+        stats.failedRows++;
+        stats.errors.push({
+          row: globalRowIndex,
+          error: error instanceof Error ? error.message : 'Unknown parsing error',
+          data: record,
+        });
+
+        if (!continueOnError) {
+          stats.duration = Date.now() - startTime;
+          return stats;
+        }
+      }
+    }
+
+    // Execute batch upserts
+    if (!dryRun && batchData.length > 0) {
+      try {
+        // Use transaction for batch atomicity
+        await prisma.$transaction(async (tx) => {
+          for (const item of batchData) {
+            await tx.car.upsert({
+              where: {
+                railcarNumber_companyId: {
+                  railcarNumber: item.railcarNumber,
+                  companyId: companyId,
+                },
+              },
+              update: item.data,
+              create: {
+                id: uuidv4(),
+                railcarNumber: item.railcarNumber,
+                ...item.data,
+                companyId: companyId,
+              },
+            });
+            stats.successfulUpserts++;
+          }
+        });
+      } catch (error) {
+        // If batch fails, try individual upserts
+        console.log(`   ⚠ Batch ${batchIndex + 1} transaction failed, retrying individually...`);
+
+        for (const item of batchData) {
+          try {
+            await prisma.car.upsert({
+              where: {
+                railcarNumber_companyId: {
+                  railcarNumber: item.railcarNumber,
+                  companyId: companyId,
+                },
+              },
+              update: item.data,
+              create: {
+                id: uuidv4(),
+                railcarNumber: item.railcarNumber,
+                ...item.data,
+                companyId: companyId,
+              },
+            });
+            stats.successfulUpserts++;
+          } catch (individualError) {
+            stats.failedRows++;
+            stats.successfulUpserts--; // Adjust count
+            if (existingRailcarNumbers.has(item.railcarNumber)) {
+              stats.updatedCount--;
+            } else {
+              stats.createdCount--;
+            }
+            stats.errors.push({
+              row: item.rowIndex,
+              error: individualError instanceof Error ? individualError.message : 'Database upsert failed',
+            });
+          }
+        }
+      }
+    } else if (dryRun) {
+      stats.successfulUpserts += batchData.length;
+    }
+
+    // Progress logging every 10 batches or at the end
+    if ((batchIndex + 1) % 10 === 0 || batchIndex === batches.length - 1) {
+      const processed = Math.min((batchIndex + 1) * batchSize, stats.totalRows);
+      console.log(`   ... processed ${processed}/${stats.totalRows} rows (${stats.successfulUpserts} successful, ${stats.failedRows} failed)`);
+    }
+  }
+
+  stats.duration = Date.now() - startTime;
+
+  // Final summary
+  console.log(`   ✅ Import completed in ${(stats.duration / 1000).toFixed(2)}s`);
+  console.log(`      • Total rows: ${stats.totalRows}`);
+  console.log(`      • Successful: ${stats.successfulUpserts} (${stats.createdCount} created, ${stats.updatedCount} updated)`);
+  console.log(`      • Failed: ${stats.failedRows}`);
+  console.log(`      • Skipped: ${stats.skippedRows}`);
+  if (stats.errors.length > 0) {
+    console.log(`      • Errors: ${stats.errors.length}`);
+    stats.errors.slice(0, 3).forEach(e => console.log(`        - Row ${e.row}: ${e.error}`));
+    if (stats.errors.length > 3) {
+      console.log(`        ... and ${stats.errors.length - 3} more errors`);
+    }
+  }
+
+  return stats;
+}
+
+// =============================================================================
+// FALLBACK RANDOM DATA GENERATION
+// =============================================================================
+
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const commodities = ['Crude Oil', 'Ethanol', 'Corn', 'Wheat', 'Coal', 'Lumber', 'Steel', 'Chemicals', 'Fertilizer', 'Plastics'];
+const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
+const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
+
+/**
+ * Generate random car data as fallback when CSV is not available.
+ * Creates cars with realistic random values for testing purposes.
+ */
+async function generateRandomCars(
+  companyId: string,
+  count: number = 200
+): Promise<{ id: string; railcarNumber: string }[]> {
+  const createdCars: { id: string; railcarNumber: string }[] = [];
+  const carStatusesList = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
+  const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05];
+  const qualificationTypes = ['full', 'partial', ''];
+  const planStatuses = ['planned', 'in_progress', 'completed', 'pending', ''];
+  const reasonsShopped = ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'];
+
+  console.log(`   Generating ${count} random cars...`);
+
+  for (let i = 0; i < count; i++) {
+    const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
+    const isTankCar = carType === 'Tank Car';
+    const commodity = commodities[Math.floor(Math.random() * commodities.length)];
+    const customer = customers[Math.floor(Math.random() * customers.length)];
+    const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
+
+    // Weighted status selection
+    const rand = Math.random();
+    let statusIndex = 0;
+    let cumulative = 0;
+    for (let j = 0; j < statusWeights.length; j++) {
+      cumulative += statusWeights[j];
+      if (rand < cumulative) {
+        statusIndex = j;
+        break;
+      }
+    }
+    const status = carStatusesList[statusIndex];
+    const region = regions[Math.floor(Math.random() * regions.length)];
+
+    // Date calculations
+    const nextServiceDue = new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000);
+    const isOverdue = Math.random() > 0.85;
+    const adjustedNextServiceDue = isOverdue
+      ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000)
+      : nextServiceDue;
+    const daysInShop = status === 'in_shop' ? Math.floor(Math.random() * 20) + 1 : 0;
+    const shopEntryDate = status === 'in_shop' ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000) : null;
+    const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000);
+    const buildYear = 1990 + Math.floor(Math.random() * 35);
+    const isJacketed = isTankCar ? Math.random() > 0.5 : false;
+    const isLined = isTankCar ? Math.random() > 0.6 : false;
+    const qualificationType = qualificationTypes[Math.floor(Math.random() * qualificationTypes.length)];
+    const tankQualified = isTankCar ? Math.random() > 0.2 : false;
+    const performScheduled = Math.random() > 0.7;
+    const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
+
+    let tankQualDueDate: Date | null = null;
+    if (isTankCar) {
+      const qualRand = Math.random();
+      if (qualRand < 0.2) {
+        tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
+      } else if (qualRand < 0.5) {
+        tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
+      } else {
+        tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
+      }
+    }
+
+    const railcarNumber = `AITX${String(100000 + i).slice(1)}`;
+
+    const createdCar = await prisma.car.create({
+      data: {
+        id: uuidv4(),
+        railcarNumber,
+        carType,
+        isTankCar,
+        commodity,
+        customer,
+        projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
+        reasonShopped,
+        status,
+        currentLocation: locations[Math.floor(Math.random() * locations.length)],
+        homeRegion: region,
+        originRegion: region,
+        projectedCost: 12000 + Math.floor(Math.random() * 10000),
+        daysInShop,
+        shopEntryDate,
+        lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
+        nextServiceDue: adjustedNextServiceDue,
+        notes: Math.random() > 0.7 ? 'Priority service required' : '',
+        contractNumber: `CTR-${2024}-${String(10000 + i)}`,
+        contractExpiration,
+        isJacketed,
+        isLined,
+        buildYear,
+        qualificationType,
+        tankQualified,
+        tankQualDueDate,
+        performScheduled,
+        planStatus,
+        companyId,
+      },
+    });
+
+    createdCars.push({ id: createdCar.id, railcarNumber: createdCar.railcarNumber });
+
+    if ((i + 1) % 50 === 0) {
+      console.log(`  ... created ${i + 1}/${count} railcars`);
+    }
+  }
+
+  console.log(`✓ Created ${createdCars.length} railcars (random data)`);
+  return createdCars;
+}
+
 const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
-const reasonsShopped = ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'];
-const qualificationTypes = ['full', 'partial', ''];
-const planStatuses = ['planned', 'in_progress', 'completed', 'pending', ''];
 
 // Shop locations - actual shop data
 const shopData = [
@@ -285,201 +1002,49 @@ async function main() {
 
   console.log(`✓ Created ${shops.length} shops`);
 
-  // Regions for car locations
-  const regions = ['Midwest', 'South', 'Gulf', 'Northeast', 'West'];
-  const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA', 'Denver, CO', 'Kansas City, MO', 'New Orleans, LA', 'Seattle, WA'];
+  // ==========================================================================
+  // IMPORT CARS FROM CSV USING BULK UPSERT
+  // ==========================================================================
+  // Uses the new importCarsFromCSV function with:
+  // - Header validation with fuzzy matching
+  // - Batch processing for performance
+  // - UPSERT on railcarNumber (unique constraint)
+  // - Comprehensive error handling
+  // ==========================================================================
 
-  // Create railcars - from CSV if available, otherwise generate random data
-  const cars = [];
+  let cars: { id: string; railcarNumber: string }[] = [];
 
-  // Try to load from CSV file
-  let csvRecords: Record<string, string>[] = [];
   if (fs.existsSync(CSV_FILE_PATH)) {
-    console.log(`📄 Loading cars from CSV: ${CSV_FILE_PATH}`);
-    const csvContent = fs.readFileSync(CSV_FILE_PATH, 'utf-8');
-    csvRecords = parseCSV(csvContent);
-    console.log(`   Found ${csvRecords.length} records in CSV`);
+    console.log(`\n📄 Importing cars from CSV using bulk UPSERT...`);
+
+    const importStats = await importCarsFromCSV(CSV_FILE_PATH, company.id, {
+      batchSize: 100,       // Process 100 cars per transaction
+      dryRun: false,        // Actually perform the upserts
+      continueOnError: true // Continue even if some rows fail
+    });
+
+    // Log import summary
+    if (importStats.errors.length > 0 && importStats.successfulUpserts === 0) {
+      console.error(`❌ CSV import failed: ${importStats.errors[0]?.error}`);
+      // Fall back to random data generation
+      cars = await generateRandomCars(company.id, 200);
+    } else {
+      console.log(`✓ CSV import completed successfully`);
+      // Fetch the imported cars for use in plan assignments
+      const importedCars = await prisma.car.findMany({
+        where: { companyId: company.id },
+        select: { id: true, railcarNumber: true },
+        take: 1000 // Limit for plan assignment purposes
+      });
+      cars = importedCars;
+    }
   } else {
-    console.log(`⚠️  CSV file not found at ${CSV_FILE_PATH}, generating random data...`);
+    console.log(`\n⚠️  CSV file not found at ${CSV_FILE_PATH}`);
+    console.log(`   Generating random car data as fallback...`);
+    cars = await generateRandomCars(company.id, 200);
   }
 
-  if (csvRecords.length > 0) {
-    // Import from CSV
-    // Log first record's keys for debugging
-    if (csvRecords.length > 0) {
-      console.log('   First record keys:', Object.keys(csvRecords[0]).slice(0, 10).join(', '));
-    }
-
-    for (let i = 0; i < csvRecords.length; i++) {
-      const record = csvRecords[i];
-
-      // Map CSV columns to database fields using normalized header names
-      // Original: Car Init, Car No, Car Type, Commodity, Lessee, Contract #, Cont Exp, Jacketed?, Lined?, Build Yr, Qual Type, Tank Qual, Tank Qual Due, Perf Sched, Plan Status
-      // Normalized: carinit, carno, cartype, commodity, lessee, contract, contexp, jacketed, lined, buildyr, qualtype, tankqual, tankqualdue, perfsched, planstatus
-      const carInit = record['carinit'] || record['Car Init'] || '';
-      const carNo = record['carno'] || record['Car No'] || '';
-      const railcarNumber = carInit && carNo ? `${carInit}${carNo}` : (carNo || `AITX${String(10000 + i)}`);
-
-      const carType = record['cartype'] || record['Car Type'] || 'Tank Car';
-      const isTankCar = carType.toLowerCase().includes('tank');
-      const commodity = record['commodity'] || record['Commodity'] || '';
-      const customer = record['lessee'] || record['Lessee'] || '';
-      const contractNumber = record['contract'] || record['Contract #'] || '';
-      const contractExpiration = parseDate(record['contexp'] || record['Cont Exp'] || '');
-      const isJacketed = parseBoolean(record['jacketed'] || record['Jacketed?'] || '');
-      const isLined = parseBoolean(record['lined'] || record['Lined?'] || '');
-      const buildYear = parseInt(record['buildyr'] || record['Build Yr'] || '') || null;
-      const qualificationType = record['qualtype'] || record['Qual Type'] || '';
-      const tankQualified = parseBoolean(record['tankqual'] || record['Tank Qual'] || '');
-      const tankQualDueDate = parseDate(record['tankqualdue'] || record['Tank Qual Due'] || '');
-      const performScheduled = parseBoolean(record['perfsched'] || record['Perf Sched'] || '');
-      const planStatus = record['planstatus'] || record['Plan Status'] || '';
-
-      // Generate some reasonable defaults for fields not in CSV
-      const region = regions[Math.floor(Math.random() * regions.length)];
-      const status = 'available'; // Default status
-
-      const createdCar = await prisma.car.create({
-        data: {
-          id: uuidv4(),
-          railcarNumber,
-          carType,
-          isTankCar,
-          commodity,
-          customer,
-          projectNumber: '',
-          reasonShopped: isTankCar && tankQualDueDate ? 'qualification' : '',
-          status,
-          currentLocation: locations[Math.floor(Math.random() * locations.length)],
-          homeRegion: region,
-          originRegion: region,
-          projectedCost: 0,
-          daysInShop: 0,
-          shopEntryDate: null,
-          lastServiceDate: null,
-          nextServiceDue: tankQualDueDate, // Use tank qual due as next service due
-          notes: '',
-          contractNumber,
-          contractExpiration,
-          isJacketed,
-          isLined,
-          buildYear,
-          qualificationType,
-          tankQualified,
-          tankQualDueDate,
-          performScheduled,
-          planStatus,
-          company: { connect: { id: company.id } },
-        },
-      });
-      cars.push(createdCar);
-
-      // Log progress every 100 cars
-      if ((i + 1) % 100 === 0) {
-        console.log(`  ... imported ${i + 1}/${csvRecords.length} railcars from CSV`);
-      }
-    }
-    console.log(`✓ Imported ${cars.length} railcars from CSV`);
-  } else {
-    // Generate random data as fallback
-    const carStatusesList = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
-    const statusWeights = [0.5, 0.15, 0.1, 0.2, 0.05];
-
-    for (let i = 0; i < 200; i++) {
-      const carType = carTypes[Math.floor(Math.random() * carTypes.length)];
-      const isTankCar = carType === 'Tank Car';
-      const commodity = commodities[Math.floor(Math.random() * commodities.length)];
-      const customer = customers[Math.floor(Math.random() * customers.length)];
-      const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
-      const rand = Math.random();
-      let statusIndex = 0;
-      let cumulative = 0;
-      for (let j = 0; j < statusWeights.length; j++) {
-        cumulative += statusWeights[j];
-        if (rand < cumulative) {
-          statusIndex = j;
-          break;
-        }
-      }
-      const status = carStatusesList[statusIndex];
-      const region = regions[Math.floor(Math.random() * regions.length)];
-      const nextServiceDue = new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000);
-      const isOverdue = Math.random() > 0.85;
-      const adjustedNextServiceDue = isOverdue
-        ? new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000)
-        : nextServiceDue;
-      const daysInShop = status === 'in_shop' ? Math.floor(Math.random() * 20) + 1 : 0;
-      const shopEntryDate = status === 'in_shop' ? new Date(Date.now() - daysInShop * 24 * 60 * 60 * 1000) : null;
-      const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000);
-      const buildYear = 1990 + Math.floor(Math.random() * 35);
-      const isJacketed = isTankCar ? Math.random() > 0.5 : false;
-      const isLined = isTankCar ? Math.random() > 0.6 : false;
-      const qualificationType = qualificationTypes[Math.floor(Math.random() * qualificationTypes.length)];
-      const tankQualified = isTankCar ? Math.random() > 0.2 : false;
-      const performScheduled = Math.random() > 0.7;
-      const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
-
-      let tankQualDueDate: Date | null = null;
-      if (isTankCar) {
-        const qualRand = Math.random();
-        if (qualRand < 0.2) {
-          tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
-        } else if (qualRand < 0.5) {
-          tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
-        } else {
-          tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
-        }
-      }
-
-      const createdCar = await prisma.car.create({
-        data: {
-          id: uuidv4(),
-          railcarNumber: `AITX${String(100000 + i).slice(1)}`,
-          carType,
-          isTankCar,
-          commodity,
-          customer,
-          projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
-          reasonShopped,
-          status,
-          currentLocation: locations[Math.floor(Math.random() * locations.length)],
-          homeRegion: region,
-          originRegion: region,
-          projectedCost: 12000 + Math.floor(Math.random() * 10000),
-          daysInShop,
-          shopEntryDate,
-          lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
-          nextServiceDue: adjustedNextServiceDue,
-          notes: Math.random() > 0.7 ? 'Priority service required' : '',
-          contractNumber: `CTR-${2024}-${String(10000 + i)}`,
-          contractExpiration,
-          isJacketed,
-          isLined,
-          buildYear,
-          qualificationType,
-          tankQualified,
-          tankQualDueDate,
-          performScheduled,
-          planStatus,
-          company: { connect: { id: company.id } },
-        },
-      });
-      cars.push(createdCar);
-
-      if ((i + 1) % 50 === 0) {
-        console.log(`  ... created ${i + 1}/200 railcars`);
-      }
-    }
-    console.log(`✓ Created ${cars.length} railcars (random data)`);
-  }
-
-  // Skip shop eligibility records during initial import for performance
-  // With 97K cars × 10+ shops = nearly 1 million records - too slow for one-by-one inserts
-  // Shop eligibility should be:
-  // 1. Imported from CSV if available (dedicated eligibility columns)
-  // 2. Calculated on-demand when needed
-  // 3. Generated in a background job after import
-  console.log(`⏭️  Skipping shop eligibility records (calculate on-demand for large datasets)`);
+  console.log(`📦 Total cars available for planning: ${cars.length}`);
 
   // Create 2 plans
   const plan2024 = await prisma.plan.create({
