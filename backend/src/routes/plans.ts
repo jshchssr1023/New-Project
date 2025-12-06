@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import websocketService from '../services/websocketService';
+import { recommendShopsForCar } from '../services/ruleEngine';
 
 const router = Router();
 
@@ -361,6 +362,348 @@ router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
     res.json(plan);
   } catch (error) {
     console.error('Archive plan error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Schedule car assignment using rule engine
+// This is the main scheduling action that locks a car into the schedule
+router.post('/schedule-car', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+  const { carId, shopId, scheduledMonth, planId, estimatedCost, estimatedDuration, useRuleEngine = true } = req.body;
+
+  if (!carId || !scheduledMonth) {
+    res.status(400).json({ message: 'carId and scheduledMonth are required' });
+    return;
+  }
+
+  try {
+    // Get the car
+    const car = await prisma.car.findFirst({
+      where: {
+        id: carId,
+        companyId: req.user!.companyId,
+      },
+    });
+
+    if (!car) {
+      res.status(404).json({ message: 'Car not found' });
+      return;
+    }
+
+    let finalShopId = shopId;
+    let recommendation = null;
+
+    // If no shopId provided, use rule engine to recommend
+    if (!finalShopId && useRuleEngine) {
+      recommendation = await recommendShopsForCar(
+        prisma,
+        req.user!.companyId,
+        {
+          id: car.id,
+          vehicleNumber: car.railcarNumber || car.vehicleNumber,
+          carType: car.carType || '',
+          commodity: car.commodity || '',
+          customer: car.customer || '',
+          homeRegion: car.homeRegion || '',
+          reasonShopped: car.reasonShopped || '',
+        },
+        scheduledMonth
+      );
+
+      if (!recommendation.suggestedShopId) {
+        res.status(400).json({
+          message: 'No suitable shop found for this car',
+          recommendation,
+        });
+        return;
+      }
+
+      finalShopId = recommendation.suggestedShopId;
+    }
+
+    if (!finalShopId) {
+      res.status(400).json({ message: 'shopId is required when useRuleEngine is false' });
+      return;
+    }
+
+    // Verify shop exists and belongs to company
+    const shop = await prisma.shop.findFirst({
+      where: {
+        id: finalShopId,
+        companyId: req.user!.companyId,
+      },
+    });
+
+    if (!shop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // Find or create a plan for this scheduling period
+    let targetPlanId = planId;
+    if (!targetPlanId) {
+      // Find active plan that covers this month
+      const monthDate = new Date(scheduledMonth + '-01');
+      const existingPlan = await prisma.plan.findFirst({
+        where: {
+          companyId: req.user!.companyId,
+          status: { in: ['active', 'draft'] },
+          startDate: { lte: monthDate },
+          endDate: { gte: monthDate },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existingPlan) {
+        targetPlanId = existingPlan.id;
+      } else {
+        // Create a new plan for this period
+        const startOfMonth = new Date(scheduledMonth + '-01');
+        const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 12, 0); // 12 month plan
+
+        const newPlan = await prisma.plan.create({
+          data: {
+            name: `Scheduling Plan ${scheduledMonth}`,
+            description: 'Auto-created plan for car scheduling',
+            startDate: startOfMonth,
+            endDate: endOfMonth,
+            status: 'draft',
+            companyId: req.user!.companyId,
+            createdBy: req.user!.id,
+          },
+        });
+        targetPlanId = newPlan.id;
+      }
+    }
+
+    // Check if car is already scheduled for this month
+    const existingAssignment = await prisma.planAssignment.findFirst({
+      where: {
+        carId,
+        scheduledMonth,
+        plan: { companyId: req.user!.companyId },
+      },
+    });
+
+    if (existingAssignment) {
+      res.status(409).json({
+        message: 'Car is already scheduled for this month',
+        existingAssignment,
+      });
+      return;
+    }
+
+    // Create the assignment
+    const assignment = await prisma.planAssignment.create({
+      data: {
+        planId: targetPlanId,
+        carId,
+        shopId: finalShopId,
+        scheduledMonth,
+        estimatedCost: estimatedCost || recommendation?.allScores[0]?.estimatedCost || shop.baseCostPerCar || 0,
+        estimatedDuration: estimatedDuration || recommendation?.allScores[0]?.estimatedDays || shop.baseTurnTime || 14,
+        status: 'pending',
+      },
+      include: {
+        car: true,
+        shop: true,
+        plan: true,
+      },
+    });
+
+    // Update car status to 'scheduled'
+    await prisma.car.update({
+      where: { id: carId },
+      data: { status: 'scheduled' },
+    });
+
+    // Emit WebSocket event
+    websocketService.emitAssignmentCreated(
+      req.user!.companyId,
+      {
+        planId: targetPlanId,
+        carId,
+        shopId: finalShopId,
+        scheduledMonth,
+      },
+      req.user!.id
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Car successfully scheduled',
+      assignment,
+      recommendation: recommendation ? {
+        suggestedShopName: recommendation.suggestedShopName,
+        score: recommendation.allScores[0]?.score,
+        reasons: recommendation.allScores[0]?.reasons,
+      } : null,
+    });
+  } catch (error) {
+    console.error('Schedule car error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Bulk schedule multiple cars using rule engine
+router.post('/schedule-cars-bulk', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+  const { carIds, scheduledMonth, planId } = req.body;
+
+  if (!Array.isArray(carIds) || carIds.length === 0 || !scheduledMonth) {
+    res.status(400).json({ message: 'carIds array and scheduledMonth are required' });
+    return;
+  }
+
+  try {
+    const results = {
+      success: 0,
+      failed: 0,
+      assignments: [] as any[],
+      errors: [] as { carId: string; error: string }[],
+    };
+
+    for (const carId of carIds) {
+      try {
+        // Get the car
+        const car = await prisma.car.findFirst({
+          where: {
+            id: carId,
+            companyId: req.user!.companyId,
+          },
+        });
+
+        if (!car) {
+          results.failed++;
+          results.errors.push({ carId, error: 'Car not found' });
+          continue;
+        }
+
+        // Get recommendation from rule engine
+        const recommendation = await recommendShopsForCar(
+          prisma,
+          req.user!.companyId,
+          {
+            id: car.id,
+            vehicleNumber: car.railcarNumber || car.vehicleNumber,
+            carType: car.carType || '',
+            commodity: car.commodity || '',
+            customer: car.customer || '',
+            homeRegion: car.homeRegion || '',
+            reasonShopped: car.reasonShopped || '',
+          },
+          scheduledMonth
+        );
+
+        if (!recommendation.suggestedShopId) {
+          results.failed++;
+          results.errors.push({ carId, error: 'No suitable shop found' });
+          continue;
+        }
+
+        // Find or use provided plan
+        let targetPlanId = planId;
+        if (!targetPlanId) {
+          const monthDate = new Date(scheduledMonth + '-01');
+          const existingPlan = await prisma.plan.findFirst({
+            where: {
+              companyId: req.user!.companyId,
+              status: { in: ['active', 'draft'] },
+              startDate: { lte: monthDate },
+              endDate: { gte: monthDate },
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+
+          if (existingPlan) {
+            targetPlanId = existingPlan.id;
+          } else {
+            const startOfMonth = new Date(scheduledMonth + '-01');
+            const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 12, 0);
+
+            const newPlan = await prisma.plan.create({
+              data: {
+                name: `Scheduling Plan ${scheduledMonth}`,
+                description: 'Auto-created plan for bulk car scheduling',
+                startDate: startOfMonth,
+                endDate: endOfMonth,
+                status: 'draft',
+                companyId: req.user!.companyId,
+                createdBy: req.user!.id,
+              },
+            });
+            targetPlanId = newPlan.id;
+          }
+        }
+
+        // Check for existing assignment
+        const existingAssignment = await prisma.planAssignment.findFirst({
+          where: {
+            carId,
+            scheduledMonth,
+            plan: { companyId: req.user!.companyId },
+          },
+        });
+
+        if (existingAssignment) {
+          results.failed++;
+          results.errors.push({ carId, error: 'Already scheduled for this month' });
+          continue;
+        }
+
+        // Create assignment
+        const shop = recommendation.allScores[0];
+        const assignment = await prisma.planAssignment.create({
+          data: {
+            planId: targetPlanId,
+            carId,
+            shopId: recommendation.suggestedShopId,
+            scheduledMonth,
+            estimatedCost: shop?.estimatedCost || 0,
+            estimatedDuration: shop?.estimatedDays || 14,
+            status: 'pending',
+          },
+          include: {
+            car: true,
+            shop: true,
+          },
+        });
+
+        // Update car status
+        await prisma.car.update({
+          where: { id: carId },
+          data: { status: 'scheduled' },
+        });
+
+        results.success++;
+        results.assignments.push(assignment);
+      } catch (error: any) {
+        results.failed++;
+        results.errors.push({ carId, error: error.message || 'Unknown error' });
+      }
+    }
+
+    // Emit bulk WebSocket event
+    if (results.success > 0) {
+      websocketService.emitBulkAssignmentsCreated(
+        req.user!.companyId,
+        results.assignments.map((a: any) => ({
+          planId: a.planId,
+          carId: a.carId,
+          shopId: a.shopId,
+          scheduledMonth: a.scheduledMonth,
+        })),
+        req.user!.id
+      );
+    }
+
+    res.json({
+      message: `Scheduled ${results.success} cars${results.failed > 0 ? `, ${results.failed} failed` : ''}`,
+      ...results,
+    });
+  } catch (error) {
+    console.error('Bulk schedule cars error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
