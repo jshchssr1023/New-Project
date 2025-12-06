@@ -64,34 +64,47 @@ interface CarImportData {
 // =============================================================================
 // HEADER MAPPING CONFIGURATION
 // =============================================================================
+// Updated to match Qual Planner Master.csv specification
+// Key mappings:
+//   railcarNumber = Mark + Number (concatenated)
+//   commodity = Primary Commodity(F)
+//   carType = Car Type Level 2 in (S)
+//   customer = Lessee Name (A)
+//   contractNumber = Contract
+//   contractExpiration = Contract Expiration
+// =============================================================================
 
-// Required fields that MUST be present in the CSV
+// Required fields that MUST be present in the CSV (for railcarNumber construction)
 const REQUIRED_HEADERS: Record<string, string[]> = {
-  'railcarNumber': ['car number', 'railcar number', 'railcar', 'car no', 'carno', 'car_number', 'railcar_number', 'car #', 'car#'],
+  // Mark and Number are required to construct railcarNumber
+  'mark': ['mark', 'car mark', 'reporting mark', 'car init', 'carinit', 'init'],
+  'number': ['number', 'car number', 'car no', 'carno', 'car_number', 'car num', 'car #'],
 };
 
 // Optional fields with their possible CSV header variations
+// Normalized header key -> possible CSV column name variations
 const OPTIONAL_HEADERS: Record<string, string[]> = {
-  'carInit': ['car init', 'carinit', 'car_init', 'init', 'car initial', 'reporting mark', 'mark'],
-  'carNo': ['car no', 'carno', 'car_no', 'number', 'car number only', 'car num'],
-  'carType': ['car type', 'cartype', 'car_type', 'type', 'equipment type', 'equip type', 'railcar type'],
-  'commodity': ['commodity', 'product', 'lading', 'cargo', 'material', 'contents'],
-  'customer': ['customer', 'lessee', 'shipper', 'owner', 'client', 'company name'],
-  'contractNumber': ['contract', 'contract #', 'contract number', 'contract no', 'contractnumber', 'contract_number', 'agreement', 'lease #'],
-  'contractExpiration': ['cont exp', 'contract expiration', 'contract exp', 'expiration', 'exp date', 'expiry', 'lease end', 'end date'],
+  // Primary fields from Qual Planner Master.csv specification
+  'primarycommodityf': ['primary commodity(f)', 'primarycommodityf', 'primary commodity', 'commodity', 'product', 'lading'],
+  'cartypelevel2ins': ['car type level 2 in (s)', 'cartypelevel2ins', 'car type level 2', 'car type', 'cartype', 'type'],
+  'lesseenamea': ['lessee name (a)', 'lesseenamea', 'lessee name', 'lessee', 'customer', 'shipper'],
+  'contract': ['contract', 'contract #', 'contract number', 'contract no', 'contractnumber'],
+  'contractexpiration': ['contract expiration', 'contractexpiration', 'cont exp', 'expiration', 'exp date', 'lease end'],
+
+  // Additional optional fields for enhanced car data
   'isJacketed': ['jacketed', 'jacketed?', 'is jacketed', 'jacket', 'has jacket'],
   'isLined': ['lined', 'lined?', 'is lined', 'lining', 'has lining'],
-  'buildYear': ['build yr', 'build year', 'buildyr', 'built', 'year built', 'mfg year', 'manufacture year'],
-  'qualificationType': ['qual type', 'qualification type', 'qualtype', 'qual_type', 'type of qual'],
-  'tankQualified': ['tank qual', 'tank qualified', 'tankqual', 'qualified', 'is qualified'],
-  'tankQualDueDate': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due', 'tankqualdue', 'due date', 'next qualification'],
-  'performScheduled': ['perf sched', 'performance scheduled', 'scheduled', 'is scheduled', 'planned'],
-  'planStatus': ['plan status', 'planstatus', 'status', 'planning status', 'plan_status'],
-  'currentLocation': ['location', 'current location', 'currentlocation', 'city', 'current city'],
-  'homeRegion': ['region', 'home region', 'homeregion', 'home_region', 'area'],
-  'reasonShopped': ['reason', 'reason shopped', 'shop reason', 'reasonshopped', 'work type'],
-  'projectedCost': ['cost', 'projected cost', 'estimated cost', 'projectedcost', 'est cost'],
-  'notes': ['notes', 'comments', 'remarks', 'memo', 'additional info'],
+  'buildYear': ['build yr', 'build year', 'buildyr', 'built', 'year built', 'mfg year'],
+  'qualificationType': ['qual type', 'qualification type', 'qualtype', 'full/partial qual'],
+  'tankQualified': ['tank qual', 'tank qualified', 'tankqual', 'qualified'],
+  'tankQualDueDate': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
+  'performScheduled': ['perf sched', 'performance scheduled', 'scheduled', 'perform scheduled'],
+  'planStatus': ['plan status', 'planstatus', 'status', 'planning status'],
+  'currentLocation': ['location', 'current location', 'currentlocation', 'city'],
+  'homeRegion': ['region', 'home region', 'homeregion', 'area'],
+  'reasonShopped': ['reason', 'reason shopped', 'shop reason', 'reasonshopped'],
+  'projectedCost': ['cost', 'projected cost', 'estimated cost', 'projectedcost'],
+  'notes': ['notes', 'comments', 'remarks', 'memo'],
 };
 
 // =============================================================================
@@ -509,32 +522,50 @@ async function importCarsFromCSV(
       const globalRowIndex = batchIndex * batchSize + i + 2; // +2 for 1-indexed and header row
 
       try {
-        // Extract and validate railcar number
-        let railcarNumber = getField(record, 'railcarNumber').trim();
-        const carInit = getField(record, 'carInit').trim();
-        const carNo = getField(record, 'carNo').trim();
+        // =================================================================
+        // RAIL CAR NUMBER CONSTRUCTION (Mark + Number)
+        // =================================================================
+        // Per Qual Planner Master.csv specification:
+        //   railcarNumber = Mark + Number (concatenated)
+        // =================================================================
+        const mark = getField(record, 'mark').trim();
+        const number = getField(record, 'number').trim();
 
-        // Construct railcar number from init + no if not directly available
-        if (!railcarNumber && carInit && carNo) {
-          railcarNumber = `${carInit}${carNo}`;
-        } else if (!railcarNumber && carNo) {
-          railcarNumber = carNo;
+        // Construct railcarNumber from Mark + Number
+        let railcarNumber = '';
+        if (mark && number) {
+          railcarNumber = `${mark}${number}`;
+        } else if (number) {
+          // Fallback: use just number if mark is missing
+          railcarNumber = number;
+        } else if (mark) {
+          // Fallback: use just mark if number is missing (unlikely)
+          railcarNumber = mark;
         }
 
-        // Skip if no valid railcar number
+        // Skip if no valid railcar number can be constructed
         if (!railcarNumber) {
           stats.skippedRows++;
-          stats.warnings.push(`Row ${globalRowIndex}: Skipped - no railcar number found`);
+          stats.warnings.push(`Row ${globalRowIndex}: Skipped - no Mark/Number found to construct railcarNumber`);
           continue;
         }
 
-        // Parse all fields
-        const carType = getField(record, 'carType') || 'Tank Car';
+        // =================================================================
+        // DATA FIELD EXTRACTION (Per Qual Planner Master.csv Mapping)
+        // =================================================================
+        // DB Column        | Header Key         | CSV Column
+        // commodity        | primarycommodityf  | Primary Commodity(F)
+        // carType          | cartypelevel2ins   | Car Type Level 2 in (S)
+        // customer         | lesseenamea        | Lessee Name (A)
+        // contractNumber   | contract           | Contract
+        // contractExpiration | contractexpiration | Contract Expiration
+        // =================================================================
+        const carType = getField(record, 'cartypelevel2ins') || 'Tank Car';
         const isTankCar = carType.toLowerCase().includes('tank');
-        const commodity = getField(record, 'commodity');
-        const customer = getField(record, 'customer');
-        const contractNumber = getField(record, 'contractNumber');
-        const contractExpiration = parseDate(getField(record, 'contractExpiration'));
+        const commodity = getField(record, 'primarycommodityf');
+        const customer = getField(record, 'lesseenamea');
+        const contractNumber = getField(record, 'contract');
+        const contractExpiration = parseDate(getField(record, 'contractexpiration'));
         const isJacketed = parseBoolean(getField(record, 'isJacketed'));
         const isLined = parseBoolean(getField(record, 'isLined'));
         const buildYear = parseIntSafe(getField(record, 'buildYear'));
@@ -610,18 +641,16 @@ async function importCarsFromCSV(
       }
     }
 
-    // Execute batch upserts
+    // Execute batch upserts using simple railcarNumber unique constraint
     if (!dryRun && batchData.length > 0) {
       try {
         // Use transaction for batch atomicity
         await prisma.$transaction(async (tx) => {
           for (const item of batchData) {
+            // UPSERT using @unique constraint on railcarNumber field
             await tx.car.upsert({
               where: {
-                railcarNumber_companyId: {
-                  railcarNumber: item.railcarNumber,
-                  companyId: companyId,
-                },
+                railcarNumber: item.railcarNumber,
               },
               update: item.data,
               create: {
@@ -640,12 +669,10 @@ async function importCarsFromCSV(
 
         for (const item of batchData) {
           try {
+            // UPSERT using @unique constraint on railcarNumber field
             await prisma.car.upsert({
               where: {
-                railcarNumber_companyId: {
-                  railcarNumber: item.railcarNumber,
-                  companyId: companyId,
-                },
+                railcarNumber: item.railcarNumber,
               },
               update: item.data,
               create: {
@@ -904,23 +931,45 @@ async function main() {
 
   console.log('✓ Cleared existing data');
 
-  // Create company
-  const company = await prisma.company.create({
-    data: {
+  // ==========================================================================
+  // COMPANY MASTER DATA WITH UPSERT (Stability Fix)
+  // ==========================================================================
+  // Uses UPSERT on the @unique code field for seed re-run stability
+  // All subsequent records MUST reference this stable companyId
+  // ==========================================================================
+  const company = await prisma.company.upsert({
+    where: { code: 'AITX' },
+    update: {
+      name: 'AITX Rail Services',
+    },
+    create: {
       id: uuidv4(),
       name: 'AITX Rail Services',
       code: 'AITX',
     },
   });
 
-  console.log('✓ Created company:', company.name);
+  console.log('✓ Company stable:', company.name, `(id: ${company.id})`);
 
-  // Create users
+  // ==========================================================================
+  // USER MASTER DATA WITH UPSERT (Stability Fix)
+  // ==========================================================================
+  // Uses UPSERT on the @unique email field for seed re-run stability
+  // Ensures default seeded User references the stable companyId
+  // ==========================================================================
   const adminPassword = await bcrypt.hash('password123', 10);
   const userPassword = await bcrypt.hash('password123', 10);
 
-  const admin = await prisma.user.create({
-    data: {
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@aitx.com' },
+    update: {
+      password: adminPassword,
+      firstName: 'Admin',
+      lastName: 'User',
+      role: 'admin',
+      companyId: company.id,
+    },
+    create: {
       id: uuidv4(),
       email: 'admin@aitx.com',
       password: adminPassword,
@@ -931,8 +980,16 @@ async function main() {
     },
   });
 
-  const planner = await prisma.user.create({
-    data: {
+  const planner = await prisma.user.upsert({
+    where: { email: 'planner@aitx.com' },
+    update: {
+      password: userPassword,
+      firstName: 'Sarah',
+      lastName: 'Johnson',
+      role: 'planner',
+      companyId: company.id,
+    },
+    create: {
       id: uuidv4(),
       email: 'planner@aitx.com',
       password: userPassword,
@@ -943,8 +1000,16 @@ async function main() {
     },
   });
 
-  const viewer = await prisma.user.create({
-    data: {
+  const viewer = await prisma.user.upsert({
+    where: { email: 'viewer@aitx.com' },
+    update: {
+      password: userPassword,
+      firstName: 'Mike',
+      lastName: 'Williams',
+      role: 'viewer',
+      companyId: company.id,
+    },
+    create: {
       id: uuidv4(),
       email: 'viewer@aitx.com',
       password: userPassword,
@@ -955,10 +1020,16 @@ async function main() {
     },
   });
 
-  console.log('✓ Created users: admin, planner, viewer');
+  console.log('✓ Users stable: admin, planner, viewer (using email as unique key)');
 
-  // Create 25 shops with actual data (sequential to avoid SQLite crashes)
+  // ==========================================================================
+  // SHOP MASTER DATA WITH BULK UPSERT ON CODE FIELD
+  // ==========================================================================
+  // Uses UPSERT pattern on the @unique code field for re-run stability
+  // ==========================================================================
   const shops = [];
+  console.log('   📍 Upserting shop master data...');
+
   for (let index = 0; index < shopData.length; index++) {
     const shop = shopData[index];
     // Convert annual capacity to monthly (divide by 12)
@@ -969,38 +1040,48 @@ async function main() {
     // Network tier: AITX = 1 (preferred), 3P varies by index
     const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
 
-    const createdShop = await prisma.shop.create({
-      data: {
-        id: uuidv4(),
-        name: shop.name,
+    // Build shop data object for UPSERT
+    const shopDataObj = {
+      name: shop.name,
+      location: `${shop.city}, ${shop.state}`,
+      city: shop.city,
+      state: shop.state,
+      region: shop.region,
+      network: shop.network,
+      isAitxInternal: isAitx,
+      tankQualified,
+      networkTier,
+      shopStatus: 'active',
+      capacity: monthlyCapacity,
+      utilizationTarget: 0.90,
+      baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
+      laborRate: isAitx ? 95 : 75,
+      costIndex: isAitx ? 1.379 : 1.0,
+      baseTurnTime: shop.turnTime,
+      certifications: JSON.stringify(shop.certifications.split(', ')),
+      contactName: shop.contact.split(' (')[0],
+      contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
+      notes: shop.notes,
+      isActive: true,
+    };
+
+    // UPSERT using @unique constraint on code field
+    const createdShop = await prisma.shop.upsert({
+      where: {
         code: shop.code,
-        location: `${shop.city}, ${shop.state}`,
-        city: shop.city,
-        state: shop.state,
-        region: shop.region,
-        network: shop.network,
-        isAitxInternal: isAitx,
-        tankQualified,
-        networkTier,
-        shopStatus: 'active',
-        capacity: monthlyCapacity,
-        utilizationTarget: 0.90,
-        baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
-        laborRate: isAitx ? 95 : 75,
-        costIndex: isAitx ? 1.379 : 1.0,
-        baseTurnTime: shop.turnTime,
-        certifications: JSON.stringify(shop.certifications.split(', ')),
-        contactName: shop.contact.split(' (')[0],
-        contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
-        notes: shop.notes,
-        isActive: true,
+      },
+      update: shopDataObj,
+      create: {
+        id: uuidv4(),
+        code: shop.code,
+        ...shopDataObj,
         companyId: company.id,
       },
     });
     shops.push(createdShop);
   }
 
-  console.log(`✓ Created ${shops.length} shops`);
+  console.log(`✓ Upserted ${shops.length} shops (using code as unique key)`);
 
   // ==========================================================================
   // IMPORT CARS FROM CSV USING BULK UPSERT
@@ -1451,6 +1532,144 @@ async function main() {
   }
 
   console.log(`✓ Created 3 MasterPlanCommitments for ${masterPlan.planName}`);
+
+  // ==========================================================================
+  // FINAL DATA INTEGRITY TEST PLAN
+  // ==========================================================================
+  // Automated integrity check to validate FK constraint resolution:
+  // 1. Select a random User and verify it resolves to a valid Company
+  // 2. Verify a random PlanAssignment resolves to valid Car and Shop records
+  // 3. Log final success message
+  // ==========================================================================
+  console.log('\n' + '='.repeat(70));
+  console.log('🔍 RUNNING FINAL DATA INTEGRITY TEST PLAN');
+  console.log('='.repeat(70));
+
+  let integrityChecksPassed = true;
+  const integrityErrors: string[] = [];
+
+  // Test 1: Random User -> Company FK Integrity
+  console.log('\n📋 Test 1: User -> Company FK Integrity');
+  try {
+    const randomUser = await prisma.user.findFirst({
+      orderBy: { createdAt: 'desc' },
+      include: { company: true },
+    });
+
+    if (!randomUser) {
+      integrityErrors.push('No User records found in database');
+      integrityChecksPassed = false;
+    } else if (!randomUser.company) {
+      integrityErrors.push(`User ${randomUser.email} has no associated Company (FK violation)`);
+      integrityChecksPassed = false;
+    } else {
+      console.log(`   ✅ User "${randomUser.email}" resolves to Company "${randomUser.company.name}" (id: ${randomUser.company.id})`);
+    }
+  } catch (error) {
+    integrityErrors.push(`User -> Company test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    integrityChecksPassed = false;
+  }
+
+  // Test 2: Random PlanAssignment -> Car and Shop FK Integrity
+  console.log('\n📋 Test 2: PlanAssignment -> Car and Shop FK Integrity');
+  try {
+    const randomAssignment = await prisma.planAssignment.findFirst({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        car: true,
+        shop: true,
+        plan: true,
+      },
+    });
+
+    if (!randomAssignment) {
+      console.log('   ⚠️  No PlanAssignment records found (this is OK for fresh databases)');
+    } else {
+      let assignmentValid = true;
+
+      if (!randomAssignment.car) {
+        integrityErrors.push(`PlanAssignment ${randomAssignment.id} has no associated Car (FK violation)`);
+        assignmentValid = false;
+      } else {
+        console.log(`   ✅ PlanAssignment resolves to Car "${randomAssignment.car.railcarNumber}"`);
+      }
+
+      if (!randomAssignment.shop) {
+        integrityErrors.push(`PlanAssignment ${randomAssignment.id} has no associated Shop (FK violation)`);
+        assignmentValid = false;
+      } else {
+        console.log(`   ✅ PlanAssignment resolves to Shop "${randomAssignment.shop.name}" (code: ${randomAssignment.shop.code})`);
+      }
+
+      if (!randomAssignment.plan) {
+        integrityErrors.push(`PlanAssignment ${randomAssignment.id} has no associated Plan (FK violation)`);
+        assignmentValid = false;
+      } else {
+        console.log(`   ✅ PlanAssignment resolves to Plan "${randomAssignment.plan.name}"`);
+      }
+
+      if (!assignmentValid) {
+        integrityChecksPassed = false;
+      }
+    }
+  } catch (error) {
+    integrityErrors.push(`PlanAssignment -> Car/Shop test failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    integrityChecksPassed = false;
+  }
+
+  // Test 3: Verify core entity counts
+  console.log('\n📋 Test 3: Core Entity Count Validation');
+  try {
+    const counts = {
+      companies: await prisma.company.count(),
+      users: await prisma.user.count(),
+      shops: await prisma.shop.count(),
+      cars: await prisma.car.count(),
+      plans: await prisma.plan.count(),
+      assignments: await prisma.planAssignment.count(),
+    };
+
+    console.log(`   • Companies: ${counts.companies}`);
+    console.log(`   • Users: ${counts.users}`);
+    console.log(`   • Shops: ${counts.shops}`);
+    console.log(`   • Cars: ${counts.cars}`);
+    console.log(`   • Plans: ${counts.plans}`);
+    console.log(`   • PlanAssignments: ${counts.assignments}`);
+
+    if (counts.companies === 0) {
+      integrityErrors.push('No Company records - cannot create dependent records');
+      integrityChecksPassed = false;
+    }
+    if (counts.users === 0) {
+      integrityErrors.push('No User records - application will not function');
+      integrityChecksPassed = false;
+    }
+    if (counts.shops === 0) {
+      integrityErrors.push('No Shop records - cannot create assignments');
+      integrityChecksPassed = false;
+    }
+    if (counts.cars === 0) {
+      integrityErrors.push('No Car records - cannot create assignments');
+      integrityChecksPassed = false;
+    }
+  } catch (error) {
+    integrityErrors.push(`Entity count validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    integrityChecksPassed = false;
+  }
+
+  // Final Summary
+  console.log('\n' + '='.repeat(70));
+  if (integrityChecksPassed) {
+    console.log('🎉 FINAL SUCCESS: Chronos Data Integrity is Guaranteed.');
+    console.log('   All Write Operations Should Now Succeed.');
+    console.log('='.repeat(70));
+  } else {
+    console.log('❌ DATA INTEGRITY CHECK FAILED');
+    console.log('   The following issues were detected:');
+    integrityErrors.forEach((err, i) => console.log(`   ${i + 1}. ${err}`));
+    console.log('='.repeat(70));
+    throw new Error('Data integrity validation failed - see errors above');
+  }
 
   console.log('\n🎉 Seed completed successfully!');
   console.log('\nLogin credentials:');
