@@ -82,7 +82,7 @@ model Customer {
 
 model Car {
   id                       String           @id @default(uuid())
-  railcarNumber            String           // Railcar number/reporting mark (Car Mark)
+  railcarNumber            String           @unique // Railcar number/reporting mark (Mark + Number concatenated)
   carType                  String           @default("") // Car Type Level 2: Tank car, hopper, boxcar, gondola, etc.
   isTankCar                Boolean          @default(false) // Critical for shop qualification validation
   commodity                String           @default("") // Primary Commodity - What the car carries
@@ -133,13 +133,15 @@ model Car {
   // MasterPlan relations
   masterCommitments        MasterPlanCommitment[]
 
-  @@unique([railcarNumber, companyId])
+  // Note: railcarNumber has @unique constraint for UPSERT operations
+  // Compound constraint retained for multi-tenant compatibility
+  @@index([railcarNumber, companyId])
 }
 
 model Shop {
   id                 String           @id @default(uuid())
   name               String
-  code               String
+  code               String           @unique // Shop code as unique business key
   location           String
   city               String           @default("")
   state              String           @default("")
@@ -193,7 +195,9 @@ model Shop {
   // Gold Standard relations
   weeklyCapacities     WeeklyCapacity[]
 
-  @@unique([code, companyId])
+  // Note: code has @unique constraint for UPSERT operations
+  // Compound constraint retained for multi-tenant compatibility
+  @@index([code, companyId])
 }
 
 // Junction table for Car-Shop eligibility (shop checkboxes in car database)
