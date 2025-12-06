@@ -114,12 +114,18 @@ export default function RuleBuilder() {
 
   const fetchCars = useCallback(async () => {
     try {
-      const res = await fetch('/api/cars?limit=100', {
+      const res = await fetch('/api/cars?pageSize=100', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
-        const data = await res.json();
-        setCars(data.cars || []);
+        const response = await res.json();
+        // API returns { data: [...], total, page, pageSize, totalPages }
+        const carList = response.data || [];
+        // Map to include both id and railcarNumber for the dropdown
+        setCars(carList.map((car: any) => ({
+          id: car.id,
+          vehicleNumber: car.railcarNumber || car.vehicleNumber,
+        })));
       }
     } catch (error) {
       console.error('Error fetching cars:', error);

@@ -427,6 +427,46 @@ export const plansApi = {
     });
     return response.data;
   },
+
+  // Schedule a single car using rule engine
+  // This is the main action to lock a car into the schedule
+  scheduleCar: async (params: {
+    carId: string;
+    scheduledMonth: string;
+    shopId?: string;
+    planId?: string;
+    estimatedCost?: number;
+    estimatedDuration?: number;
+    useRuleEngine?: boolean;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    assignment: PlanAssignment;
+    recommendation?: {
+      suggestedShopName: string;
+      score: number;
+      reasons: string[];
+    };
+  }> => {
+    const response = await apiClient.post('/plans/schedule-car', params);
+    return response.data;
+  },
+
+  // Bulk schedule multiple cars using rule engine
+  scheduleCarsBulk: async (params: {
+    carIds: string[];
+    scheduledMonth: string;
+    planId?: string;
+  }): Promise<{
+    message: string;
+    success: number;
+    failed: number;
+    assignments: PlanAssignment[];
+    errors: { carId: string; error: string }[];
+  }> => {
+    const response = await apiClient.post('/plans/schedule-cars-bulk', params);
+    return response.data;
+  },
 };
 
 // Scenarios API
@@ -1882,6 +1922,116 @@ export const masterPlanWizardApi = {
     };
   }> => {
     const response = await apiClient.get('/master-plan-wizard/audit/statistics');
+    return response.data;
+  },
+};
+
+// =============================================================================
+// SHOP RULES API
+// =============================================================================
+
+export interface ShopRuleCondition {
+  [key: string]: unknown;
+}
+
+export interface ShopRuleAction {
+  [key: string]: unknown;
+}
+
+export interface ShopRuleSchema {
+  label: string;
+  description: string;
+  conditions: { key: string; type: string; label: string; default: unknown }[];
+  actions: { key: string; type: string; label: string; default: unknown }[];
+}
+
+export interface ShopRule {
+  id: string;
+  name: string;
+  description: string;
+  ruleType: string;
+  priority: number;
+  isActive: boolean;
+  conditions: ShopRuleCondition;
+  actions: ShopRuleAction;
+  schema?: ShopRuleSchema;
+}
+
+export interface RuleTestResult {
+  carId: string;
+  carNumber: string;
+  suggestedShopId: string | null;
+  suggestedShopName: string | null;
+  allScores: {
+    shopId: string;
+    shopName: string;
+    shopCode: string;
+    score: number;
+    reasons: string[];
+    estimatedCost: number;
+    estimatedDays: number;
+    capacityAvailable: number;
+    isRecommended: boolean;
+  }[];
+  ruleNotes: string;
+}
+
+export const shopRulesApi = {
+  // Get all rules for company
+  getAll: async (): Promise<ShopRule[]> => {
+    const response = await apiClient.get<ShopRule[]>('/shop-rules');
+    return response.data;
+  },
+
+  // Get rule type schemas
+  getSchemas: async (): Promise<Record<string, ShopRuleSchema>> => {
+    const response = await apiClient.get<Record<string, ShopRuleSchema>>('/shop-rules/schemas');
+    return response.data;
+  },
+
+  // Get default rules template
+  getDefaults: async (): Promise<ShopRule[]> => {
+    const response = await apiClient.get<ShopRule[]>('/shop-rules/defaults');
+    return response.data;
+  },
+
+  // Create a new rule
+  create: async (rule: Partial<ShopRule>): Promise<ShopRule> => {
+    const response = await apiClient.post<ShopRule>('/shop-rules', rule);
+    return response.data;
+  },
+
+  // Update a rule
+  update: async (id: string, rule: Partial<ShopRule>): Promise<ShopRule> => {
+    const response = await apiClient.put<ShopRule>(`/shop-rules/${id}`, rule);
+    return response.data;
+  },
+
+  // Delete a rule
+  delete: async (id: string): Promise<void> => {
+    await apiClient.delete(`/shop-rules/${id}`);
+  },
+
+  // Toggle rule active status
+  toggle: async (id: string): Promise<ShopRule> => {
+    const response = await apiClient.post<ShopRule>(`/shop-rules/${id}/toggle`);
+    return response.data;
+  },
+
+  // Reorder rules (update priorities)
+  reorder: async (ruleIds: string[]): Promise<void> => {
+    await apiClient.post('/shop-rules/reorder', { ruleIds });
+  },
+
+  // Test rules against a car
+  test: async (carId: string, month: string): Promise<RuleTestResult> => {
+    const response = await apiClient.post<RuleTestResult>('/shop-rules/test', { carId, month });
+    return response.data;
+  },
+
+  // Reset to default rules
+  resetToDefaults: async (): Promise<ShopRule[]> => {
+    const response = await apiClient.post<ShopRule[]>('/shop-rules/reset-defaults');
     return response.data;
   },
 };
