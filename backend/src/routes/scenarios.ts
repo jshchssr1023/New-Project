@@ -943,8 +943,12 @@ router.post('/:id/confirm-assignments', async (req: AuthRequest, res: Response) 
   }
 });
 
-// Approve scenario and create MasterPlan
-// This is the key endpoint that converts a Scenario into a MasterPlan with commitments
+// Approve scenario and create MasterPlan - ONE STEP APPROVAL
+// This endpoint now handles everything:
+// 1. Creates SOPAssignments from ScenarioCars (if not already created)
+// 2. Creates MasterPlan with commitments
+// 3. Updates Car.assignedShopId for all assigned cars
+// 4. Uses suggestedShopId when assignedShopId is null
 router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
   const masterPlanService = createMasterPlanService(prisma);
@@ -958,9 +962,10 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
         companyId: req.user!.companyId,
       },
       include: {
-        sopAssignments: {
-          include: { car: true, shop: true },
+        cars: {
+          include: { car: true },
         },
+        sopAssignments: true,
       },
     });
 
@@ -969,12 +974,110 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    if (!scenario.sopAssignments || scenario.sopAssignments.length === 0) {
+    // Check if scenario has cars
+    if (!scenario.cars || scenario.cars.length === 0) {
       res.status(400).json({
-        message: 'Scenario has no SOP assignments. Please add cars and assign shops before approving.',
+        message: 'Scenario has no cars. Please add cars before approving.',
       });
       return;
     }
+
+    // Get cars with shop assignments (either manually assigned OR suggested)
+    const carsWithShops = scenario.cars.filter(
+      (sc: any) => sc.assignedShopId || sc.suggestedShopId
+    );
+
+    if (carsWithShops.length === 0) {
+      res.status(400).json({
+        message: 'No cars have shop assignments. Please assign shops or run auto-suggestions before approving.',
+      });
+      return;
+    }
+
+    // =========================================================================
+    // STEP 1: Create or update SOPAssignments from ScenarioCars (ONE-STEP)
+    // =========================================================================
+    console.log(`[Approve] Creating SOPAssignments for scenario ${scenario.id}...`);
+
+    // Delete existing SOPAssignments (fresh start)
+    await prisma.sOPAssignment.deleteMany({
+      where: { scenarioId: scenario.id },
+    });
+
+    // Create SOPAssignment for each car with a shop
+    const sopAssignmentData = carsWithShops.map((sc: any) => {
+      // Use assignedShopId if available, otherwise fall back to suggestedShopId
+      const shopId = sc.assignedShopId || sc.suggestedShopId;
+
+      // Get reasons from car's reasonsShopped field
+      let reasonsArray: string[] = [];
+      try {
+        reasonsArray = JSON.parse(sc.car.reasonsShopped || '[]');
+      } catch {
+        // Fallback to old reasonShopped field (singular)
+        if (sc.car.reasonShopped) {
+          reasonsArray = sc.car.reasonShopped.split(',').map((r: string) => r.trim().toLowerCase()).filter(Boolean);
+        }
+      }
+
+      // Default to qualification if no reasons specified
+      if (reasonsArray.length === 0) {
+        reasonsArray = ['qualification'];
+      }
+
+      return {
+        scenarioId: scenario.id,
+        carId: sc.carId,
+        shopId,
+        reasonsShopped: JSON.stringify(reasonsArray),
+        status: 'PLANNED',
+        monthKey: sc.scheduledMonth,
+        estimatedCost: sc.estimatedCost || 15000,
+        estimatedDays: sc.estimatedDays || 14,
+        priority: 3,
+        notes: `Auto-created during approval: ${scenario.name}`,
+      };
+    });
+
+    await prisma.sOPAssignment.createMany({
+      data: sopAssignmentData,
+    });
+
+    console.log(`[Approve] Created ${sopAssignmentData.length} SOPAssignments`);
+
+    // =========================================================================
+    // STEP 2: Update Car.assignedShopId for all cars being assigned
+    // =========================================================================
+    console.log(`[Approve] Updating Car.assignedShopId for ${carsWithShops.length} cars...`);
+
+    for (const sc of carsWithShops) {
+      const shopId = sc.assignedShopId || sc.suggestedShopId;
+      if (shopId) {
+        await prisma.car.update({
+          where: { id: sc.carId },
+          data: {
+            assignedShopId: shopId,
+            status: 'scheduled', // Update car status to scheduled
+          },
+        });
+      }
+    }
+
+    console.log(`[Approve] Updated Car.assignedShopId for all cars`);
+
+    // =========================================================================
+    // STEP 3: Refresh scenario and create MasterPlan
+    // =========================================================================
+
+    // Re-fetch scenario with the new SOPAssignments
+    const updatedScenario = await prisma.scenario.findFirst({
+      where: { id: scenario.id },
+      include: {
+        sopAssignments: {
+          include: { car: true, shop: true },
+        },
+      },
+    });
 
     // Create the MasterPlan from the scenario
     const masterPlan = await masterPlanService.createMasterPlanFromScenario(
@@ -1001,7 +1104,7 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
         scenarioId: scenario.id,
         masterPlanId: masterPlan.id,
         status: activate ? 'active' : 'draft',
-        commitmentCount: masterPlan.commitments.length,
+        commitmentCount: masterPlan.commitments?.length || sopAssignmentData.length,
       });
 
       // Also notify dashboard to refresh
@@ -1013,15 +1116,16 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: `MasterPlan created with ${masterPlan.commitments.length} commitments`,
+      message: `MasterPlan created with ${masterPlan.commitments?.length || sopAssignmentData.length} commitments. ${carsWithShops.length} cars updated.`,
       masterPlan: {
         id: masterPlan.id,
         planName: masterPlan.planName,
         fiscalYear: masterPlan.fiscalYear,
         version: masterPlan.version,
         status: masterPlan.status,
-        commitmentCount: masterPlan.commitments.length,
+        commitmentCount: masterPlan.commitments?.length || sopAssignmentData.length,
       },
+      carsUpdated: carsWithShops.length,
     });
   } catch (error: any) {
     console.error('Approve scenario error:', error);

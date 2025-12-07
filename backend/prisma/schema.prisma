@@ -820,9 +820,10 @@ model MasterPlanCommitment {
   plannedArrival  DateTime? // Specific planned arrival date (if known)
   plannedRelease  DateTime? // Specific planned release date (if known)
 
-  // Work specification
+  // Work specification - Reasons for shopping this car
   // JSON array as string: ["qualification", "assignment", "repair"]
-  workTypes       String
+  // Qualification is priority/main cost driver when bundled
+  reasonsShopped  String    // Standardized name across all entities
   isBundled       Boolean   @default(false) // Multiple work types bundled together
 
   // Cost and priority

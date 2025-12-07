@@ -249,26 +249,26 @@ router.get('/work-orders/:shopId/:month/pdf', async (req: AuthRequest, res: Resp
       { header: 'Status', key: 'status', width: 0.8 },
     ];
 
-    const tableData = workOrders.map((wo) => {
+    const tableData = workOrders.map((wo: any) => {
       let workTypesStr = '';
       try {
-        const wt = JSON.parse(wo.workTypes);
-        workTypesStr = Array.isArray(wt) ? wt.join(', ') : wo.workTypes;
+        const wt = JSON.parse(wo.reasonsShopped || '[]');
+        workTypesStr = Array.isArray(wt) ? wt.join(', ') : (wo.reasonsShopped || '');
       } catch {
-        workTypesStr = wo.workTypes;
+        workTypesStr = wo.reasonsShopped || '';
       }
 
       return {
-        priority: `P${wo.priority}`,
-        railcarNumber: wo.car.railcarNumber,
-        customer: wo.customer.name,
-        carType: wo.car.carType,
+        priority: `P${wo.priority || 3}`,
+        railcarNumber: wo.car?.railcarNumber || '',
+        customer: wo.customer?.name || '',
+        carType: wo.car?.carType || '',
         workTypes: workTypesStr,
         plannedArrival: wo.plannedArrival
           ? new Date(wo.plannedArrival).toLocaleDateString()
           : 'TBD',
         estimatedCost: wo.estimatedCost ? `$${wo.estimatedCost.toLocaleString()}` : '-',
-        status: wo.status,
+        status: wo.status || 'committed',
       };
     });
 
@@ -324,20 +324,20 @@ router.post('/work-orders/:shopId/:month/send', async (req: AuthRequest, res: Re
       { header: 'Status', key: 'status', width: 0.8 },
     ];
 
-    const tableData = workOrders.map((wo) => {
+    const tableData = workOrders.map((wo: any) => {
       let workTypesStr = '';
       try {
-        const wt = JSON.parse(wo.workTypes);
-        workTypesStr = Array.isArray(wt) ? wt.join(', ') : wo.workTypes;
+        const wt = JSON.parse(wo.reasonsShopped || '[]');
+        workTypesStr = Array.isArray(wt) ? wt.join(', ') : (wo.reasonsShopped || '');
       } catch {
-        workTypesStr = wo.workTypes;
+        workTypesStr = wo.reasonsShopped || '';
       }
 
       return {
-        priority: `P${wo.priority}`,
-        railcarNumber: wo.car.railcarNumber,
-        customer: wo.customer.name,
-        carType: wo.car.carType,
+        priority: `P${wo.priority || 3}`,
+        railcarNumber: wo.car?.railcarNumber || '',
+        customer: wo.customer?.name || '',
+        carType: wo.car?.carType || '',
         workTypes: workTypesStr,
         plannedArrival: wo.plannedArrival
           ? new Date(wo.plannedArrival).toLocaleDateString()
@@ -461,20 +461,20 @@ router.get('/customer-schedule/:customerId/pdf', async (req: AuthRequest, res: R
       { header: 'Status', key: 'status', width: 0.8 },
     ];
 
-    const tableData = schedule.map((commitment) => {
+    const tableData = schedule.map((commitment: any) => {
       let workTypesStr = '';
       try {
-        const wt = JSON.parse(commitment.workTypes);
-        workTypesStr = Array.isArray(wt) ? wt.join(', ') : commitment.workTypes;
+        const wt = JSON.parse(commitment.reasonsShopped || '[]');
+        workTypesStr = Array.isArray(wt) ? wt.join(', ') : (commitment.reasonsShopped || '');
       } catch {
-        workTypesStr = commitment.workTypes;
+        workTypesStr = commitment.reasonsShopped || '';
       }
 
       return {
-        month: commitment.scheduledMonth,
-        railcarNumber: commitment.car.railcarNumber,
-        carType: commitment.car.carType,
-        shop: `${commitment.shop.name} (${commitment.shop.code})`,
+        month: commitment.scheduledMonth || '',
+        railcarNumber: commitment.car?.railcarNumber || '',
+        carType: commitment.car?.carType || '',
+        shop: `${commitment.shop?.name || ''} (${commitment.shop?.code || ''})`,
         workTypes: workTypesStr,
         plannedArrival: commitment.plannedArrival
           ? new Date(commitment.plannedArrival).toLocaleDateString()
@@ -482,7 +482,7 @@ router.get('/customer-schedule/:customerId/pdf', async (req: AuthRequest, res: R
         plannedRelease: commitment.plannedRelease
           ? new Date(commitment.plannedRelease).toLocaleDateString()
           : 'TBD',
-        status: commitment.status,
+        status: commitment.status || 'committed',
       };
     });
 
@@ -538,25 +538,25 @@ router.post('/customer-schedule/:customerId/send', async (req: AuthRequest, res:
       { header: 'Status', key: 'status', width: 0.8 },
     ];
 
-    const tableData = schedule.map((commitment) => {
+    const tableData = schedule.map((commitment: any) => {
       let workTypesStr = '';
       try {
-        const wt = JSON.parse(commitment.workTypes);
-        workTypesStr = Array.isArray(wt) ? wt.join(', ') : commitment.workTypes;
+        const wt = JSON.parse(commitment.reasonsShopped || '[]');
+        workTypesStr = Array.isArray(wt) ? wt.join(', ') : (commitment.reasonsShopped || '');
       } catch {
-        workTypesStr = commitment.workTypes;
+        workTypesStr = commitment.reasonsShopped || '';
       }
 
       return {
-        month: commitment.scheduledMonth,
-        railcarNumber: commitment.car.railcarNumber,
-        carType: commitment.car.carType,
-        shop: `${commitment.shop.name} (${commitment.shop.code})`,
+        month: commitment.scheduledMonth || '',
+        railcarNumber: commitment.car?.railcarNumber || '',
+        carType: commitment.car?.carType || '',
+        shop: `${commitment.shop?.name || ''} (${commitment.shop?.code || ''})`,
         workTypes: workTypesStr,
         plannedArrival: commitment.plannedArrival
           ? new Date(commitment.plannedArrival).toLocaleDateString()
           : 'TBD',
-        status: commitment.status,
+        status: commitment.status || 'committed',
       };
     });
 

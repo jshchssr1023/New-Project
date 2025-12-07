@@ -4,11 +4,14 @@ import shopPerformanceService from './shopPerformanceService';
 interface Car {
   id: string;
   vehicleNumber: string;
+  railcarNumber?: string; // Alternative name
   carType: string;
   commodity: string;
   customer: string;
   homeRegion: string;
   reasonShopped: string;
+  reasonsShopped?: string; // JSON array version
+  isTankCar: boolean; // Critical for tank qualification validation
 }
 
 // Cache for performance scores to avoid repeated DB calls
@@ -27,6 +30,7 @@ interface Shop {
   certifications: string;
   preferredCustomers: string;
   isActive: boolean;
+  tankQualified: boolean; // Critical: Can this shop service tank cars?
 }
 
 interface ShopRule {
@@ -63,6 +67,14 @@ interface RuleEngineResult {
 
 // Default rules if no custom rules are defined
 const defaultRules: Omit<ShopRule, 'id'>[] = [
+  {
+    name: 'Tank Car Qualification',
+    ruleType: 'tank_qualification',
+    priority: 150, // HIGHEST PRIORITY - tank cars MUST go to qualified shops
+    isActive: true,
+    conditions: JSON.stringify({ requireTankQualification: true }),
+    actions: JSON.stringify({ excludeIfNotQualified: true }),
+  },
   {
     name: 'Capacity Check',
     ruleType: 'capacity',
@@ -189,6 +201,22 @@ export async function evaluateShopForCar(
     const actions = JSON.parse(rule.actions);
 
     switch (rule.ruleType) {
+      case 'tank_qualification':
+        // CRITICAL: Tank cars MUST go to tank-qualified shops
+        if (car.isTankCar && conditions.requireTankQualification) {
+          if (!shop.tankQualified) {
+            if (actions.excludeIfNotQualified) {
+              score = -2000; // Absolutely exclude this shop
+              reasons.push(`EXCLUDED: Shop not qualified for tank cars`);
+            }
+          } else {
+            // Bonus for being tank-qualified when car needs it
+            score += 10;
+            reasons.push(`Tank car qualified`);
+          }
+        }
+        break;
+
       case 'capacity':
         if (capacityAvailable < (conditions.minAvailable || 1)) {
           if (actions.excludeIfFull) {
