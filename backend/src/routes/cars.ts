@@ -183,7 +183,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 // Create railcar
 router.post('/', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
-  const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
+  const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, reasonsShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
     const car = await prisma.car.create({
@@ -193,7 +193,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         commodity: commodity || '',
         customer: customer || '',
         projectNumber: projectNumber || '',
-        reasonShopped: reasonShopped || '',
+        reasonsShopped: reasonsShopped || reasonShopped || '',
         status: status || 'available',
         notes: notes || '',
         lastServiceDate: lastServiceDate ? new Date(lastServiceDate) : null,
@@ -212,7 +212,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 // Update railcar
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
-  const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
+  const { railcarNumber, vehicleNumber, carType, commodity, customer, projectNumber, reasonShopped, reasonsShopped, status, notes, lastServiceDate, nextServiceDue } = req.body;
 
   try {
     const car = await prisma.car.updateMany({
@@ -226,7 +226,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
         commodity,
         customer,
         projectNumber,
-        reasonShopped,
+        reasonsShopped: reasonsShopped || reasonShopped,
         status,
         notes,
         lastServiceDate: lastServiceDate ? new Date(lastServiceDate) : null,
@@ -474,7 +474,7 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
           commodity: String(carData.commodity || ''),
           customer: String(carData.customer || ''),
           projectNumber: String(carData.projectNumber || ''),
-          reasonShopped: String(carData.reasonShopped || ''),
+          reasonsShopped: String(carData.reasonsShopped || carData.reasonShopped || ''),
           status: status,
           currentLocation: String(carData.currentLocation || ''),
           homeRegion: String(carData.homeRegion || ''),
