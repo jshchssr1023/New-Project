@@ -370,6 +370,7 @@ router.post('/test', authenticateToken, async (req: Request, res: Response) => {
         customer: car.customer || '',
         homeRegion: car.homeRegion || '',
         reasonShopped: '',
+        isTankCar: car.isTankCar || false,
       },
       month
     );

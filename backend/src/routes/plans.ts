@@ -407,6 +407,7 @@ router.post('/schedule-car', async (req: AuthRequest, res: Response) => {
           customer: car.customer || '',
           homeRegion: car.homeRegion || '',
           reasonShopped: car.reasonShopped || '',
+          isTankCar: car.isTankCar || false,
         },
         scheduledMonth
       );
@@ -526,8 +527,8 @@ router.post('/schedule-car', async (req: AuthRequest, res: Response) => {
         carId,
         shopId: finalShopId,
         scheduledMonth,
-      },
-      req.user!.id
+        userId: req.user!.id,
+      }
     );
 
     res.status(201).json({
@@ -592,6 +593,7 @@ router.post('/schedule-cars-bulk', async (req: AuthRequest, res: Response) => {
             customer: car.customer || '',
             homeRegion: car.homeRegion || '',
             reasonShopped: car.reasonShopped || '',
+            isTankCar: car.isTankCar || false,
           },
           scheduledMonth
         );

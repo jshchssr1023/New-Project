@@ -45,7 +45,7 @@ router.post('/alternative-shops', async (req: AuthRequest, res: Response) => {
     const shopScores = new Map<string, { shop: any; totalScore: number; count: number }>();
 
     allRecommendations.forEach((rec) => {
-      rec.recommendations
+      rec.allScores
         .filter((r: any) => r.shopId !== excludeShopId && r.score > 0)
         .forEach((r: any) => {
           const existing = shopScores.get(r.shopId);

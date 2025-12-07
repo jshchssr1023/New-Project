@@ -6,12 +6,13 @@ import webhookAlertService from './webhookAlertService';
 
 export interface AuditLogEntry {
   userId: string;
-  userEmail: string;
-  action: 'create' | 'update' | 'delete' | 'commit' | 'assign' | 'export' | 'view';
+  userEmail?: string;
+  action: 'create' | 'update' | 'delete' | 'commit' | 'assign' | 'export' | 'view' | 'import';
   entityType: 'Car' | 'Shop' | 'Plan' | 'PlanAssignment' | 'Scenario' | 'User' | 'ReportTemplate' | 'ScheduledReport';
-  entityId: string;
+  entityId?: string;
   entityName?: string;
-  changes: Record<string, { old?: unknown; new?: unknown }>;
+  changes?: Record<string, { old?: unknown; new?: unknown }>;
+  details?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   companyId: string;
 }

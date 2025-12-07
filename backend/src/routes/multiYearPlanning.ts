@@ -17,7 +17,7 @@ router.use(authenticateToken);
 /**
  * Get multi-year projection
  */
-router.get('/projection', requireRole(['admin', 'planner']), async (req: Request, res: Response) => {
+router.get('/projection', requireRole('admin', 'planner'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
 
@@ -61,7 +61,7 @@ router.get('/projection', requireRole(['admin', 'planner']), async (req: Request
 /**
  * Get budget projection
  */
-router.get('/budget', requireRole(['admin', 'planner', 'finance']), async (req: Request, res: Response) => {
+router.get('/budget', requireRole('admin', 'planner', 'finance'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
 
@@ -89,7 +89,7 @@ router.get('/budget', requireRole(['admin', 'planner', 'finance']), async (req: 
 /**
  * Get fiscal year comparison
  */
-router.get('/fiscal-years', requireRole(['admin', 'planner']), async (req: Request, res: Response) => {
+router.get('/fiscal-years', requireRole('admin', 'planner'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
 
@@ -158,7 +158,7 @@ router.get('/fiscal-years', requireRole(['admin', 'planner']), async (req: Reque
 /**
  * Get capacity heatmap for multi-year view
  */
-router.get('/capacity-heatmap', requireRole(['admin', 'planner']), async (req: Request, res: Response) => {
+router.get('/capacity-heatmap', requireRole('admin', 'planner'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
 
@@ -257,7 +257,7 @@ router.get('/capacity-heatmap', requireRole(['admin', 'planner']), async (req: R
 /**
  * Get quarterly summary
  */
-router.get('/quarterly-summary', requireRole(['admin', 'planner', 'finance']), async (req: Request, res: Response) => {
+router.get('/quarterly-summary', requireRole('admin', 'planner', 'finance'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
 
