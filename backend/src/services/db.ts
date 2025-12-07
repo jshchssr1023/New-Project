@@ -2,10 +2,12 @@
 // This provides a Prisma-like interface for basic operations
 import Database from 'better-sqlite3';
 import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 const dbPath = path.join(__dirname, '../../prisma/dev.db');
 const db = new Database(dbPath);
 db.pragma('foreign_keys = ON');
+db.pragma('journal_mode = WAL'); // Better concurrent access
 
 // Helper to convert SQLite rows to proper types
 function rowToObject<T>(row: any): T {
@@ -118,6 +120,193 @@ function buildOrderByClause(orderBy: OrderByClause | OrderByClause[] | undefined
   return parts.length > 0 ? `ORDER BY ${parts.join(', ')}` : '';
 }
 
+// =============================================================================
+// RELATIONSHIP DEFINITIONS - Critical for include functionality
+// =============================================================================
+interface RelationshipDef {
+  table: string;
+  foreignKey: string;
+  localKey: string;
+  type: 'hasMany' | 'belongsTo' | 'hasOne';
+}
+
+const relationships: Record<string, Record<string, RelationshipDef>> = {
+  Scenario: {
+    cars: { table: 'ScenarioCar', foreignKey: 'scenarioId', localKey: 'id', type: 'hasMany' },
+    sopAssignments: { table: 'SOPAssignment', foreignKey: 'scenarioId', localKey: 'id', type: 'hasMany' },
+    basePlan: { table: 'Plan', foreignKey: 'id', localKey: 'basePlanId', type: 'belongsTo' },
+    creator: { table: 'User', foreignKey: 'id', localKey: 'createdBy', type: 'belongsTo' },
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    parent: { table: 'Scenario', foreignKey: 'id', localKey: 'parentId', type: 'belongsTo' },
+    clones: { table: 'Scenario', foreignKey: 'parentId', localKey: 'id', type: 'hasMany' },
+    masterPlans: { table: 'MasterPlan', foreignKey: 'baseScenarioId', localKey: 'id', type: 'hasMany' },
+  },
+  ScenarioCar: {
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    scenario: { table: 'Scenario', foreignKey: 'id', localKey: 'scenarioId', type: 'belongsTo' },
+    suggestedShop: { table: 'Shop', foreignKey: 'id', localKey: 'suggestedShopId', type: 'belongsTo' },
+    assignedShop: { table: 'Shop', foreignKey: 'id', localKey: 'assignedShopId', type: 'belongsTo' },
+  },
+  Car: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    customerRef: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+    assignments: { table: 'PlanAssignment', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
+    scenarioCars: { table: 'ScenarioCar', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
+    sopAssignments: { table: 'SOPAssignment', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
+    shopEligibilities: { table: 'CarShopEligibility', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
+    masterCommitments: { table: 'MasterPlanCommitment', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
+  },
+  Shop: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    assignments: { table: 'PlanAssignment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+    carEligibilities: { table: 'CarShopEligibility', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+    sopAssignments: { table: 'SOPAssignment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+    masterCommitments: { table: 'MasterPlanCommitment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+    capacitySlots: { table: 'ShopCapacitySlot', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+  },
+  SOPAssignment: {
+    scenario: { table: 'Scenario', foreignKey: 'id', localKey: 'scenarioId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  Plan: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    creator: { table: 'User', foreignKey: 'id', localKey: 'createdBy', type: 'belongsTo' },
+    assignments: { table: 'PlanAssignment', foreignKey: 'planId', localKey: 'id', type: 'hasMany' },
+    scenarios: { table: 'Scenario', foreignKey: 'basePlanId', localKey: 'id', type: 'hasMany' },
+  },
+  PlanAssignment: {
+    plan: { table: 'Plan', foreignKey: 'id', localKey: 'planId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  MasterPlan: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    baseScenario: { table: 'Scenario', foreignKey: 'id', localKey: 'baseScenarioId', type: 'belongsTo' },
+    approvedBy: { table: 'User', foreignKey: 'id', localKey: 'approvedById', type: 'belongsTo' },
+    commitments: { table: 'MasterPlanCommitment', foreignKey: 'masterPlanId', localKey: 'id', type: 'hasMany' },
+  },
+  MasterPlanCommitment: {
+    masterPlan: { table: 'MasterPlan', foreignKey: 'id', localKey: 'masterPlanId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+  },
+  Customer: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    cars: { table: 'Car', foreignKey: 'customerId', localKey: 'id', type: 'hasMany' },
+    leaseContracts: { table: 'LeaseContract', foreignKey: 'customerId', localKey: 'id', type: 'hasMany' },
+    masterCommitments: { table: 'MasterPlanCommitment', foreignKey: 'customerId', localKey: 'id', type: 'hasMany' },
+  },
+  User: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    plans: { table: 'Plan', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
+    scenarios: { table: 'Scenario', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
+  },
+};
+
+// =============================================================================
+// INCLUDE RESOLVER - Fetches related data based on include option
+// =============================================================================
+async function resolveIncludes(tableName: string, records: any[], include: any): Promise<any[]> {
+  if (!include || typeof include !== 'object' || Object.keys(include).length === 0) {
+    return records;
+  }
+
+  const tableRels = relationships[tableName];
+  if (!tableRels) {
+    return records;
+  }
+
+  for (const [relationName, includeConfig] of Object.entries(include)) {
+    const rel = tableRels[relationName];
+    if (!rel) continue;
+
+    // Handle boolean include or object with nested includes
+    const nestedInclude = typeof includeConfig === 'object' && includeConfig !== null && !Array.isArray(includeConfig)
+      ? (includeConfig as any).include
+      : undefined;
+
+    const selectFields = typeof includeConfig === 'object' && includeConfig !== null
+      ? (includeConfig as any).select
+      : undefined;
+
+    if (rel.type === 'belongsTo') {
+      // Fetch single related record for each parent
+      const foreignKeyValues = records.map(r => r[rel.localKey]).filter(Boolean);
+      if (foreignKeyValues.length === 0) {
+        records.forEach(r => r[relationName] = null);
+        continue;
+      }
+
+      const uniqueValues = [...new Set(foreignKeyValues)];
+      const placeholders = uniqueValues.map(() => '?').join(', ');
+      const selectClause = selectFields
+        ? Object.keys(selectFields).filter(k => selectFields[k]).concat(['id']).join(', ')
+        : '*';
+      const query = `SELECT ${selectClause} FROM ${rel.table} WHERE ${rel.foreignKey} IN (${placeholders})`;
+
+      let relatedRecords = db.prepare(query).all(...uniqueValues);
+      relatedRecords = rowsToObjects(relatedRecords);
+
+      // Resolve nested includes
+      if (nestedInclude) {
+        relatedRecords = await resolveIncludes(rel.table, relatedRecords, nestedInclude);
+      }
+
+      const relatedMap = new Map(relatedRecords.map(r => [r[rel.foreignKey], r]));
+      records.forEach(r => {
+        r[relationName] = r[rel.localKey] ? relatedMap.get(r[rel.localKey]) || null : null;
+      });
+    } else if (rel.type === 'hasMany') {
+      // Fetch multiple related records for each parent
+      const localKeyValues = records.map(r => r[rel.localKey]).filter(Boolean);
+      if (localKeyValues.length === 0) {
+        records.forEach(r => r[relationName] = []);
+        continue;
+      }
+
+      const uniqueValues = [...new Set(localKeyValues)];
+      const placeholders = uniqueValues.map(() => '?').join(', ');
+      const selectClause = selectFields
+        ? Object.keys(selectFields).filter(k => selectFields[k]).concat(['id', rel.foreignKey]).join(', ')
+        : '*';
+
+      // Handle orderBy in include
+      let orderByClause = '';
+      if (typeof includeConfig === 'object' && includeConfig !== null && (includeConfig as any).orderBy) {
+        orderByClause = buildOrderByClause((includeConfig as any).orderBy);
+      }
+
+      const query = `SELECT ${selectClause} FROM ${rel.table} WHERE ${rel.foreignKey} IN (${placeholders}) ${orderByClause}`;
+
+      let relatedRecords = db.prepare(query).all(...uniqueValues);
+      relatedRecords = rowsToObjects(relatedRecords);
+
+      // Resolve nested includes
+      if (nestedInclude) {
+        relatedRecords = await resolveIncludes(rel.table, relatedRecords, nestedInclude);
+      }
+
+      // Group by foreign key
+      const groupedRecords = new Map<string, any[]>();
+      relatedRecords.forEach(r => {
+        const key = r[rel.foreignKey];
+        if (!groupedRecords.has(key)) {
+          groupedRecords.set(key, []);
+        }
+        groupedRecords.get(key)!.push(r);
+      });
+
+      records.forEach(r => {
+        r[relationName] = groupedRecords.get(r[rel.localKey]) || [];
+      });
+    }
+  }
+
+  return records;
+}
+
 // Create a table handler
 function createTableHandler(tableName: string) {
   return {
@@ -129,7 +318,14 @@ function createTableHandler(tableName: string) {
 
       const query = `SELECT * FROM ${tableName} ${whereClause} ${orderByClause} ${limitClause} ${offsetClause}`;
       const rows = db.prepare(query).all(...params);
-      return rowsToObjects(rows);
+      let results = rowsToObjects(rows);
+
+      // CRITICAL: Resolve includes to fetch related data
+      if (options.include) {
+        results = await resolveIncludes(tableName, results, options.include);
+      }
+
+      return results;
     },
 
     findFirst: async (options: FindManyOptions = {}) => {
@@ -141,11 +337,35 @@ function createTableHandler(tableName: string) {
       const { sql: whereClause, params } = buildWhereClause(options.where);
       const query = `SELECT * FROM ${tableName} ${whereClause} LIMIT 1`;
       const row = db.prepare(query).get(...params);
-      return row ? rowToObject(row) : null;
+      if (!row) return null;
+
+      let result = rowToObject(row);
+
+      // CRITICAL: Resolve includes to fetch related data
+      if (options.include) {
+        const resolved = await resolveIncludes(tableName, [result], options.include);
+        result = resolved[0];
+      }
+
+      return result;
     },
 
-    create: async (options: { data: any }) => {
+    create: async (options: { data: any; include?: any }) => {
       const data = { ...options.data };
+
+      // CRITICAL: Generate UUID if no id provided
+      if (!data.id) {
+        data.id = uuidv4();
+      }
+
+      // Add timestamps if not provided
+      const now = new Date().toISOString();
+      if (!data.createdAt) {
+        data.createdAt = now;
+      }
+      if (!data.updatedAt) {
+        data.updatedAt = now;
+      }
 
       // Handle nested create/connect syntax
       for (const [key, value] of Object.entries(data)) {
@@ -168,16 +388,21 @@ function createTableHandler(tableName: string) {
       const placeholders = keys.map(() => '?').join(', ');
       const query = `INSERT INTO ${tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
 
-      db.prepare(query).run(...values);
-
-      // Return the created record
-      if (data.id) {
-        return await createTableHandler(tableName).findUnique({ where: { id: data.id } });
+      try {
+        db.prepare(query).run(...values);
+      } catch (error: any) {
+        console.error(`[DB] Create error in ${tableName}:`, error.message);
+        throw error;
       }
-      return data;
+
+      // Return the created record with includes if requested
+      return await createTableHandler(tableName).findUnique({
+        where: { id: data.id },
+        include: options.include,
+      });
     },
 
-    update: async (options: { where: WhereClause; data: any }) => {
+    update: async (options: { where: WhereClause; data: any; include?: any }) => {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
       const data = { ...options.data, updatedAt: new Date().toISOString() };
 
@@ -189,9 +414,73 @@ function createTableHandler(tableName: string) {
       });
 
       const query = `UPDATE ${tableName} SET ${setParts.join(', ')} ${whereClause}`;
-      db.prepare(query).run(...setValues, ...whereParams);
+      try {
+        db.prepare(query).run(...setValues, ...whereParams);
+      } catch (error: any) {
+        console.error(`[DB] Update error in ${tableName}:`, error.message);
+        throw error;
+      }
 
-      return await createTableHandler(tableName).findUnique(options);
+      return await createTableHandler(tableName).findUnique({
+        where: options.where,
+        include: options.include,
+      });
+    },
+
+    updateMany: async (options: { where?: WhereClause; data: any }) => {
+      const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
+      const data = { ...options.data, updatedAt: new Date().toISOString() };
+
+      const setParts = Object.keys(data).map(k => `${k} = ?`);
+      const setValues = Object.values(data).map(v => {
+        if (typeof v === 'boolean') return v ? 1 : 0;
+        if (v instanceof Date) return v.toISOString();
+        return v;
+      });
+
+      const query = `UPDATE ${tableName} SET ${setParts.join(', ')} ${whereClause}`;
+      const result = db.prepare(query).run(...setValues, ...whereParams);
+      return { count: result.changes };
+    },
+
+    createMany: async (options: { data: any[] }) => {
+      const now = new Date().toISOString();
+      let count = 0;
+
+      for (const item of options.data) {
+        // Generate UUID if no id provided
+        if (!item.id) {
+          item.id = uuidv4();
+        }
+        // Add timestamps
+        if (!item.createdAt) {
+          item.createdAt = now;
+        }
+        if (!item.updatedAt) {
+          item.updatedAt = now;
+        }
+
+        const keys = Object.keys(item);
+        const values = keys.map(k => {
+          const v = item[k];
+          if (typeof v === 'boolean') return v ? 1 : 0;
+          if (v instanceof Date) return v.toISOString();
+          return v;
+        });
+
+        const placeholders = keys.map(() => '?').join(', ');
+        const query = `INSERT INTO ${tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
+
+        try {
+          db.prepare(query).run(...values);
+          count++;
+        } catch (error: any) {
+          console.error(`[DB] CreateMany error in ${tableName}:`, error.message);
+          // Continue with other records
+        }
+      }
+
+      return { count };
     },
 
     delete: async (options: { where: WhereClause }) => {
@@ -274,13 +563,45 @@ export const prisma = {
     return db.prepare(query).all(...params);
   },
 
-  // Transaction support
-  $transaction: async (operations: Promise<any>[]) => {
-    return Promise.all(operations);
+  $queryRawUnsafe: async (query: string, ...params: any[]) => {
+    return db.prepare(query).all(...params);
+  },
+
+  // Transaction support - REAL SQLite transaction
+  $transaction: async <T>(
+    fnOrOperations: ((tx: typeof prisma) => Promise<T>) | Promise<any>[]
+  ): Promise<T | any[]> => {
+    if (Array.isArray(fnOrOperations)) {
+      // Array of promises - wrap in transaction
+      const transaction = db.transaction(() => {
+        return Promise.all(fnOrOperations);
+      });
+      return transaction();
+    } else {
+      // Function-based transaction
+      const transaction = db.transaction(async () => {
+        return await fnOrOperations(prisma);
+      });
+      return transaction();
+    }
+  },
+
+  // Execute raw SQL
+  $executeRaw: async (query: string, ...params: any[]) => {
+    const result = db.prepare(query).run(...params);
+    return result.changes;
+  },
+
+  $executeRawUnsafe: async (query: string, ...params: any[]) => {
+    const result = db.prepare(query).run(...params);
+    return result.changes;
   },
 
   // Disconnect (no-op for better-sqlite3)
   $disconnect: async () => {},
+
+  // Get raw database for direct operations
+  $raw: db,
 };
 
 export default prisma;

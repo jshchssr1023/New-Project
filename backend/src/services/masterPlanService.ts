@@ -111,7 +111,7 @@ export const MasterPlanCommitmentSchema = z.object({
   scheduledMonth: z.string().regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM format'),
   plannedArrival: z.date().nullable(),
   plannedRelease: z.date().nullable(),
-  reasonsShopped: z.string(), // JSON array as string - Qualification is priority/main cost driver
+  reasonsShopped: z.string(), // JSON array as string - Standardized across all entities
   isBundled: z.boolean(),
   estimatedCost: z.number().nullable(),
   priority: z.number().int().min(1).max(5),
@@ -362,7 +362,7 @@ export class MasterPlanService {
             scheduledMonth: assignment.monthKey,
             plannedArrival: assignment.scheduledArrival,
             plannedRelease: assignment.scheduledCompletion,
-            workTypes: JSON.stringify(reasonsArray), // Keep workTypes in MasterPlanCommitment for now
+            reasonsShopped: JSON.stringify(reasonsArray), // Standardized field name
             isBundled,
             estimatedCost: assignment.estimatedCost,
             priority: assignment.priority,
@@ -742,11 +742,11 @@ export class MasterPlanService {
       summary.commitmentsByStatus[commitment.status] =
         (summary.commitmentsByStatus[commitment.status] || 0) + 1;
 
-      // By work type
+      // By work type (from reasonsShopped)
       try {
-        const workTypes = JSON.parse(commitment.workTypes) as string[];
-        for (const wt of workTypes) {
-          summary.commitmentsByWorkType[wt] = (summary.commitmentsByWorkType[wt] || 0) + 1;
+        const reasons = JSON.parse(commitment.reasonsShopped) as string[];
+        for (const reason of reasons) {
+          summary.commitmentsByWorkType[reason] = (summary.commitmentsByWorkType[reason] || 0) + 1;
         }
       } catch {
         summary.commitmentsByWorkType['unknown'] =

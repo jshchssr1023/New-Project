@@ -420,7 +420,7 @@ export default function ScenarioManager() {
     }
   };
 
-  // Bulk assign to selected shops and confirm assignments (creates SOPAssignments)
+  // Bulk assign to selected shops (ONE-STEP: just assign shops, approval handles the rest)
   const handleBulkAssignToShops = async () => {
     if (!selectedScenario || selectedShops.length === 0) return;
 
@@ -428,6 +428,7 @@ export default function ScenarioManager() {
       // Assign cars to selected shops based on allocations
       const scenarioCars = selectedScenario.cars || [];
       let carIndex = 0;
+      let assignedCount = 0;
 
       for (const shopId of selectedShops) {
         const shopAllocCount = Object.values(shopAllocations[shopId] || {}).reduce((sum, count) => sum + count, 0);
@@ -436,19 +437,22 @@ export default function ScenarioManager() {
           const sc = scenarioCars[carIndex];
           if (!sc.assignedShopId) {
             await scenariosApi.assignShop(selectedScenario.id, sc.id, shopId);
-            carIndex++;
+            assignedCount++;
           }
+          carIndex++;
         }
       }
 
-      // CRITICAL: Convert ScenarioCar records to SOPAssignment records
-      // This enables the "Approve Scenario" to create MasterPlan
-      const confirmResult = await scenariosApi.confirmAssignments(selectedScenario.id);
+      // ONE-STEP FLOW: Just assign shops here. Approval will handle:
+      // - Creating SOPAssignments
+      // - Creating MasterPlan with commitments
+      // - Updating Car.assignedShopId
+      // - Using suggestedShopId for any unassigned cars
 
       alert(
-        `Shop assignments confirmed!\n\n` +
-        `${confirmResult.sopAssignmentCount} cars are now ready for approval.\n` +
-        `Click "Approve Scenario" to create the Master Plan.`
+        `Shop assignments saved!\n\n` +
+        `${assignedCount} cars assigned to shops.\n` +
+        `Click "Approve Scenario" to finalize and create the Master Plan.`
       );
 
       await loadScenarioDetails(selectedScenario.id);
@@ -456,7 +460,7 @@ export default function ScenarioManager() {
       setIsCapacityCheckModalOpen(false);
     } catch (error) {
       console.error('Bulk assign failed:', error);
-      alert('Failed to confirm assignments. Please try again.');
+      alert('Failed to assign shops. Please try again.');
     }
   };
 
@@ -486,14 +490,19 @@ export default function ScenarioManager() {
   const handleOpenApproveModal = () => {
     if (!selectedScenario) return;
 
-    // Check if scenario has SOP assignments (needed for MasterPlan creation)
-    // For now, we'll check if it has cars with assignments
-    const hasAssignments = selectedScenario.cars?.some(
+    // Check if scenario has cars with assignments (either manual or suggested)
+    // ONE-STEP: The backend will use suggestedShopId if assignedShopId is not set
+    const hasCarsWithShops = selectedScenario.cars?.some(
       (sc) => sc.assignedShopId || sc.suggestedShopId
     );
 
-    if (!hasAssignments) {
-      alert('Please assign shops to cars before approving the scenario.');
+    if (!selectedScenario.cars || selectedScenario.cars.length === 0) {
+      alert('Please add cars to the scenario before approving.');
+      return;
+    }
+
+    if (!hasCarsWithShops) {
+      alert('Please assign shops to cars or run "Verify Capacity" to get shop suggestions before approving.');
       return;
     }
 
@@ -691,13 +700,25 @@ export default function ScenarioManager() {
                         Select Shops
                       </button>
                       {selectedScenario.status === 'draft' && selectedScenario.cars?.length > 0 && (
-                        <button
-                          onClick={() => handleRunAnalysis(selectedScenario.id)}
-                          className="btn-primary py-2 px-3 text-sm flex items-center"
-                        >
-                          <PlayIcon className="mr-1 h-4 w-4" />
-                          Verify Capacity
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleRunAnalysis(selectedScenario.id)}
+                            className="btn-secondary py-2 px-3 text-sm flex items-center"
+                          >
+                            <PlayIcon className="mr-1 h-4 w-4" />
+                            Verify Capacity
+                          </button>
+                          {/* ONE-STEP: Allow approval directly from draft if cars have shops */}
+                          {selectedScenario.cars?.some(c => c.assignedShopId || c.suggestedShopId) && (
+                            <button
+                              onClick={handleOpenApproveModal}
+                              className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-green-600 hover:bg-green-700"
+                            >
+                              <RocketLaunchIcon className="mr-2 h-4 w-4" />
+                              Approve Scenario
+                            </button>
+                          )}
+                        </>
                       )}
                       {selectedScenario.status === 'analyzing' && (
                         <button disabled className="btn-secondary py-2 px-3 text-sm flex items-center opacity-50">
