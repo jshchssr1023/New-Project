@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -11,8 +11,6 @@ import ScenarioManager from './pages/ScenarioManager';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
-import LeaseQualificationEngine from './pages/LeaseQualificationEngine';
-
 import RuleBuilder from './pages/RuleBuilder';
 import ImportExport from './pages/ImportExport';
 import Webhooks from './pages/Webhooks';
@@ -25,6 +23,18 @@ import ShopSchedule from './pages/ShopSchedule';
 import MasterPlanWizard from './pages/MasterPlanWizard';
 import MasterPlanAuditLog from './components/MasterPlanAuditLog';
 import ImportWorkflow from './components/ImportWorkflow';
+
+// Wrapper component for ImportWorkflow as a standalone page
+function ImportWorkflowPage() {
+  const navigate = useNavigate();
+  return (
+    <ImportWorkflow
+      sessionType="cars"
+      onComplete={() => navigate('/cars')}
+      onCancel={() => navigate(-1)}
+    />
+  );
+}
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -75,13 +85,12 @@ export default function App() {
         <Route path="planning" element={<PlanningGrid />} />
         <Route path="car-flow" element={<CarFlowPlanning />} />
         <Route path="scenarios" element={<ScenarioManager />} />
-        <Route path="lease-qualification" element={<LeaseQualificationEngine />} />
         <Route path="masterplan" element={<MasterPlanView />} />
         <Route path="masterplan/:id" element={<MasterPlanView />} />
         <Route path="master-plan-wizard" element={<MasterPlanWizard />} />
         <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} />
         <Route path="master-plan-audit" element={<MasterPlanAuditLog />} />
-        <Route path="import-workflow" element={<ImportWorkflow />} />
+        <Route path="import-workflow" element={<ImportWorkflowPage />} />
         <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
         <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
         <Route path="analytics" element={<AnalyticsDashboard />} />

@@ -28,12 +28,6 @@ interface WebhookOptions {
   types: { value: string; label: string; icon: string }[];
 }
 
-const TYPE_ICONS: Record<string, string> = {
-  slack: '/images/slack-icon.svg',
-  teams: '/images/teams-icon.svg',
-  custom: '/images/webhook-icon.svg',
-};
-
 const SEVERITY_COLORS: Record<string, string> = {
   info: 'bg-blue-100 text-blue-800',
   warning: 'bg-amber-100 text-amber-800',

@@ -182,7 +182,7 @@ export default function CarManagement() {
         commodity: car.commodity,
         customer: car.customer,
         projectNumber: car.projectNumber,
-        reasonShopped: car.reasonShopped,
+        reasonShopped: car.reasonShopped || '',
         status: car.status,
         notes: car.notes || '',
       });

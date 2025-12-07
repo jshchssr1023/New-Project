@@ -713,7 +713,7 @@ router.get('/trends/shops', async (req: AuthRequest, res: Response) => {
       where: { companyId },
       select: { id: true, name: true, code: true },
     });
-    const shopMap = new Map(shops.map(s => [s.id, s]));
+    const shopMap = new Map<string, { id: string; name: string; code: string }>(shops.map(s => [s.id, s]));
 
     performances.forEach((perf) => {
       if (!shopTrends[perf.shopId]) {

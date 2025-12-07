@@ -544,7 +544,7 @@ export async function getPreviousNames(shopId: string): Promise<string[]> {
     select: { name: true },
   });
 
-  return [...new Set(history.map((h) => h.name))];
+  return [...new Set(history.map((h) => h.name))] as string[];
 }
 
 // =============================================================================

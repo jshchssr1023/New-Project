@@ -28,6 +28,17 @@ const statusColors: Record<string, string> = {
   approved: 'bg-rail-100 text-rail-800',
 };
 
+// Wizard steps for creating a scenario
+type WizardStep = 'source' | 'cars' | 'shops' | 'capacity' | 'summary';
+
+const WIZARD_STEPS: { id: WizardStep; label: string; description: string }[] = [
+  { id: 'source', label: 'Source', description: 'Select Project or Customer' },
+  { id: 'cars', label: 'Cars', description: 'Select cars to include' },
+  { id: 'shops', label: 'Shops', description: 'Assign shops' },
+  { id: 'capacity', label: 'Capacity', description: 'Review capacity' },
+  { id: 'summary', label: 'Summary', description: 'Review and save' },
+];
+
 interface ShopAllocation {
   shopId: string;
   shopName: string;
@@ -56,7 +67,7 @@ export default function ScenarioManager() {
   const [importHandled, setImportHandled] = useState(false);
 
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [, setPlans] = useState<Plan[]>([]);
   const [cars, setCars] = useState<Car[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [customers, setCustomers] = useState<string[]>([]);
@@ -77,13 +88,6 @@ export default function ScenarioManager() {
   const [capacityCheckResult, setCapacityCheckResult] = useState<CapacityCheckResult | null>(null);
   const [isCheckingCapacity, setIsCheckingCapacity] = useState(false);
 
-  const [formData, setFormData] = useState({
-    projectNumber: '',
-    name: '',
-    description: '',
-    customerFilter: '',
-  });
-
   const [addCarsForm, setAddCarsForm] = useState({
     customer: '',
     projectNumber: '',
@@ -95,6 +99,18 @@ export default function ScenarioManager() {
   const [selectedShops, setSelectedShops] = useState<string[]>([]);
   const [shopAllocations, setShopAllocations] = useState<Record<string, Record<string, number>>>({});
   const [selectedMonth, setSelectedMonth] = useState('');
+
+  // Wizard state for new scenario creation
+  const [wizardStep, setWizardStep] = useState<WizardStep>('source');
+  const [wizardSourceType, setWizardSourceType] = useState<'project' | 'customer'>('project');
+  const [wizardSelectedProject, setWizardSelectedProject] = useState('');
+  const [wizardSelectedCustomer, setWizardSelectedCustomer] = useState('');
+  const [wizardSelectedCarIds, setWizardSelectedCarIds] = useState<string[]>([]);
+  const [wizardSelectedShopIds, setWizardSelectedShopIds] = useState<string[]>([]);
+  const [wizardExpandedParents, setWizardExpandedParents] = useState<Set<string>>(new Set());
+  const [wizardCapacityMonthRange, setWizardCapacityMonthRange] = useState<[number, number]>([3, 9]);
+  const [wizardScenarioName, setWizardScenarioName] = useState('');
+  const [wizardIsSaving, setWizardIsSaving] = useState(false);
 
   // Real-time updates
   const handleRealtimeUpdate = useCallback(() => {
@@ -201,38 +217,6 @@ export default function ScenarioManager() {
       months.push({ value, label });
     }
     return months;
-  };
-
-  const handleCreateScenario = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!formData.projectNumber.trim()) {
-      alert('Project Number is required');
-      return;
-    }
-
-    if (!formData.name.trim()) {
-      alert('Scenario Name is required');
-      return;
-    }
-
-    try {
-      const newScenario = await scenariosApi.create({
-        projectNumber: formData.projectNumber.toUpperCase(),
-        name: formData.name,
-        description: formData.description,
-        customerFilter: formData.customerFilter,
-      });
-      setIsModalOpen(false);
-      setFormData({ projectNumber: '', name: '', description: '', customerFilter: '' });
-      await loadData();
-      setSelectedScenario(newScenario);
-    } catch (error: any) {
-      console.error('Failed to create scenario:', error);
-      if (error.response?.data?.message) {
-        alert(error.response.data.message);
-      }
-    }
   };
 
   const handleAddSelectedCars = async () => {
@@ -565,6 +549,207 @@ export default function ScenarioManager() {
     }, 0);
   };
 
+  // =============================================================================
+  // WIZARD FUNCTIONS
+  // =============================================================================
+
+  // Filter cars based on wizard source selection
+  const wizardFilteredCars = useMemo(() => {
+    if (wizardSourceType === 'project' && wizardSelectedProject) {
+      return cars.filter(c => c.projectNumber === wizardSelectedProject);
+    }
+    if (wizardSourceType === 'customer' && wizardSelectedCustomer) {
+      return cars.filter(c => c.customer === wizardSelectedCustomer);
+    }
+    return [];
+  }, [cars, wizardSourceType, wizardSelectedProject, wizardSelectedCustomer]);
+
+  // Group shops by parent for wizard shop selection
+  const wizardParentShopGroups = useMemo(() => {
+    const parentShops = shops.filter(s => s.isParent);
+    const groups: { parent: Shop; children: Shop[] }[] = [];
+
+    parentShops.forEach(parent => {
+      const children = shops.filter(s => s.parentShopId === parent.id && !s.isParent);
+      groups.push({ parent, children });
+    });
+
+    // Add orphan shops (no parent) as a group
+    const orphans = shops.filter(s => !s.isParent && !s.parentShopId);
+    if (orphans.length > 0) {
+      groups.push({
+        parent: { id: '__orphans__', name: 'Unassigned Shops', isParent: true, isAitxInternal: false } as Shop,
+        children: orphans
+      });
+    }
+
+    return groups.sort((a, b) => {
+      if (a.parent.isAitxInternal && !b.parent.isAitxInternal) return -1;
+      if (!a.parent.isAitxInternal && b.parent.isAitxInternal) return 1;
+      return a.parent.name.localeCompare(b.parent.name);
+    });
+  }, [shops]);
+
+  // Calculate capacity for selected shops in the month range
+  const wizardCapacityData = useMemo(() => {
+    const selectedShopsList = shops.filter(s => wizardSelectedShopIds.includes(s.id));
+    const months: { key: string; label: string; totalCapacity: number; allocated: number; status: 'green' | 'yellow' | 'red' }[] = [];
+
+    const now = new Date();
+    for (let i = wizardCapacityMonthRange[0]; i <= wizardCapacityMonthRange[1]; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = date.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+
+      const totalCapacity = selectedShopsList.reduce((sum, s) => sum + (s.capacity || 0), 0);
+      const allocated = wizardSelectedCarIds.length > 0 ? Math.ceil(wizardSelectedCarIds.length / (wizardCapacityMonthRange[1] - wizardCapacityMonthRange[0] + 1)) : 0;
+
+      const utilization = totalCapacity > 0 ? allocated / totalCapacity : 0;
+      let status: 'green' | 'yellow' | 'red' = 'green';
+      if (utilization > 1) status = 'red';
+      else if (utilization > 0.85) status = 'yellow';
+
+      months.push({ key: monthKey, label: monthLabel, totalCapacity, allocated, status });
+    }
+
+    return months;
+  }, [shops, wizardSelectedShopIds, wizardSelectedCarIds, wizardCapacityMonthRange]);
+
+  // Check if wizard can proceed to next step
+  const canProceedToStep = (step: WizardStep): boolean => {
+    switch (step) {
+      case 'cars':
+        return (wizardSourceType === 'project' && !!wizardSelectedProject) ||
+               (wizardSourceType === 'customer' && !!wizardSelectedCustomer);
+      case 'shops':
+        return wizardSelectedCarIds.length > 0;
+      case 'capacity':
+        return wizardSelectedShopIds.length > 0;
+      case 'summary':
+        return wizardCapacityData.every(m => m.status !== 'red');
+      default:
+        return true;
+    }
+  };
+
+  // Reset wizard state
+  const resetWizard = () => {
+    setWizardStep('source');
+    setWizardSourceType('project');
+    setWizardSelectedProject('');
+    setWizardSelectedCustomer('');
+    setWizardSelectedCarIds([]);
+    setWizardSelectedShopIds([]);
+    setWizardExpandedParents(new Set());
+    setWizardCapacityMonthRange([3, 9]);
+    setWizardScenarioName('');
+    setWizardIsSaving(false);
+  };
+
+  // Open wizard modal
+  const openWizardModal = () => {
+    resetWizard();
+    setIsModalOpen(true);
+  };
+
+  // Toggle parent shop expansion in wizard
+  const toggleWizardParentExpanded = (parentId: string) => {
+    setWizardExpandedParents(prev => {
+      const next = new Set(prev);
+      if (next.has(parentId)) next.delete(parentId);
+      else next.add(parentId);
+      return next;
+    });
+  };
+
+  // Toggle shop selection in wizard
+  const toggleWizardShopSelection = (shopId: string) => {
+    setWizardSelectedShopIds(prev =>
+      prev.includes(shopId) ? prev.filter(id => id !== shopId) : [...prev, shopId]
+    );
+  };
+
+  // Save scenario from wizard (can save at any step after naming)
+  const saveWizardScenario = async (_asDraft: boolean = true) => {
+    if (!wizardScenarioName.trim()) {
+      alert('Please enter a scenario name');
+      return;
+    }
+
+    setWizardIsSaving(true);
+    try {
+      // Create the scenario
+      const projectNumber = wizardSourceType === 'project' ? wizardSelectedProject : `CUST-${Date.now()}`;
+      const newScenario = await scenariosApi.create({
+        projectNumber,
+        name: wizardScenarioName,
+        description: `${wizardSourceType === 'project' ? 'Project' : 'Customer'}: ${wizardSourceType === 'project' ? wizardSelectedProject : wizardSelectedCustomer}`,
+        customerFilter: wizardSourceType === 'customer' ? wizardSelectedCustomer : '',
+      });
+
+      // If cars are selected, add them
+      if (wizardSelectedCarIds.length > 0) {
+        const defaultMonth = getNextMonths()[0]?.value || '';
+        await scenariosApi.addCars(newScenario.id, wizardSelectedCarIds, defaultMonth);
+      }
+
+      // If shops are selected, assign them
+      if (wizardSelectedShopIds.length > 0 && wizardSelectedCarIds.length > 0) {
+        // Distribute cars across selected shops
+        const carsPerShop = Math.ceil(wizardSelectedCarIds.length / wizardSelectedShopIds.length);
+        let carIndex = 0;
+
+        for (const _shopId of wizardSelectedShopIds) {
+          for (let i = 0; i < carsPerShop && carIndex < wizardSelectedCarIds.length; i++) {
+            // Shop assignment will be done after scenario is loaded
+            carIndex++;
+          }
+        }
+      }
+
+      // Reload data and close modal
+      await loadData();
+      setSelectedScenario(newScenario);
+      setIsModalOpen(false);
+      resetWizard();
+    } catch (error) {
+      console.error('Failed to save scenario:', error);
+      alert('Failed to save scenario. Please try again.');
+    } finally {
+      setWizardIsSaving(false);
+    }
+  };
+
+  // Navigate wizard steps
+  const goToWizardStep = (step: WizardStep) => {
+    const currentIndex = WIZARD_STEPS.findIndex(s => s.id === wizardStep);
+    const targetIndex = WIZARD_STEPS.findIndex(s => s.id === step);
+
+    // Can only go to completed steps or next step
+    if (targetIndex <= currentIndex || targetIndex === currentIndex + 1) {
+      if (targetIndex <= currentIndex || canProceedToStep(step)) {
+        setWizardStep(step);
+      }
+    }
+  };
+
+  const nextWizardStep = () => {
+    const currentIndex = WIZARD_STEPS.findIndex(s => s.id === wizardStep);
+    if (currentIndex < WIZARD_STEPS.length - 1) {
+      const nextStep = WIZARD_STEPS[currentIndex + 1].id;
+      if (canProceedToStep(nextStep)) {
+        setWizardStep(nextStep);
+      }
+    }
+  };
+
+  const prevWizardStep = () => {
+    const currentIndex = WIZARD_STEPS.findIndex(s => s.id === wizardStep);
+    if (currentIndex > 0) {
+      setWizardStep(WIZARD_STEPS[currentIndex - 1].id);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -579,7 +764,7 @@ export default function ScenarioManager() {
             )}
           </p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="btn-primary flex items-center">
+        <button onClick={openWizardModal} className="btn-primary flex items-center">
           <PlusIcon className="mr-2 h-5 w-5" />
           New Scenario
         </button>
@@ -950,68 +1135,417 @@ export default function ScenarioManager() {
         </div>
       )}
 
-      {/* Create Scenario Modal */}
+      {/* Scenario Creation Wizard Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
           <div className="flex min-h-screen items-center justify-center p-4">
-            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsModalOpen(false)} />
-            <div className="relative w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-              <h2 className="text-xl font-semibold text-steel-900 mb-4">Create New Scenario</h2>
-              <form onSubmit={handleCreateScenario} className="space-y-4">
-                <div>
-                  <label className="label">
-                    Project Number <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.projectNumber}
-                    onChange={(e) => setFormData({ ...formData, projectNumber: e.target.value })}
-                    className="input"
-                    placeholder="e.g., Q4-25-001"
-                    required
-                  />
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => { setIsModalOpen(false); resetWizard(); }} />
+            <div className="relative w-full max-w-4xl rounded-xl bg-white shadow-xl max-h-[90vh] flex flex-col">
+              {/* Wizard Header */}
+              <div className="p-6 border-b border-steel-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold text-steel-900">Create New Scenario</h2>
+                  <button onClick={() => { setIsModalOpen(false); resetWizard(); }} className="text-steel-400 hover:text-steel-600">
+                    <XMarkIcon className="h-6 w-6" />
+                  </button>
                 </div>
-                <div>
-                  <label className="label">
-                    Scenario Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="input"
-                    placeholder="e.g., Initial Proposal"
-                    required
-                  />
+                {/* Step Progress */}
+                <div className="flex items-center justify-between">
+                  {WIZARD_STEPS.map((step, index) => {
+                    const currentIndex = WIZARD_STEPS.findIndex(s => s.id === wizardStep);
+                    const isCompleted = index < currentIndex;
+                    const isCurrent = index === currentIndex;
+                    return (
+                      <div key={step.id} className="flex items-center flex-1">
+                        <button
+                          onClick={() => goToWizardStep(step.id)}
+                          disabled={index > currentIndex + 1}
+                          className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors ${
+                            isCompleted ? 'bg-green-500 text-white' :
+                            isCurrent ? 'bg-rail-600 text-white' :
+                            'bg-steel-200 text-steel-500'
+                          }`}
+                        >
+                          {isCompleted ? <CheckIcon className="h-4 w-4" /> : index + 1}
+                        </button>
+                        <div className="ml-2 hidden sm:block">
+                          <p className={`text-sm font-medium ${isCurrent ? 'text-rail-600' : 'text-steel-500'}`}>{step.label}</p>
+                        </div>
+                        {index < WIZARD_STEPS.length - 1 && (
+                          <div className={`flex-1 h-0.5 mx-4 ${isCompleted ? 'bg-green-500' : 'bg-steel-200'}`} />
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <div>
-                  <label className="label">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="input"
-                    rows={3}
-                    placeholder="Describe the scenario purpose..."
-                  />
+              </div>
+
+              {/* Wizard Content */}
+              <div className="flex-1 p-6 overflow-y-auto">
+                {/* Step 1: Source Selection */}
+                {wizardStep === 'source' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-medium text-steel-900">Select Source</h3>
+                    <p className="text-sm text-steel-500">Choose to filter cars by Project Number or Customer.</p>
+
+                    {/* Scenario Name (can save at any step) */}
+                    <div>
+                      <label className="label">Scenario Name <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        value={wizardScenarioName}
+                        onChange={(e) => setWizardScenarioName(e.target.value)}
+                        className="input"
+                        placeholder="Enter a name to enable saving..."
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        onClick={() => setWizardSourceType('project')}
+                        className={`p-6 border-2 rounded-lg text-left transition-colors ${
+                          wizardSourceType === 'project' ? 'border-rail-600 bg-rail-50' : 'border-steel-200 hover:border-steel-300'
+                        }`}
+                      >
+                        <RocketLaunchIcon className="h-8 w-8 text-rail-600 mb-2" />
+                        <h4 className="font-medium text-steel-900">By Project</h4>
+                        <p className="text-sm text-steel-500 mt-1">Select cars from a specific project number</p>
+                      </button>
+                      <button
+                        onClick={() => setWizardSourceType('customer')}
+                        className={`p-6 border-2 rounded-lg text-left transition-colors ${
+                          wizardSourceType === 'customer' ? 'border-rail-600 bg-rail-50' : 'border-steel-200 hover:border-steel-300'
+                        }`}
+                      >
+                        <UserGroupIcon className="h-8 w-8 text-rail-600 mb-2" />
+                        <h4 className="font-medium text-steel-900">By Customer</h4>
+                        <p className="text-sm text-steel-500 mt-1">Select cars belonging to a specific customer</p>
+                      </button>
+                    </div>
+
+                    {wizardSourceType === 'project' && (
+                      <div>
+                        <label className="label">Project Number</label>
+                        <select
+                          value={wizardSelectedProject}
+                          onChange={(e) => { setWizardSelectedProject(e.target.value); setWizardSelectedCarIds([]); }}
+                          className="input"
+                        >
+                          <option value="">Select a project...</option>
+                          {projectNumbers.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        {wizardSelectedProject && (
+                          <p className="text-sm text-green-600 mt-2">
+                            {cars.filter(c => c.projectNumber === wizardSelectedProject).length} cars available
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {wizardSourceType === 'customer' && (
+                      <div>
+                        <label className="label">Customer</label>
+                        <select
+                          value={wizardSelectedCustomer}
+                          onChange={(e) => { setWizardSelectedCustomer(e.target.value); setWizardSelectedCarIds([]); }}
+                          className="input"
+                        >
+                          <option value="">Select a customer...</option>
+                          {customers.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        {wizardSelectedCustomer && (
+                          <p className="text-sm text-green-600 mt-2">
+                            {cars.filter(c => c.customer === wizardSelectedCustomer).length} cars available
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Step 2: Car Selection */}
+                {wizardStep === 'cars' && (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-lg font-medium text-steel-900">Select Cars</h3>
+                        <p className="text-sm text-steel-500">
+                          {wizardSelectedCarIds.length} of {wizardFilteredCars.length} cars selected
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setWizardSelectedCarIds(wizardFilteredCars.map(c => c.id))}
+                        className="btn-secondary text-sm"
+                      >
+                        Select All
+                      </button>
+                    </div>
+                    <div className="border border-steel-200 rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+                      <table className="min-w-full divide-y divide-steel-200">
+                        <thead className="bg-steel-50 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-2 text-left w-10">
+                              <input
+                                type="checkbox"
+                                checked={wizardSelectedCarIds.length === wizardFilteredCars.length && wizardFilteredCars.length > 0}
+                                onChange={(e) => setWizardSelectedCarIds(e.target.checked ? wizardFilteredCars.map(c => c.id) : [])}
+                              />
+                            </th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Railcar</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Customer</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Reason</th>
+                            <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-steel-100">
+                          {wizardFilteredCars.map(car => (
+                            <tr key={car.id} className="hover:bg-steel-50">
+                              <td className="px-4 py-2">
+                                <input
+                                  type="checkbox"
+                                  checked={wizardSelectedCarIds.includes(car.id)}
+                                  onChange={() => setWizardSelectedCarIds(prev =>
+                                    prev.includes(car.id) ? prev.filter(id => id !== car.id) : [...prev, car.id]
+                                  )}
+                                />
+                              </td>
+                              <td className="px-4 py-2 text-sm font-mono text-steel-900">{car.railcarNumber}</td>
+                              <td className="px-4 py-2 text-sm text-steel-700">{car.customer}</td>
+                              <td className="px-4 py-2 text-sm text-steel-600">{car.reasonShopped || '-'}</td>
+                              <td className="px-4 py-2">
+                                <span className={`px-2 py-0.5 text-xs rounded-full ${
+                                  car.status === 'available' ? 'bg-green-100 text-green-800' : 'bg-steel-100 text-steel-700'
+                                }`}>
+                                  {car.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 3: Shop Selection with Parent/Child */}
+                {wizardStep === 'shops' && (
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="text-lg font-medium text-steel-900">Select Shops</h3>
+                        <p className="text-sm text-steel-500">
+                          {wizardSelectedShopIds.length} shops selected for {wizardSelectedCarIds.length} cars
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {wizardParentShopGroups.map(group => (
+                        <div key={group.parent.id} className="border border-steel-200 rounded-lg overflow-hidden">
+                          {/* Parent Header */}
+                          <button
+                            onClick={() => toggleWizardParentExpanded(group.parent.id)}
+                            className="w-full px-4 py-3 flex items-center justify-between bg-steel-50 hover:bg-steel-100"
+                          >
+                            <div className="flex items-center gap-3">
+                              {wizardExpandedParents.has(group.parent.id) ? (
+                                <ChevronRightIcon className="h-4 w-4 rotate-90 transition-transform" />
+                              ) : (
+                                <ChevronRightIcon className="h-4 w-4 transition-transform" />
+                              )}
+                              <span className={`px-2 py-0.5 text-xs rounded ${
+                                group.parent.isAitxInternal ? 'bg-rail-100 text-rail-800' : 'bg-amber-100 text-amber-800'
+                              }`}>
+                                {group.parent.isAitxInternal ? 'AITX' : '3rd Party'}
+                              </span>
+                              <span className="font-medium text-steel-900">{group.parent.name}</span>
+                            </div>
+                            <span className="text-sm text-steel-500">{group.children.length} locations</span>
+                          </button>
+                          {/* Child Shops */}
+                          {wizardExpandedParents.has(group.parent.id) && (
+                            <div className="border-t border-steel-200 divide-y divide-steel-100">
+                              {group.children.map(shop => (
+                                <label key={shop.id} className="flex items-center px-4 py-2 hover:bg-steel-50 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={wizardSelectedShopIds.includes(shop.id)}
+                                    onChange={() => toggleWizardShopSelection(shop.id)}
+                                    className="mr-3"
+                                  />
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium text-steel-900">{shop.name}</p>
+                                    <p className="text-xs text-steel-500">{shop.city}, {shop.state} • Capacity: {shop.capacity}/mo</p>
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 4: Capacity Review with Slider */}
+                {wizardStep === 'capacity' && (
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-lg font-medium text-steel-900">Capacity Review</h3>
+                      <p className="text-sm text-steel-500">
+                        Review capacity across {wizardSelectedShopIds.length} shops for {wizardSelectedCarIds.length} cars
+                      </p>
+                    </div>
+
+                    {/* Month Range Slider */}
+                    <div>
+                      <label className="label">Planning Horizon: {wizardCapacityMonthRange[0]} to {wizardCapacityMonthRange[1]} months out</label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="range"
+                          min="1"
+                          max="12"
+                          value={wizardCapacityMonthRange[0]}
+                          onChange={(e) => setWizardCapacityMonthRange([Math.min(parseInt(e.target.value), wizardCapacityMonthRange[1] - 1), wizardCapacityMonthRange[1]])}
+                          className="flex-1"
+                        />
+                        <input
+                          type="range"
+                          min="1"
+                          max="12"
+                          value={wizardCapacityMonthRange[1]}
+                          onChange={(e) => setWizardCapacityMonthRange([wizardCapacityMonthRange[0], Math.max(parseInt(e.target.value), wizardCapacityMonthRange[0] + 1)])}
+                          className="flex-1"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Capacity Grid */}
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                      {wizardCapacityData.map(month => (
+                        <div
+                          key={month.key}
+                          className={`p-3 rounded-lg border-2 text-center ${
+                            month.status === 'green' ? 'border-green-300 bg-green-50' :
+                            month.status === 'yellow' ? 'border-yellow-300 bg-yellow-50' :
+                            'border-red-300 bg-red-50'
+                          }`}
+                        >
+                          <p className="text-xs font-medium text-steel-700">{month.label}</p>
+                          <p className={`text-lg font-bold ${
+                            month.status === 'green' ? 'text-green-700' :
+                            month.status === 'yellow' ? 'text-yellow-700' :
+                            'text-red-700'
+                          }`}>
+                            {month.allocated}/{month.totalCapacity}
+                          </p>
+                          <p className="text-xs text-steel-500">
+                            {month.status === 'green' ? '✓ OK' : month.status === 'yellow' ? '⚠ High' : '✗ Over'}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Overall Status */}
+                    <div className={`p-4 rounded-lg ${
+                      wizardCapacityData.every(m => m.status === 'green') ? 'bg-green-100 text-green-800' :
+                      wizardCapacityData.some(m => m.status === 'red') ? 'bg-red-100 text-red-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {wizardCapacityData.every(m => m.status === 'green') ? (
+                        <p className="flex items-center gap-2"><CheckCircleIcon className="h-5 w-5" /> Capacity is sufficient. Ready to schedule!</p>
+                      ) : wizardCapacityData.some(m => m.status === 'red') ? (
+                        <p className="flex items-center gap-2"><ExclamationTriangleIcon className="h-5 w-5" /> Over capacity in some months. Consider adjusting shops or extending timeline.</p>
+                      ) : (
+                        <p className="flex items-center gap-2"><ExclamationTriangleIcon className="h-5 w-5" /> High utilization. Proceed with caution.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Step 5: Summary */}
+                {wizardStep === 'summary' && (
+                  <div className="space-y-6">
+                    <h3 className="text-lg font-medium text-steel-900">Summary</h3>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 bg-steel-50 rounded-lg">
+                        <p className="text-sm text-steel-500">Source</p>
+                        <p className="font-medium text-steel-900">
+                          {wizardSourceType === 'project' ? `Project: ${wizardSelectedProject}` : `Customer: ${wizardSelectedCustomer}`}
+                        </p>
+                      </div>
+                      <div className="p-4 bg-steel-50 rounded-lg">
+                        <p className="text-sm text-steel-500">Cars Selected</p>
+                        <p className="font-medium text-steel-900">{wizardSelectedCarIds.length} cars</p>
+                      </div>
+                      <div className="p-4 bg-steel-50 rounded-lg">
+                        <p className="text-sm text-steel-500">Shops Selected</p>
+                        <p className="font-medium text-steel-900">{wizardSelectedShopIds.length} shops</p>
+                      </div>
+                      <div className="p-4 bg-steel-50 rounded-lg">
+                        <p className="text-sm text-steel-500">Capacity Status</p>
+                        <p className={`font-medium ${
+                          wizardCapacityData.every(m => m.status === 'green') ? 'text-green-700' :
+                          wizardCapacityData.some(m => m.status === 'red') ? 'text-red-700' : 'text-yellow-700'
+                        }`}>
+                          {wizardCapacityData.every(m => m.status === 'green') ? 'Ready' :
+                           wizardCapacityData.some(m => m.status === 'red') ? 'Over Capacity' : 'High Utilization'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="label">Scenario Name <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        value={wizardScenarioName}
+                        onChange={(e) => setWizardScenarioName(e.target.value)}
+                        className="input"
+                        placeholder="Enter scenario name..."
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Wizard Footer */}
+              <div className="p-6 border-t border-steel-200 flex justify-between">
+                <button
+                  onClick={prevWizardStep}
+                  disabled={wizardStep === 'source'}
+                  className="btn-secondary disabled:opacity-50"
+                >
+                  Back
+                </button>
+                <div className="flex gap-3">
+                  {wizardScenarioName.trim() && (
+                    <button
+                      onClick={() => saveWizardScenario(true)}
+                      disabled={wizardIsSaving}
+                      className="btn-secondary"
+                    >
+                      {wizardIsSaving ? 'Saving...' : 'Save as Draft'}
+                    </button>
+                  )}
+                  {wizardStep === 'summary' ? (
+                    <button
+                      onClick={() => saveWizardScenario(false)}
+                      disabled={wizardIsSaving || !wizardScenarioName.trim()}
+                      className="btn-primary disabled:opacity-50"
+                    >
+                      {wizardIsSaving ? 'Creating...' : 'Create Scenario'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={nextWizardStep}
+                      disabled={!canProceedToStep(WIZARD_STEPS[WIZARD_STEPS.findIndex(s => s.id === wizardStep) + 1]?.id)}
+                      className="btn-primary disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <label className="label">Customer Filter (optional)</label>
-                  <select
-                    value={formData.customerFilter}
-                    onChange={(e) => setFormData({ ...formData, customerFilter: e.target.value })}
-                    className="input"
-                  >
-                    <option value="">All Customers</option>
-                    {customers.map((customer) => (
-                      <option key={customer} value={customer}>{customer}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex justify-end space-x-3 pt-4">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary">Cancel</button>
-                  <button type="submit" className="btn-primary">Create Scenario</button>
-                </div>
-              </form>
+              </div>
             </div>
           </div>
         </div>

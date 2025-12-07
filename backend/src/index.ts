@@ -22,7 +22,6 @@ import webhooksRoutes from './routes/webhooks';
 import multiYearPlanningRoutes from './routes/multiYearPlanning';
 import apiKeysRoutes from './routes/apiKeys';
 import masterPlanWizardRoutes from './routes/masterPlanWizard';
-import qualPlannerImportRoutes from './routes/qualPlannerImport';
 import publicApiV1 from './routes/api/v1';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
@@ -64,7 +63,6 @@ app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/multi-year-planning', multiYearPlanningRoutes);
 app.use('/api/api-keys', apiKeysRoutes);
 app.use('/api/master-plan-wizard', masterPlanWizardRoutes);
-app.use('/api/qual-planner', qualPlannerImportRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);

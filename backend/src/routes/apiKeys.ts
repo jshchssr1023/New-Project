@@ -23,7 +23,7 @@ router.use(authenticateToken);
  * GET /api/api-keys
  * List API keys for the current user's company
  */
-router.get('/', requireRole(['admin']), async (req: Request, res: Response) => {
+router.get('/', requireRole('admin'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
 
@@ -44,7 +44,7 @@ router.get('/', requireRole(['admin']), async (req: Request, res: Response) => {
  * GET /api/api-keys/permissions
  * List available permissions
  */
-router.get('/permissions', requireRole(['admin']), async (_req: Request, res: Response) => {
+router.get('/permissions', requireRole('admin'), async (_req: Request, res: Response) => {
   const groupedPermissions = {
     read: AVAILABLE_PERMISSIONS.filter((p) => p.startsWith('read:')),
     write: AVAILABLE_PERMISSIONS.filter((p) => p.startsWith('write:')),
@@ -63,7 +63,7 @@ router.get('/permissions', requireRole(['admin']), async (_req: Request, res: Re
  * POST /api/api-keys
  * Create a new API key
  */
-router.post('/', requireRole(['admin']), async (req: Request, res: Response) => {
+router.post('/', requireRole('admin'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
   const userId = authReq.user?.id;
@@ -113,7 +113,7 @@ router.post('/', requireRole(['admin']), async (req: Request, res: Response) => 
  * POST /api/api-keys/:id/revoke
  * Revoke an API key (disable without deleting)
  */
-router.post('/:id/revoke', requireRole(['admin']), async (req: Request, res: Response) => {
+router.post('/:id/revoke', requireRole('admin'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
   const { id } = req.params;
@@ -139,7 +139,7 @@ router.post('/:id/revoke', requireRole(['admin']), async (req: Request, res: Res
  * DELETE /api/api-keys/:id
  * Permanently delete an API key
  */
-router.delete('/:id', requireRole(['admin']), async (req: Request, res: Response) => {
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
   const { id } = req.params;

@@ -20,7 +20,8 @@
  * @version 1.0.0
  */
 
-import { PrismaClient, MasterPlan, MasterPlanCommitment, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { MasterPlan, MasterPlanCommitment, Prisma } from '../types/prismaTypes';
 import { z } from 'zod';
 
 // =============================================================================

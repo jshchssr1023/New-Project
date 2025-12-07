@@ -148,6 +148,13 @@ model Shop {
   region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
   network            String           @default("") // Shop network: e.g., "AITX-Own", "3rd Party"
   servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
+
+  // Parent/Child Shop Hierarchy
+  parentShopId       String?          // Reference to parent shop (for network/group hierarchy)
+  parentShop         Shop?            @relation("ShopHierarchy", fields: [parentShopId], references: [id])
+  childShops         Shop[]           @relation("ShopHierarchy")
+  isParent           Boolean          @default(false) // True if this is a parent/network shop
+  annualTargetVolume Int              @default(0)     // Annual target volume (for parent shops)
   isAitxInternal     Boolean          @default(false) // True for AITX-owned shops, false for 3P
   tankQualified      Boolean          @default(true) // Critical: Can this shop service tank cars?
   networkTier        Int              @default(5) // 1-5, lower = preferred (for 3P ranking)
@@ -198,6 +205,7 @@ model Shop {
   // Note: code has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([code, companyId])
+  @@index([parentShopId])
 }
 
 // Junction table for Car-Shop eligibility (shop checkboxes in car database)

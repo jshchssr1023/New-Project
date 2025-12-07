@@ -252,7 +252,7 @@ export async function validateImportSession(
   const previewData = JSON.parse(session.previewData) as Record<string, unknown>[];
 
   // Get field definitions based on session type
-  const fieldDefs = getFieldDefinitions(session.sessionType);
+  const fieldDefs = getFieldDefinitions(session.sessionType) as typeof CAR_FIELDS;
 
   // Auto-detect field mappings
   const mappings = detectFieldMappings(headers, fieldDefs);
@@ -707,7 +707,7 @@ async function importCars(
         updatedCount++;
       } else {
         await prisma.car.create({
-          data: carData as Parameters<typeof prisma.car.create>[0]['data'],
+          data: carData as Record<string, unknown>,
         });
         importedCount++;
       }
@@ -779,7 +779,7 @@ async function importShops(
         updatedCount++;
       } else {
         await prisma.shop.create({
-          data: shopData as Parameters<typeof prisma.shop.create>[0]['data'],
+          data: shopData as Record<string, unknown>,
         });
         importedCount++;
       }

@@ -7,14 +7,13 @@
  * - Step 3: Output & Publication (Scheduling output with pre-set filters)
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ClipboardDocumentListIcon,
   TableCellsIcon,
   PaperAirplaneIcon,
   CheckCircleIcon,
   LockClosedIcon,
-  LockOpenIcon,
   ChevronRightIcon,
   ChevronLeftIcon,
   ExclamationTriangleIcon,
@@ -23,7 +22,6 @@ import {
   ArrowDownTrayIcon,
   FunnelIcon,
   MagnifyingGlassIcon,
-  PlusIcon,
   XMarkIcon,
   InformationCircleIcon,
   ClockIcon,
@@ -37,7 +35,6 @@ import type {
   WeeklyCapacityData,
   MasterPlanVersionData,
   IntegrationLogData,
-  ImportSessionData,
 } from '../services/api';
 import { useCarSelection } from '../contexts/CarSelectionContext';
 
@@ -63,19 +60,6 @@ interface DemandItem {
   assignedShopId: string | null;
   assignedShopName: string | null;
   scheduledWeek: string | null;
-}
-
-interface AllocationCell {
-  shopId: string;
-  shopName: string;
-  weekKey: string;
-  workType: WorkType;
-  planned: number;
-  capacity: number;
-  used: number;
-  available: number;
-  isOverCapacity: boolean;
-  isLocked: boolean;
 }
 
 // =============================================================================
@@ -112,7 +96,7 @@ export default function MasterPlanWizard() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Data state
-  const [cars, setCars] = useState<Car[]>([]);
+  const [, setCars] = useState<Car[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [weekKeys, setWeekKeys] = useState<string[]>([]);
   const [weeklyCapacities, setWeeklyCapacities] = useState<Record<string, Record<string, WeeklyCapacityData>>>({});
@@ -120,7 +104,6 @@ export default function MasterPlanWizard() {
   // Scenario state - completed scenarios with SOPAssignments
   const [availableScenarios, setAvailableScenarios] = useState<any[]>([]);
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(new Set());
-  const [scenarioSOPAssignments, setScenarioSOPAssignments] = useState<any[]>([]);
 
   // Wizard state
   const [isDemandLocked, setIsDemandLocked] = useState(false);
@@ -164,10 +147,10 @@ export default function MasterPlanWizard() {
     currentValue: number;
   } | null>(null);
   const [showConfirmLockModal, setShowConfirmLockModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
+  const [, setShowImportModal] = useState(false);
 
-  // Car selection context
-  const { selectedCars: globalSelectedCars, hasSelection: hasGlobalSelection } = useCarSelection();
+  // Car selection context - available for future use
+  useCarSelection();
 
   // =============================================================================
   // DATA LOADING
@@ -289,7 +272,7 @@ export default function MasterPlanWizard() {
           daysUntilDue: daysUntilDue === Infinity ? 999 : daysUntilDue,
           isOverdue,
           priority,
-          planningState: car.planStatus || 'not_planned',
+          planningState: (car as any).planStatus || 'not_planned',
           assignedShopId: car.assignedShopId || null,
           assignedShopName: car.assignedShopId ? shopMap.get(car.assignedShopId) || null : null,
           scheduledWeek: car.projectedCompletionMonth || null,

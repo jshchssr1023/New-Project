@@ -79,8 +79,8 @@ router.post('/cars', authenticateToken, async (req: Request, res: Response) => {
 
     // Audit log
     if (!dryRun) {
-      await auditService.log({
-        action: 'DATA_IMPORT',
+      await auditService.logAudit({
+        action: 'import',
         entityType: 'Car',
         details: {
           imported: result.imported,
@@ -125,8 +125,8 @@ router.post('/shops', authenticateToken, async (req: Request, res: Response) => 
     });
 
     if (!dryRun) {
-      await auditService.log({
-        action: 'DATA_IMPORT',
+      await auditService.logAudit({
+        action: 'import',
         entityType: 'Shop',
         details: {
           imported: result.imported,

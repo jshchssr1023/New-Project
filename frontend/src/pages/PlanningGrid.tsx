@@ -92,23 +92,19 @@ export default function PlanningGrid() {
 
   // Global car selection context
   const {
-    selectedCars: globalSelectedCars,
-    selectCar,
-    deselectCar,
-    toggleCar,
+    selectedCarIds,
     selectMultiple,
     clearSelection,
-    hasSelection: hasGlobalSelection,
   } = useCarSelection();
 
-  // Selection and assignment state (local state synced with global context)
-  const selectedCarIds = globalSelectedCars; // Use global selection
+  // Helper to update car selection
   const setSelectedCarIds = (updater: Set<string> | ((prev: Set<string>) => Set<string>)) => {
     // Sync local updates to global context
-    const newSet = typeof updater === 'function' ? updater(globalSelectedCars) : updater;
-    // Clear and re-add all
+    const newSet = typeof updater === 'function' ? updater(selectedCarIds) : updater;
+    // Clear and re-add all - need to find car objects
     clearSelection();
-    newSet.forEach(id => selectCar(id));
+    const carsToSelect = cars.filter(c => newSet.has(c.id));
+    selectMultiple(carsToSelect);
   };
   const [selectedShopId, setSelectedShopId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
@@ -173,7 +169,7 @@ export default function PlanningGrid() {
       setShopFilters(filterData);
 
       // Extract unique shopping types from cars
-      const types = [...new Set(carsResponse.data.map(c => c.reasonShopped?.toLowerCase()).filter(Boolean))];
+      const types = [...new Set(carsResponse.data.map(c => c.reasonShopped?.toLowerCase()).filter((t): t is string => Boolean(t)))];
       setShoppingTypes(types);
 
       if (plansData.length > 0) {

@@ -12,12 +12,10 @@
     "dev:frontend": "npm run dev --workspace=frontend",
     "dev:backend": "npm run dev --workspace=backend",
     "build": "npm run build --workspace=frontend && npm run build --workspace=backend",
-    "db:setup": "npm run db:generate --workspace=backend && npm run db:push --workspace=backend && npm run db:seed --workspace=backend"
+    "db:setup": "npm run db:generate --workspace=backend && npm run db:push --workspace=backend && npm run db:seed --workspace=backend",
+    "start": "npm run start --workspace=backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
-  },
-  "dependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.53.3"
   }
 }

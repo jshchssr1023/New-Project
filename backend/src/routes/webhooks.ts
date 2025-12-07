@@ -17,7 +17,7 @@ const router = Router();
 
 // All routes require admin role
 router.use(authenticateToken);
-router.use(requireRole(['admin']));
+router.use(requireRole('admin'));
 
 /**
  * Get all webhook configs for company
