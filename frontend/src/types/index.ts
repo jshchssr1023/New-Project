@@ -26,7 +26,8 @@ export interface Car {
   commodity: string;
   customer: string;
   projectNumber: string;
-  reasonShopped: string;
+  reasonsShopped: string;
+  reasonShopped?: string; // Legacy alias
   status: 'available' | 'in_service' | 'in_shop' | 'scheduled' | 'retired' | 'planned' | 'release' | 'assignment' | 'arrived';
   currentLocation: string;
   assignedShopId: string | null;
@@ -229,7 +230,7 @@ export interface AnalyticsData {
     id: string;
     railcarNumber: string;
     customer: string;
-    reasonShopped: string;
+    reasonsShopped: string;
     nextServiceDue: string | null;
     daysUntilDue: number | null;
   }[];
@@ -309,7 +310,7 @@ export interface ReportData {
     carType: string;
     customer: string;
     projectNumber: string;
-    reasonShopped: string;
+    reasonsShopped: string;
     shopName: string;
     shopCode: string;
     shopLocation: string;

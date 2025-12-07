@@ -55,7 +55,7 @@ interface CarImportData {
   // Additional fields from extended CSV
   currentLocation: string;
   homeRegion: string;
-  reasonShopped: string;
+  reasonsShopped: string;
   status: string;
   projectedCost: number;
   notes: string;
@@ -102,7 +102,7 @@ const OPTIONAL_HEADERS: Record<string, string[]> = {
   'planStatus': ['plan status', 'planstatus', 'status', 'planning status'],
   'currentLocation': ['location', 'current location', 'currentlocation', 'city'],
   'homeRegion': ['region', 'home region', 'homeregion', 'area'],
-  'reasonShopped': ['reason', 'reason shopped', 'shop reason', 'reasonshopped'],
+  'reasonsShopped': ['reason', 'reason shopped', 'shop reason', 'reasonshopped', 'reasonsshopped'],
   'projectedCost': ['cost', 'projected cost', 'estimated cost', 'projectedcost'],
   'notes': ['notes', 'comments', 'remarks', 'memo'],
 };
@@ -575,7 +575,7 @@ async function importCarsFromCSV(
         const planStatus = getField(record, 'planStatus');
         const currentLocation = getField(record, 'currentLocation') || locations[Math.floor(Math.random() * locations.length)];
         const homeRegion = getField(record, 'homeRegion') || regions[Math.floor(Math.random() * regions.length)];
-        const reasonShopped = getField(record, 'reasonShopped') || (isTankCar && tankQualDueDate ? 'qualification' : '');
+        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualDueDate ? 'qualification' : '');
         const projectedCost = parseFloatSafe(getField(record, 'projectedCost'));
         const notes = getField(record, 'notes');
 
@@ -589,7 +589,7 @@ async function importCarsFromCSV(
           commodity,
           customer,
           projectNumber: '',
-          reasonShopped,
+          reasonsShopped,
           status: 'available',
           currentLocation,
           homeRegion,
@@ -758,7 +758,7 @@ async function generateRandomCars(
     const isTankCar = carType === 'Tank Car';
     const commodity = commodities[Math.floor(Math.random() * commodities.length)];
     const customer = customers[Math.floor(Math.random() * customers.length)];
-    const reasonShopped = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
+    const selectedReason = reasonsShopped[Math.floor(Math.random() * reasonsShopped.length)];
 
     // Weighted status selection
     const rand = Math.random();
@@ -813,8 +813,8 @@ async function generateRandomCars(
       isTankCar,
       commodity,
       customer,
-      projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
-      reasonShopped,
+      projectNumber: `PRJ-${CURRENT_YEAR}-${String(1000 + Math.floor(Math.random() * 9000))}`,
+      reasonsShopped: selectedReason,
       status,
       currentLocation: locations[Math.floor(Math.random() * locations.length)],
       homeRegion: region,
@@ -825,7 +825,7 @@ async function generateRandomCars(
       lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
       nextServiceDue: adjustedNextServiceDue,
       notes: Math.random() > 0.7 ? 'Priority service required' : '',
-      contractNumber: `CTR-${2024}-${String(10000 + i)}`,
+      contractNumber: `CTR-${CURRENT_YEAR}-${String(10000 + i)}`,
       contractExpiration,
       isJacketed,
       isLined,
@@ -903,6 +903,25 @@ const shopData = [
 
 async function main() {
   console.log('🌱 Starting seed...');
+
+  // ==========================================================================
+  // DYNAMIC YEAR CALCULATION
+  // ==========================================================================
+  // Uses current date to generate relevant planning years dynamically
+  // This ensures seed data is always current and useful for demos/testing
+  // ==========================================================================
+  const now = new Date();
+  const CURRENT_YEAR = now.getFullYear();
+  const NEXT_YEAR = CURRENT_YEAR + 1;
+
+  // Generate month arrays for both years dynamically
+  const generateMonths = (year: number): string[] =>
+    Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+
+  const monthsCurrentYear = generateMonths(CURRENT_YEAR);
+  const monthsNextYear = generateMonths(NEXT_YEAR);
+
+  console.log(`📅 Planning years: ${CURRENT_YEAR} (active) and ${NEXT_YEAR} (draft)`);
 
   // Clear existing data (order matters due to foreign key constraints)
   // Delete in order from leaf tables to root tables
@@ -1137,69 +1156,64 @@ async function main() {
 
   console.log(`📦 Total cars available for planning: ${cars.length}`);
 
-  // Create 2 plans
-  const plan2024 = await prisma.plan.create({
+  // Create 2 plans with dynamic years
+  const planCurrentYear = await prisma.plan.create({
     data: {
       id: uuidv4(),
-      name: '2024 Service Plan',
-      description: 'Annual service schedule for 2024 fleet maintenance',
-      startDate: new Date('2024-01-01'),
-      endDate: new Date('2024-12-31'),
+      name: `${CURRENT_YEAR} Service Plan`,
+      description: `Annual service schedule for ${CURRENT_YEAR} fleet maintenance`,
+      startDate: new Date(`${CURRENT_YEAR}-01-01`),
+      endDate: new Date(`${CURRENT_YEAR}-12-31`),
       status: 'active',
       companyId: company.id,
       createdBy: planner.id,
     },
   });
 
-  const plan2025 = await prisma.plan.create({
+  const planNextYear = await prisma.plan.create({
     data: {
       id: uuidv4(),
-      name: '2025 Service Plan',
-      description: 'Projected service schedule for 2025',
-      startDate: new Date('2025-01-01'),
-      endDate: new Date('2025-12-31'),
+      name: `${NEXT_YEAR} Service Plan`,
+      description: `Projected service schedule for ${NEXT_YEAR}`,
+      startDate: new Date(`${NEXT_YEAR}-01-01`),
+      endDate: new Date(`${NEXT_YEAR}-12-31`),
       status: 'draft',
       companyId: company.id,
       createdBy: planner.id,
     },
   });
 
-  console.log('✓ Created 2 plans');
+  console.log(`✓ Created 2 plans (${CURRENT_YEAR} active, ${NEXT_YEAR} draft)`);
 
-  // Create assignments for 2024 plan
+  // Create assignments using dynamic month arrays
   const activeShops = shops.filter((s) => s.isActive);
-  const months2024 = [
-    '2024-01', '2024-02', '2024-03', '2024-04', '2024-05', '2024-06',
-    '2024-07', '2024-08', '2024-09', '2024-10', '2024-11', '2024-12'
-  ];
-  const months2025 = [
-    '2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06',
-    '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'
-  ];
 
-  // Distribute cars across shops and months for 2024
+  // Distribute cars across shops and months for current year
   let assignmentCount = 0;
-  const usedCarMonths2024 = new Set<string>();
+  const usedCarMonthsCurrent = new Set<string>();
 
-  for (const month of months2024) {
+  // Calculate current month for status assignment
+  const currentMonthStr = `${CURRENT_YEAR}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  for (const month of monthsCurrentYear) {
     for (const shop of activeShops) {
       const carsForShop = Math.floor(Math.random() * shop.capacity * 0.8) + 2;
       for (let i = 0; i < carsForShop; i++) {
         const car = cars[Math.floor(Math.random() * cars.length)];
         const key = `${car.id}-${month}`;
 
-        if (!usedCarMonths2024.has(key)) {
-          usedCarMonths2024.add(key);
+        if (!usedCarMonthsCurrent.has(key)) {
+          usedCarMonthsCurrent.add(key);
           await prisma.planAssignment.create({
             data: {
               id: uuidv4(),
-              planId: plan2024.id,
+              planId: planCurrentYear.id,
               carId: car.id,
               shopId: shop.id,
               scheduledMonth: month,
               estimatedCost: 15000 + Math.floor(Math.random() * 20000),
               estimatedDuration: 10 + Math.floor(Math.random() * 10),
-              status: month < '2024-11' ? 'completed' : month === '2024-11' ? 'in_progress' : 'pending',
+              status: month < currentMonthStr ? 'completed' : month === currentMonthStr ? 'in_progress' : 'pending',
             },
           });
           assignmentCount++;
@@ -1208,25 +1222,25 @@ async function main() {
     }
   }
 
-  console.log(`✓ Created ${assignmentCount} assignments for 2024 plan`);
+  console.log(`✓ Created ${assignmentCount} assignments for ${CURRENT_YEAR} plan`);
 
-  // Create fewer assignments for 2025 draft plan
+  // Create fewer assignments for next year draft plan
   assignmentCount = 0;
-  const usedCarMonths2025 = new Set<string>();
+  const usedCarMonthsNext = new Set<string>();
 
-  for (const month of months2025.slice(0, 6)) {
+  for (const month of monthsNextYear.slice(0, 6)) {
     for (const shop of activeShops.slice(0, 10)) {
       const carsForShop = Math.floor(Math.random() * shop.capacity * 0.5) + 1;
       for (let i = 0; i < carsForShop; i++) {
         const car = cars[Math.floor(Math.random() * cars.length)];
         const key = `${car.id}-${month}`;
 
-        if (!usedCarMonths2025.has(key)) {
-          usedCarMonths2025.add(key);
+        if (!usedCarMonthsNext.has(key)) {
+          usedCarMonthsNext.add(key);
           await prisma.planAssignment.create({
             data: {
               id: uuidv4(),
-              planId: plan2025.id,
+              planId: planNextYear.id,
               carId: car.id,
               shopId: shop.id,
               scheduledMonth: month,
@@ -1241,16 +1255,17 @@ async function main() {
     }
   }
 
-  console.log(`✓ Created ${assignmentCount} assignments for 2025 plan`);
+  console.log(`✓ Created ${assignmentCount} assignments for ${NEXT_YEAR} plan`);
 
-  // Create a sample scenario
+  // Create a sample scenario with dynamic years
+  const nextYearShort = String(NEXT_YEAR).slice(-2);
   const scenario = await prisma.scenario.create({
     data: {
       id: uuidv4(),
-      projectNumber: 'Q2-25-001',
-      name: 'High Volume Q2 2025',
-      description: 'What-if analysis for increased service volume in Q2 2025',
-      basePlanId: plan2025.id,
+      projectNumber: `Q2-${nextYearShort}-001`,
+      name: `High Volume Q2 ${NEXT_YEAR}`,
+      description: `What-if analysis for increased service volume in Q2 ${NEXT_YEAR}`,
+      basePlanId: planNextYear.id,
       status: 'completed',
       results: JSON.stringify({
         totalCost: 2850000,
@@ -1265,12 +1280,12 @@ async function main() {
           'Dallas Maintenance': 88,
         },
         monthlyDistribution: {
-          '2025-01': 45,
-          '2025-02': 52,
-          '2025-03': 48,
-          '2025-04': 65,
-          '2025-05': 72,
-          '2025-06': 58,
+          [`${NEXT_YEAR}-01`]: 45,
+          [`${NEXT_YEAR}-02`]: 52,
+          [`${NEXT_YEAR}-03`]: 48,
+          [`${NEXT_YEAR}-04`]: 65,
+          [`${NEXT_YEAR}-05`]: 72,
+          [`${NEXT_YEAR}-06`]: 58,
         },
       }),
       companyId: company.id,
@@ -1278,7 +1293,7 @@ async function main() {
     },
   });
 
-  console.log('✓ Created sample scenario');
+  console.log(`✓ Created sample scenario for Q2 ${NEXT_YEAR}`);
 
   // ==========================================================================
   // LEASE QUALIFICATION ENGINE DATA

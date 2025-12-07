@@ -90,7 +90,7 @@ model Car {
   customerId               String?          // FK to Customer table (preferred over customer string)
   customerRef              Customer?        @relation("CarCustomer", fields: [customerId], references: [id])
   projectNumber            String           @default("") // Project or work order number
-  reasonsShopped           String           @default("[]") // JSON array: ["qualification", "repair"] - multiple reasons can be bundled
+  reasonsShopped           String           @default("") // Reason(s) for shopping: qualification, repair, maintenance, etc.
   status                   String           @default("available") // Current Status: available, in_service, in_shop, scheduled, retired, planned, release, assignment, arrived
   currentLocation          String           @default("") // Current physical location
   assignedShopId           String?          // Currently assigned shop (if in_shop or scheduled)
@@ -487,7 +487,7 @@ model SOPAssignment {
   car                 Car       @relation(fields: [carId], references: [id])
   shopId              String
   shop                Shop      @relation(fields: [shopId], references: [id])
-  reasonsShopped      String    @default("[]") // JSON array: ["qualification", "repair"] - Qualification is priority/main cost driver
+  reasonsShopped      String    @default("") // Reason(s) for shopping: qualification, repair, maintenance, etc.
   status              String    @default("DRAFT") // DRAFT, PLANNED, SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED
   monthKey            String    // "2026-03"
   scheduledArrival    DateTime?
