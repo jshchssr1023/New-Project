@@ -514,7 +514,6 @@ async function importCarsFromCSV(
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
-    const upsertOperations: Prisma.Prisma__CarClient<any>[] = [];
     const batchData: Array<{ railcarNumber: string; data: any; rowIndex: number }> = [];
 
     for (let i = 0; i < batch.length; i++) {
@@ -806,36 +805,47 @@ async function generateRandomCars(
 
     const railcarNumber = `AITX${String(100000 + i).slice(1)}`;
 
-    const createdCar = await prisma.car.create({
-      data: {
+    // =================================================================
+    // UPSERT PATTERN: Use unique railcarNumber constraint for stability
+    // =================================================================
+    const carDataPayload = {
+      carType,
+      isTankCar,
+      commodity,
+      customer,
+      projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
+      reasonShopped,
+      status,
+      currentLocation: locations[Math.floor(Math.random() * locations.length)],
+      homeRegion: region,
+      originRegion: region,
+      projectedCost: 12000 + Math.floor(Math.random() * 10000),
+      daysInShop,
+      shopEntryDate,
+      lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
+      nextServiceDue: adjustedNextServiceDue,
+      notes: Math.random() > 0.7 ? 'Priority service required' : '',
+      contractNumber: `CTR-${2024}-${String(10000 + i)}`,
+      contractExpiration,
+      isJacketed,
+      isLined,
+      buildYear,
+      qualificationType,
+      tankQualified,
+      tankQualDueDate,
+      performScheduled,
+      planStatus,
+    };
+
+    const createdCar = await prisma.car.upsert({
+      where: {
+        railcarNumber: railcarNumber,
+      },
+      update: carDataPayload,
+      create: {
         id: uuidv4(),
         railcarNumber,
-        carType,
-        isTankCar,
-        commodity,
-        customer,
-        projectNumber: `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
-        reasonShopped,
-        status,
-        currentLocation: locations[Math.floor(Math.random() * locations.length)],
-        homeRegion: region,
-        originRegion: region,
-        projectedCost: 12000 + Math.floor(Math.random() * 10000),
-        daysInShop,
-        shopEntryDate,
-        lastServiceDate: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000),
-        nextServiceDue: adjustedNextServiceDue,
-        notes: Math.random() > 0.7 ? 'Priority service required' : '',
-        contractNumber: `CTR-${2024}-${String(10000 + i)}`,
-        contractExpiration,
-        isJacketed,
-        isLined,
-        buildYear,
-        qualificationType,
-        tankQualified,
-        tankQualDueDate,
-        performScheduled,
-        planStatus,
+        ...carDataPayload,
         companyId,
       },
     });
@@ -847,7 +857,7 @@ async function generateRandomCars(
     }
   }
 
-  console.log(`✓ Created ${createdCars.length} railcars (random data)`);
+  console.log(`✓ Upserted ${createdCars.length} railcars (random data, using railcarNumber as unique key)`);
   return createdCars;
 }
 
