@@ -386,7 +386,7 @@ export function calculateCarUrgencyScore(car: Car): number {
     'release': 25,
     'maintenance': 10,
   };
-  score += reasonPriority[car.reasonShopped] || 0;
+  score += (car.reasonShopped ? reasonPriority[car.reasonShopped] : 0) || 0;
 
   // Status urgency
   if (car.status === 'available') score += 15;

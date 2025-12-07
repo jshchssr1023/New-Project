@@ -74,7 +74,7 @@ import {
 type TabType = 'dashboard' | 'demand' | 'supply' | 'plan' | 'assumptions' | 'allocations' | 'scheduling';
 
 export default function CarFlowPlanning() {
-  const { selectedCars: globalSelectedCars, hasSelection: hasGlobalSelection, clearSelection, getSelectionSummary } = useCarSelection();
+  const { hasSelection: hasGlobalSelection, clearSelection, getSelectionSummary } = useCarSelection();
 
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [isLoading, setIsLoading] = useState(true);

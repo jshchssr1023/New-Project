@@ -8,7 +8,6 @@ import {
   PlayIcon,
   ArrowPathIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon,
   XMarkIcon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -467,7 +466,7 @@ export default function RuleBuilder() {
 function RuleCard({
   rule,
   index,
-  totalRules,
+  totalRules: _totalRules,
   isExpanded,
   onToggleExpand,
   onEdit,

@@ -56,7 +56,7 @@ export default function ScenarioManager() {
   const [importHandled, setImportHandled] = useState(false);
 
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [, setPlans] = useState<Plan[]>([]);
   const [cars, setCars] = useState<Car[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [customers, setCustomers] = useState<string[]>([]);

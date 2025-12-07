@@ -10,7 +10,7 @@
  * Part of the Gold Standard Car Flow Planning upgrade.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   masterPlanWizardApi,
@@ -217,13 +217,13 @@ export default function MasterPlanAuditLog() {
               <span className="font-medium text-green-600">{String(details.newValue)}</span>
             </div>
           </div>
-          {details.justification && (
+          {Boolean(details.justification) && (
             <div>
               <span className="text-gray-500">Justification:</span>{' '}
               <span className="italic">"{String(details.justification)}"</span>
             </div>
           )}
-          {details.changeCategory && (
+          {Boolean(details.changeCategory) && (
             <div>
               <span className="text-gray-500">Category:</span>{' '}
               <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">
@@ -259,13 +259,13 @@ export default function MasterPlanAuditLog() {
               <span className="font-medium">{String(details.overrideValue)}</span>
             </div>
           </div>
-          {details.justification && (
+          {Boolean(details.justification) && (
             <div>
               <span className="text-gray-500">Justification:</span>{' '}
               <span className="italic">"{String(details.justification)}"</span>
             </div>
           )}
-          {details.overrideReason && (
+          {Boolean(details.overrideReason) && (
             <div>
               <span className="text-gray-500">Reason:</span>{' '}
               <span className="px-2 py-0.5 bg-gray-100 rounded text-xs capitalize">
@@ -294,7 +294,7 @@ export default function MasterPlanAuditLog() {
               <span className="text-green-600 font-medium">{String(value.new)}</span>
             </div>
           ))}
-          {details.metadata && typeof details.metadata === 'object' && (
+          {Boolean(details.metadata) && typeof details.metadata === 'object' && (
             <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
               <pre className="overflow-x-auto">
                 {JSON.stringify(details.metadata, null, 2)}

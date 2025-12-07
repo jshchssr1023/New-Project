@@ -487,7 +487,7 @@ export default function Dashboard() {
                           {car.status.replace('_', ' ')}
                         </span>
                       </td>
-                      <td className="py-2 text-steel-700">{car.reasonShopped || '-'}</td>
+                      <td className="py-2 text-steel-700">{car.reasonsShopped || (car as any).reasonShopped || '-'}</td>
                       {teamFilter === 'qualification' && (
                         <td className="py-2 text-steel-700">
                           {car.tankQualDueDate
@@ -562,7 +562,7 @@ export default function Dashboard() {
                     >
                       <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
                       <td className="py-2 text-steel-700">{car.customer || '-'}</td>
-                      <td className="py-2 text-steel-700">{car.reasonShopped || '-'}</td>
+                      <td className="py-2 text-steel-700">{car.reasonsShopped || (car as any).reasonShopped || '-'}</td>
                       <td className={`py-2 text-right ${getDaysUntilDueColor(car.daysUntilDue)}`}>
                         {car.daysUntilDue !== null ? (
                           car.daysUntilDue < 0 ? `${Math.abs(car.daysUntilDue)} overdue` : car.daysUntilDue

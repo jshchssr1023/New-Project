@@ -13,7 +13,6 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon,
-  ClipboardDocumentCheckIcon,
   AdjustmentsHorizontalIcon,
   ArrowUpTrayIcon,
   BellAlertIcon,
@@ -36,11 +35,6 @@ const operationsNavigation = [
   { name: 'Master Plan', href: '/masterplan', icon: DocumentChartBarIcon },
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
-];
-
-// Financial & Qualification - Specific functional areas
-const financialNavigation = [
-  { name: 'Lease Qualification', href: '/lease-qualification', icon: ClipboardDocumentCheckIcon },
 ];
 
 // Reporting & Rules - Data review and configuration
@@ -87,7 +81,6 @@ export default function Layout() {
   // Build navigation sections based on user role
   const navSections = [
     { title: 'Operations & Planning', items: operationsNavigation },
-    { title: 'Financial', items: financialNavigation },
     { title: 'Reporting & Rules', items: reportingNavigation },
     ...(user?.role === 'admin' ? [{ title: 'Administration', items: adminNavigation }] : []),
   ];

@@ -9,7 +9,16 @@ const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Cana
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
 
-// Network group interface
+// Parent shop group interface (for hierarchy view)
+interface ParentShopGroup {
+  parentShop: Shop;         // The parent shop entity
+  childShops: Shop[];       // Child locations under this parent
+  totalCapacity: number;    // Sum of all child capacities (monthly)
+  activeShops: number;      // Count of active child shops
+  avgCostPerCar: number;    // Average cost across child shops
+}
+
+// Legacy network group interface (kept for backward compatibility)
 interface NetworkGroup {
   network: string;
   isAitxInternal: boolean;
@@ -103,6 +112,86 @@ export default function ShopManagement() {
     return filtered;
   }, [networkGroups, ownershipFilter, networkFilter]);
 
+  // Get parent shops for hierarchy view
+  const parentShops = useMemo(() => {
+    return shops.filter(s => s.isParent);
+  }, [shops]);
+
+  // Group shops by parent (for hierarchy view)
+  const parentShopGroups = useMemo((): ParentShopGroup[] => {
+    const groups: ParentShopGroup[] = [];
+    const orphanShops: Shop[] = [];
+
+    // First, find all parent shops and their children
+    parentShops.forEach(parentShop => {
+      const childShops = shops.filter(s => s.parentShopId === parentShop.id && !s.isParent);
+      const totalCapacity = childShops.reduce((sum, s) => sum + (s.capacity || 0), 0);
+      const activeShops = childShops.filter(s => s.isActive).length;
+      const totalCost = childShops.reduce((sum, s) => sum + (s.baseCostPerCar || 0), 0);
+      const avgCostPerCar = childShops.length > 0 ? totalCost / childShops.length : 0;
+
+      groups.push({
+        parentShop,
+        childShops,
+        totalCapacity,
+        activeShops,
+        avgCostPerCar,
+      });
+    });
+
+    // Find shops without a parent (orphans) - group by network as fallback
+    shops.forEach(shop => {
+      if (!shop.isParent && !shop.parentShopId) {
+        orphanShops.push(shop);
+      }
+    });
+
+    // If there are orphan shops, create a virtual "Unassigned" parent group
+    if (orphanShops.length > 0) {
+      const totalCapacity = orphanShops.reduce((sum, s) => sum + (s.capacity || 0), 0);
+      const activeShops = orphanShops.filter(s => s.isActive).length;
+      const totalCost = orphanShops.reduce((sum, s) => sum + (s.baseCostPerCar || 0), 0);
+      const avgCostPerCar = orphanShops.length > 0 ? totalCost / orphanShops.length : 0;
+
+      groups.push({
+        parentShop: {
+          id: '__unassigned__',
+          name: 'Unassigned Shops',
+          code: 'UNASSIGNED',
+          isParent: true,
+          isAitxInternal: false,
+          annualTargetVolume: 0,
+          parentShopId: null,
+        } as Shop,
+        childShops: orphanShops,
+        totalCapacity,
+        activeShops,
+        avgCostPerCar,
+      });
+    }
+
+    // Sort: AITX first, then 3rd party alphabetically
+    return groups.sort((a, b) => {
+      if (a.parentShop.isAitxInternal && !b.parentShop.isAitxInternal) return -1;
+      if (!a.parentShop.isAitxInternal && b.parentShop.isAitxInternal) return 1;
+      return a.parentShop.name.localeCompare(b.parentShop.name);
+    });
+  }, [shops, parentShops]);
+
+  // Filtered parent shop groups
+  const filteredParentShopGroups = useMemo(() => {
+    let filtered = parentShopGroups;
+    if (ownershipFilter === 'aitx') {
+      filtered = filtered.filter(g => g.parentShop.isAitxInternal);
+    } else if (ownershipFilter === '3p') {
+      filtered = filtered.filter(g => !g.parentShop.isAitxInternal);
+    }
+    if (networkFilter) {
+      filtered = filtered.filter(g => g.parentShop.network === networkFilter);
+    }
+    return filtered;
+  }, [parentShopGroups, ownershipFilter, networkFilter]);
+
   const toggleNetworkExpanded = (network: string) => {
     setExpandedNetworks(prev => {
       const next = new Set(prev);
@@ -139,6 +228,11 @@ export default function ShopManagement() {
     contactPhone: '',
     notes: '',
     isActive: true,
+    // Parent/Child hierarchy fields
+    isParent: false,
+    parentShopId: '' as string | null,
+    annualTargetVolume: 0,
+    isAitxInternal: false,
   });
 
   useEffect(() => {
@@ -185,6 +279,11 @@ export default function ShopManagement() {
         contactPhone: shop.contactPhone || '',
         notes: shop.notes || '',
         isActive: shop.isActive,
+        // Parent/Child hierarchy fields
+        isParent: shop.isParent || false,
+        parentShopId: shop.parentShopId || '',
+        annualTargetVolume: shop.annualTargetVolume || 0,
+        isAitxInternal: shop.isAitxInternal || false,
       });
     } else {
       setEditingShop(null);
@@ -205,6 +304,11 @@ export default function ShopManagement() {
         contactPhone: '',
         notes: '',
         isActive: true,
+        // Parent/Child hierarchy fields
+        isParent: false,
+        parentShopId: '',
+        annualTargetVolume: 0,
+        isAitxInternal: false,
       });
     }
     setIsModalOpen(true);
@@ -571,39 +675,54 @@ export default function ShopManagement() {
           <p className="text-steel-500">Loading shops...</p>
         </div>
       ) : viewMode === 'network' ? (
-        /* Network Grouped View */
+        /* Parent/Child Hierarchy View */
         <div className="space-y-4">
-          {filteredNetworkGroups.map(group => (
-            <div key={group.network} className="card p-0 overflow-hidden">
-              {/* Network Header */}
+          {/* Use parent shop groups if available, otherwise fall back to network groups */}
+          {(filteredParentShopGroups.length > 0 ? filteredParentShopGroups : filteredNetworkGroups.map(g => ({
+            parentShop: { id: g.network, name: g.network, isAitxInternal: g.isAitxInternal, annualTargetVolume: 0, isParent: true } as Shop,
+            childShops: g.shops,
+            totalCapacity: g.totalCapacity,
+            activeShops: g.activeShops,
+            avgCostPerCar: g.avgCostPerCar,
+          }))).map(group => (
+            <div key={group.parentShop.id} className="card p-0 overflow-hidden">
+              {/* Parent Shop Header */}
               <button
-                onClick={() => toggleNetworkExpanded(group.network)}
+                onClick={() => toggleNetworkExpanded(group.parentShop.id)}
                 className="w-full px-4 py-3 flex items-center justify-between bg-steel-100 hover:bg-steel-200 transition-colors"
               >
                 <div className="flex items-center space-x-3">
-                  {expandedNetworks.has(group.network) ? (
+                  {expandedNetworks.has(group.parentShop.id) ? (
                     <ChevronDownIcon className="h-5 w-5 text-steel-500" />
                   ) : (
                     <ChevronRightIcon className="h-5 w-5 text-steel-500" />
                   )}
                   <div className="flex items-center space-x-2">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                      group.isAitxInternal
+                      group.parentShop.isAitxInternal
                         ? 'bg-rail-100 text-rail-800'
                         : 'bg-amber-100 text-amber-800'
                     }`}>
-                      {group.isAitxInternal ? 'AITX' : '3rd Party'}
+                      {group.parentShop.isAitxInternal ? 'AITX' : '3rd Party'}
                     </span>
-                    <span className="font-semibold text-steel-900">{group.network}</span>
+                    <span className="font-semibold text-steel-900">{group.parentShop.name}</span>
+                    {group.parentShop.code && group.parentShop.code !== 'UNASSIGNED' && (
+                      <span className="text-xs text-steel-500 font-mono">({group.parentShop.code})</span>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center space-x-6 text-sm">
                   <span className="text-steel-600">
-                    <span className="font-medium text-steel-900">{group.shops.length}</span> locations
+                    <span className="font-medium text-steel-900">{group.childShops.length}</span> locations
                   </span>
                   <span className="text-steel-600">
                     <span className="font-medium text-steel-900">{group.activeShops}</span> active
                   </span>
+                  {group.parentShop.annualTargetVolume > 0 && (
+                    <span className="text-indigo-600">
+                      <span className="font-medium text-indigo-900">{group.parentShop.annualTargetVolume}</span> target/yr
+                    </span>
+                  )}
                   <span className="text-steel-600">
                     <span className="font-medium text-steel-900">{group.totalCapacity}</span> capacity/mo
                   </span>
@@ -613,22 +732,22 @@ export default function ShopManagement() {
                 </div>
               </button>
 
-              {/* Expanded Shop List */}
-              {expandedNetworks.has(group.network) && (
+              {/* Expanded Child Shop List */}
+              {expandedNetworks.has(group.parentShop.id) && (
                 <div className="border-t border-steel-200">
                   <table className="min-w-full divide-y divide-steel-200">
                     <thead className="bg-steel-50">
                       <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Shop</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Location</th>
-                        <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Capacity</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">Shop Location</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">City/State</th>
+                        <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Monthly Capacity</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Cost/Car</th>
                         <th className="px-4 py-2 text-center text-xs font-medium text-steel-500 uppercase">Status</th>
                         <th className="px-4 py-2 text-right text-xs font-medium text-steel-500 uppercase">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-steel-100">
-                      {group.shops.map(shop => (
+                      {group.childShops.map(shop => (
                         <tr key={shop.id} className="hover:bg-steel-50">
                           <td className="px-4 py-3 whitespace-nowrap">
                             <div>

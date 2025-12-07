@@ -62,6 +62,12 @@ export interface Shop {
   region: string;
   network: string;
   servingRailroad: string;
+  // Parent/Child Shop Hierarchy
+  parentShopId: string | null;  // Reference to parent shop (for network/group hierarchy)
+  parentShop?: Shop;            // Parent shop object (when populated)
+  childShops?: Shop[];          // Child shops (when populated)
+  isParent: boolean;            // True if this is a parent/network shop
+  annualTargetVolume: number;   // Annual target volume (for parent shops)
   isAitxInternal: boolean;
   tankQualified: boolean;
   networkTier: number;

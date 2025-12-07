@@ -84,7 +84,7 @@ export default function NotificationBell() {
   // Subscribe to real-time notifications
   useEffect(() => {
     const unsubscribe = subscribe('notification:new', (payload) => {
-      const newNotif = payload.data as Notification;
+      const newNotif = payload.data as unknown as Notification;
       setNotifications(prev => [{ ...newNotif, isRead: false }, ...prev.slice(0, 9)]);
       setUnreadCount(prev => prev + 1);
     });

@@ -30,7 +30,8 @@ export type WebSocketEvent =
   | 'collaboration:dragEnd'
   | 'collaboration:cellLock'
   | 'collaboration:cellUnlock'
-  | 'collaboration:cursorMove';
+  | 'collaboration:cursorMove'
+  | 'notification:new';
 
 export interface WebSocketPayload {
   event: WebSocketEvent;
