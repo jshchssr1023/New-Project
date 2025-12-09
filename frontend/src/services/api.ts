@@ -68,14 +68,25 @@ apiClient.interceptors.request.use(
   (error: AxiosError) => Promise.reject(error)
 );
 
-// Response interceptor to handle auth errors
+// Response interceptor to handle auth errors with graceful 401 handling
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
+      // Store current location for redirect after login
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login') {
+        sessionStorage.setItem('redirectAfterLogin', currentPath);
+      }
+
+      // Clear auth state
       localStorage.removeItem('authToken');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+
+      // Only redirect if not already on login page
+      if (currentPath !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -1199,116 +1210,8 @@ export const sopApi = {
 };
 
 // =============================================================================
-// MASTER PLAN API
+// MASTER PLAN API (Consolidated)
 // =============================================================================
-
-export const masterPlansApi = {
-  // Get all master plans
-  getAll: async (params?: { fiscalYear?: number; status?: string }): Promise<MasterPlan[]> => {
-    const response = await apiClient.get<MasterPlan[]>('/masterplans', { params });
-    return response.data;
-  },
-
-  // Get active master plan
-  getActive: async (): Promise<MasterPlan | null> => {
-    try {
-      const response = await apiClient.get<MasterPlan>('/masterplans/active');
-      return response.data;
-    } catch {
-      return null;
-    }
-  },
-
-  // Get master plan by ID
-  getById: async (id: string): Promise<MasterPlan> => {
-    const response = await apiClient.get<MasterPlan>(`/masterplans/${id}`);
-    return response.data;
-  },
-
-  // Get master plan summary
-  getSummary: async (id: string): Promise<MasterPlanSummary> => {
-    const response = await apiClient.get<MasterPlanSummary>(`/masterplans/${id}/summary`);
-    return response.data;
-  },
-
-  // Approve master plan
-  approve: async (id: string, activate: boolean = false): Promise<MasterPlan> => {
-    const response = await apiClient.post<MasterPlan>(`/masterplans/${id}/approve`, { activate });
-    return response.data;
-  },
-
-  // Get commitments for a master plan
-  getCommitments: async (id: string): Promise<MasterPlanCommitment[]> => {
-    const response = await apiClient.get<MasterPlanCommitment[]>(`/masterplans/${id}/commitments`);
-    return response.data;
-  },
-
-  // Update commitment status
-  updateCommitmentStatus: async (commitmentId: string, status: string): Promise<MasterPlanCommitment> => {
-    const response = await apiClient.patch<MasterPlanCommitment>(`/masterplans/commitments/${commitmentId}/status`, { status });
-    return response.data;
-  },
-
-  // Get shop work orders
-  getShopWorkOrders: async (shopId: string, month: string): Promise<MasterPlanCommitment[]> => {
-    const response = await apiClient.get<MasterPlanCommitment[]>(`/masterplans/work-orders/${shopId}/${month}`);
-    return response.data;
-  },
-
-  // Download shop work orders PDF
-  downloadShopWorkOrdersPdf: async (shopId: string, month: string): Promise<void> => {
-    const response = await apiClient.get(`/masterplans/work-orders/${shopId}/${month}/pdf`, {
-      responseType: 'blob',
-    });
-    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `work-orders-${month}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  },
-
-  // Send shop work orders via email
-  sendShopWorkOrders: async (shopId: string, month: string, recipientEmails: string[]): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post(`/masterplans/work-orders/${shopId}/${month}/send`, { recipientEmails });
-    return response.data;
-  },
-
-  // Get customer schedule
-  getCustomerSchedule: async (customerId: string, masterPlanId?: string): Promise<MasterPlanCommitment[]> => {
-    const response = await apiClient.get<MasterPlanCommitment[]>(`/masterplans/customer-schedule/${customerId}`, {
-      params: masterPlanId ? { masterPlanId } : undefined,
-    });
-    return response.data;
-  },
-
-  // Download customer schedule PDF
-  downloadCustomerSchedulePdf: async (customerId: string, masterPlanId?: string): Promise<void> => {
-    const response = await apiClient.get(`/masterplans/customer-schedule/${customerId}/pdf`, {
-      responseType: 'blob',
-      params: masterPlanId ? { masterPlanId } : undefined,
-    });
-    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `customer-schedule-${new Date().toISOString().split('T')[0]}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  },
-
-  // Send customer schedule via email
-  sendCustomerSchedule: async (customerId: string, recipientEmails: string[], masterPlanId?: string): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post(`/masterplans/customer-schedule/${customerId}/send`, {
-      recipientEmails,
-      masterPlanId,
-    });
-    return response.data;
-  },
-};
 
 export const leaseQualificationApi = {
   // Releases
@@ -1526,6 +1429,52 @@ export const masterPlanApi = {
       `/masterplans/shop/${shopId}/workorders`,
       { params: { month } }
     );
+    return response.data;
+  },
+
+  // Download shop work orders PDF
+  downloadShopWorkOrdersPdf: async (shopId: string, month: string): Promise<void> => {
+    const response = await apiClient.get(`/masterplans/work-orders/${shopId}/${month}/pdf`, {
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `work-orders-${month}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  // Send shop work orders via email
+  sendShopWorkOrders: async (shopId: string, month: string, recipientEmails: string[]): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post(`/masterplans/work-orders/${shopId}/${month}/send`, { recipientEmails });
+    return response.data;
+  },
+
+  // Download customer schedule PDF
+  downloadCustomerSchedulePdf: async (customerId: string, masterPlanId?: string): Promise<void> => {
+    const response = await apiClient.get(`/masterplans/customer-schedule/${customerId}/pdf`, {
+      responseType: 'blob',
+      params: masterPlanId ? { masterPlanId } : undefined,
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `customer-schedule-${new Date().toISOString().split('T')[0]}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  // Send customer schedule via email
+  sendCustomerSchedule: async (customerId: string, recipientEmails: string[], masterPlanId?: string): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post(`/masterplans/customer-schedule/${customerId}/send`, {
+      recipientEmails,
+      masterPlanId,
+    });
     return response.data;
   },
 
