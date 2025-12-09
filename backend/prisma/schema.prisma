@@ -249,6 +249,12 @@ model ShopRule {
   company     Company  @relation(fields: [companyId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Performance indexes
+  @@index([companyId])
+  @@index([isActive])
+  @@index([ruleType])
+  @@index([priority])
 }
 
 model Plan {
@@ -266,6 +272,13 @@ model Plan {
   scenarios   Scenario[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+
+  // Performance indexes
+  @@index([companyId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([startDate])
+  @@index([endDate])
 }
 
 model PlanAssignment {
@@ -285,6 +298,13 @@ model PlanAssignment {
   updatedAt         DateTime @updatedAt
 
   @@unique([planId, carId, scheduledMonth])
+  // Performance indexes for common query patterns
+  @@index([planId])
+  @@index([carId])
+  @@index([shopId])
+  @@index([scheduledMonth])
+  @@index([status])
+  @@index([shopId, scheduledMonth])
 }
 
 model Scenario {
@@ -340,6 +360,12 @@ model ScenarioCar {
   updatedAt       DateTime @updatedAt
 
   @@unique([scenarioId, carId])
+  // Performance indexes
+  @@index([scenarioId])
+  @@index([carId])
+  @@index([scheduledMonth])
+  @@index([suggestedShopId])
+  @@index([assignedShopId])
 }
 
 model ScenarioModification {

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -104,13 +104,17 @@ export default function CarsPage() {
   } = useCars({ initialPageSize: pageSize });
 
   // Handle URL params - only run once on mount
+  // Using a ref to track initialization prevents stale closure issues
+  const initializedRef = useRef(false);
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     const urlStatus = searchParams.get('status');
     const urlSearch = searchParams.get('search');
     if (urlStatus) updateFilters({ status: urlStatus });
     if (urlSearch) updateFilters({ search: urlSearch });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, updateFilters]);
 
   // Filtered cars based on hierarchical filter
   const displayedCars = useMemo(() => {
