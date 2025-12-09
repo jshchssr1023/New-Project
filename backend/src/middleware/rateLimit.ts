@@ -22,17 +22,17 @@ interface RateLimitConfig {
 export const RATE_LIMIT_CONFIGS = {
   login: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 5,
+    maxRequests: 50, // Increased for development
     message: 'Too many login attempts. Please try again in a minute.',
   },
   api: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 100,
+    maxRequests: 1000, // Increased for development
     message: 'Too many requests. Please slow down.',
   },
   strict: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 10,
+    maxRequests: 100, // Increased for development
     message: 'Rate limit exceeded for this operation.',
   },
 };

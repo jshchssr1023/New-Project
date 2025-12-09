@@ -561,6 +561,19 @@ export const prisma = {
   importSession: createTableHandler('ImportSession'),
   allocationOverride: createTableHandler('AllocationOverride'),
 
+  // Rate limiting table
+  rateLimitEntry: createTableHandler('RateLimitEntry'),
+
+  // Webhook tables
+  webhook: createTableHandler('Webhook'),
+  webhookDelivery: createTableHandler('WebhookDelivery'),
+
+  // API Key table
+  apiKey: createTableHandler('ApiKey'),
+
+  // Token blacklist table
+  invalidatedToken: createTableHandler('InvalidatedToken'),
+
   // Raw query support
   $queryRaw: async (query: string, ...params: any[]) => {
     return db.prepare(query).all(...params);
