@@ -594,6 +594,180 @@ CREATE TABLE IF NOT EXISTS MasterPlanCommitment (
   FOREIGN KEY (customerId) REFERENCES Customer(id)
 );
 
+-- Notification
+CREATE TABLE IF NOT EXISTS Notification (
+  id TEXT PRIMARY KEY,
+  userId TEXT NOT NULL,
+  companyId TEXT NOT NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  data TEXT,
+  link TEXT,
+  isRead INTEGER DEFAULT 0,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (userId) REFERENCES User(id),
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
+-- RateLimitEntry
+CREATE TABLE IF NOT EXISTS RateLimitEntry (
+  id TEXT PRIMARY KEY,
+  identifier TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  windowStart TEXT NOT NULL,
+  requestCount INTEGER DEFAULT 1,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(identifier, endpoint, windowStart)
+);
+
+-- InvalidatedToken (token blacklist)
+CREATE TABLE IF NOT EXISTS InvalidatedToken (
+  id TEXT PRIMARY KEY,
+  tokenHash TEXT NOT NULL UNIQUE,
+  userId TEXT NOT NULL,
+  expiresAt TEXT NOT NULL,
+  reason TEXT DEFAULT 'logout',
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- WeeklyCapacity
+CREATE TABLE IF NOT EXISTS WeeklyCapacity (
+  id TEXT PRIMARY KEY,
+  shopId TEXT NOT NULL,
+  weekStart TEXT NOT NULL,
+  capacity INTEGER DEFAULT 0,
+  allocated INTEGER DEFAULT 0,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (shopId) REFERENCES Shop(id),
+  UNIQUE(shopId, weekStart)
+);
+
+-- CapacityAudit
+CREATE TABLE IF NOT EXISTS CapacityAudit (
+  id TEXT PRIMARY KEY,
+  shopId TEXT NOT NULL,
+  weekStart TEXT NOT NULL,
+  action TEXT NOT NULL,
+  oldValue INTEGER,
+  newValue INTEGER,
+  userId TEXT,
+  reason TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (shopId) REFERENCES Shop(id)
+);
+
+-- ShopHistory
+CREATE TABLE IF NOT EXISTS ShopHistory (
+  id TEXT PRIMARY KEY,
+  shopId TEXT NOT NULL,
+  field TEXT NOT NULL,
+  oldValue TEXT,
+  newValue TEXT,
+  userId TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (shopId) REFERENCES Shop(id)
+);
+
+-- MasterPlanVersion
+CREATE TABLE IF NOT EXISTS MasterPlanVersion (
+  id TEXT PRIMARY KEY,
+  masterPlanId TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  data TEXT,
+  createdBy TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (masterPlanId) REFERENCES MasterPlan(id)
+);
+
+-- IntegrationLog
+CREATE TABLE IF NOT EXISTS IntegrationLog (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  message TEXT,
+  data TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ImportSession
+CREATE TABLE IF NOT EXISTS ImportSession (
+  id TEXT PRIMARY KEY,
+  companyId TEXT NOT NULL,
+  userId TEXT NOT NULL,
+  type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  filename TEXT,
+  totalRecords INTEGER DEFAULT 0,
+  processedRecords INTEGER DEFAULT 0,
+  errorRecords INTEGER DEFAULT 0,
+  errors TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  completedAt TEXT,
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
+-- AllocationOverride
+CREATE TABLE IF NOT EXISTS AllocationOverride (
+  id TEXT PRIMARY KEY,
+  masterPlanId TEXT NOT NULL,
+  carId TEXT NOT NULL,
+  shopId TEXT,
+  weekStart TEXT,
+  reason TEXT,
+  userId TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (masterPlanId) REFERENCES MasterPlan(id)
+);
+
+-- Webhook
+CREATE TABLE IF NOT EXISTS Webhook (
+  id TEXT PRIMARY KEY,
+  companyId TEXT NOT NULL,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  events TEXT NOT NULL,
+  secret TEXT,
+  isActive INTEGER DEFAULT 1,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
+-- WebhookDelivery
+CREATE TABLE IF NOT EXISTS WebhookDelivery (
+  id TEXT PRIMARY KEY,
+  webhookId TEXT NOT NULL,
+  event TEXT NOT NULL,
+  payload TEXT,
+  status TEXT NOT NULL,
+  statusCode INTEGER,
+  response TEXT,
+  attempts INTEGER DEFAULT 1,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (webhookId) REFERENCES Webhook(id)
+);
+
+-- ApiKey
+CREATE TABLE IF NOT EXISTS ApiKey (
+  id TEXT PRIMARY KEY,
+  companyId TEXT NOT NULL,
+  name TEXT NOT NULL,
+  keyHash TEXT NOT NULL UNIQUE,
+  keyPrefix TEXT NOT NULL,
+  permissions TEXT,
+  isActive INTEGER DEFAULT 1,
+  lastUsedAt TEXT,
+  expiresAt TEXT,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_car_company ON Car(companyId);
 CREATE INDEX IF NOT EXISTS idx_shop_company ON Shop(companyId);
@@ -631,6 +805,14 @@ CREATE INDEX IF NOT EXISTS idx_masterplancommit_plan ON MasterPlanCommitment(mas
 CREATE INDEX IF NOT EXISTS idx_masterplancommit_shop ON MasterPlanCommitment(shopId, scheduledMonth);
 CREATE INDEX IF NOT EXISTS idx_masterplancommit_car ON MasterPlanCommitment(carId);
 CREATE INDEX IF NOT EXISTS idx_masterplancommit_customer ON MasterPlanCommitment(customerId);
+CREATE INDEX IF NOT EXISTS idx_notification_user ON Notification(userId);
+CREATE INDEX IF NOT EXISTS idx_notification_company ON Notification(companyId);
+CREATE INDEX IF NOT EXISTS idx_ratelimit_lookup ON RateLimitEntry(identifier, endpoint, windowStart);
+CREATE INDEX IF NOT EXISTS idx_invalidated_token_hash ON InvalidatedToken(tokenHash);
+CREATE INDEX IF NOT EXISTS idx_invalidated_token_expires ON InvalidatedToken(expiresAt);
+CREATE INDEX IF NOT EXISTS idx_webhook_company ON Webhook(companyId);
+CREATE INDEX IF NOT EXISTS idx_webhook_delivery ON WebhookDelivery(webhookId);
+CREATE INDEX IF NOT EXISTS idx_apikey_company ON ApiKey(companyId);
 `;
 
 // Execute schema
