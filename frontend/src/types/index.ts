@@ -47,9 +47,84 @@ export interface Car {
   tankQualified: boolean; // Tank qualification flag
   tankQualDueDate: string | null; // Tank qualification due date
   qualificationType: string; // Full/Partial qualification
+
+  // =============================================================================
+  // NEW QUALIFICATION FIELDS - For regulatory shopping decision support
+  // =============================================================================
+
+  // Lining Information
+  lined: boolean; // Whether car is lined (Yes/No)
+  liningType: string; // Type of lining (Rubber, Epoxy, Stainless, Glass, None, etc.)
+
+  // Qualification Due Dates - All dates used to determine shopping requirements
+  minNoLining: string | null; // Min (no lining) qualification date
+  minWLining: string | null; // Min w lining qualification date
+  interiorLining: string | null; // Interior Lining qualification date
+  rule88B: string | null; // Rule 88B qualification date
+  safetyRelief: string | null; // Safety Relief qualification date
+  serviceEquipment: string | null; // Service Equipment qualification date
+  stubSill: string | null; // Stub Sill qualification date
+  tankThickness: string | null; // Tank Thickness qualification date
+  tankQualification: string | null; // Tank Qualification date (different from tankQualDueDate)
+
+  // Additional Qualification Info
+  portfolio: string; // Shows if car is on lease or not
+  fullPartialQual: string; // "Full" or "Partial" qualification type
+  performTankQual: boolean; // Yes/No - indicates car needs qual if it goes to shop
+  scheduled: string | null; // Scheduled date for work
+  currentStatusNote: string; // Additional status notes
+
   companyId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// Shopping status for regulatory qualification
+export type ShoppingStatus = 'urgent' | 'must_shop' | 'upcoming' | 'compliant' | 'unknown';
+
+// Helper function to calculate shopping status from car qualification dates
+export function calculateShoppingStatus(car: Car): ShoppingStatus {
+  const currentYear = new Date().getFullYear();
+  const qualDates = [
+    car.minNoLining,
+    car.minWLining,
+    car.interiorLining,
+    car.rule88B,
+    car.safetyRelief,
+    car.serviceEquipment,
+    car.stubSill,
+    car.tankThickness,
+    car.tankQualification,
+  ].filter(Boolean);
+
+  if (qualDates.length === 0) {
+    return 'unknown';
+  }
+
+  let hasUrgent = false;
+  let hasMustShop = false;
+  let hasUpcoming = false;
+
+  for (const dateStr of qualDates) {
+    if (!dateStr) continue;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) continue;
+    const year = date.getFullYear();
+
+    if (year < currentYear) {
+      hasUrgent = true;
+    } else if (year === currentYear) {
+      hasMustShop = true;
+    } else if (year === currentYear + 1) {
+      hasUpcoming = true;
+    }
+  }
+
+  // Priority: urgent > must_shop > upcoming > compliant
+  if (hasUrgent) return 'urgent';
+  if (hasMustShop) return 'must_shop';
+  if (hasUpcoming) return 'upcoming';
+  return 'compliant';
 }
 
 export interface Shop {
