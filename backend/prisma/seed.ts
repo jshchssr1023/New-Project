@@ -1546,7 +1546,7 @@ async function main() {
         scheduledMonth: data.scheduledMonth,
         plannedArrival,
         plannedRelease,
-        workTypes: JSON.stringify(data.workTypes),
+        reasonsShopped: JSON.stringify(data.workTypes),
         isBundled: data.workTypes.length > 1,
         estimatedCost: data.estimatedCost,
         priority: data.priority,
