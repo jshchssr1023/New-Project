@@ -74,10 +74,14 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       return;
     }
 
-    // Connect to WebSocket server
+    // Connect to WebSocket server with JWT authentication
+    const authToken = localStorage.getItem('authToken');
     const socket = io(window.location.origin, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
+      auth: {
+        token: authToken,
+      },
     });
 
     socketRef.current = socket;

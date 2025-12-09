@@ -136,6 +136,11 @@ model Car {
   // Note: railcarNumber has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([railcarNumber, companyId])
+  // Performance indexes for frequently filtered fields
+  @@index([status])
+  @@index([customer])
+  @@index([companyId])
+  @@index([customerId])
 }
 
 model Shop {
@@ -206,6 +211,10 @@ model Shop {
   // Compound constraint retained for multi-tenant compatibility
   @@index([code, companyId])
   @@index([parentShopId])
+  // Performance indexes for frequently filtered fields
+  @@index([region])
+  @@index([companyId])
+  @@index([isActive])
 }
 
 // Junction table for Car-Shop eligibility (shop checkboxes in car database)
@@ -308,6 +317,9 @@ model Scenario {
   masterPlans    MasterPlan[]
 
   @@index([projectNumber, companyId])
+  // Performance indexes for frequently filtered fields
+  @@index([status])
+  @@index([companyId])
 }
 
 // Cars selected for a scenario

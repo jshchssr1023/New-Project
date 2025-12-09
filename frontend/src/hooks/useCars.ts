@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { carsApi } from '../services/api';
-import type { Car, PaginatedResponse, ShoppingStatus, calculateShoppingStatus } from '../types';
+import type { Car, PaginatedResponse, ShoppingStatus } from '../types';
 
 interface CarsFilters {
   page: number;

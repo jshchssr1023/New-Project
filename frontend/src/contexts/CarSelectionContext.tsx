@@ -60,21 +60,30 @@ export function CarSelectionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleCar = useCallback((car: Car) => {
-    setSelectedCarIds(prev => {
-      const next = new Set(prev);
-      if (next.has(car.id)) {
+    // Check current state synchronously to determine action
+    const isCurrentlySelected = selectedCarIds.has(car.id);
+
+    if (isCurrentlySelected) {
+      // Deselect the car
+      setSelectedCarIds(prev => {
+        const next = new Set(prev);
         next.delete(car.id);
-        setSelectedCars(cars => cars.filter(c => c.id !== car.id));
-      } else {
+        return next;
+      });
+      setSelectedCars(cars => cars.filter(c => c.id !== car.id));
+    } else {
+      // Select the car
+      setSelectedCarIds(prev => {
+        const next = new Set(prev);
         next.add(car.id);
-        setSelectedCars(cars => {
-          if (cars.find(c => c.id === car.id)) return cars;
-          return [...cars, car];
-        });
-      }
-      return next;
-    });
-  }, []);
+        return next;
+      });
+      setSelectedCars(cars => {
+        if (cars.find(c => c.id === car.id)) return cars;
+        return [...cars, car];
+      });
+    }
+  }, [selectedCarIds]);
 
   const selectMultiple = useCallback((cars: Car[]) => {
     setSelectedCarIds(prev => {

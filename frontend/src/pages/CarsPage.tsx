@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -47,7 +47,7 @@ const statusColors: Record<string, string> = {
 export default function CarsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { selectMultiple, clearSelection: clearGlobalSelection } = useCarSelection();
+  const { selectMultiple } = useCarSelection();
 
   // View mode: 'cards' or 'table'
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -103,13 +103,14 @@ export default function CarsPage() {
     refetch,
   } = useCars({ initialPageSize: pageSize });
 
-  // Handle URL params
-  useState(() => {
+  // Handle URL params - only run once on mount
+  useEffect(() => {
     const urlStatus = searchParams.get('status');
     const urlSearch = searchParams.get('search');
     if (urlStatus) updateFilters({ status: urlStatus });
     if (urlSearch) updateFilters({ search: urlSearch });
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filtered cars based on hierarchical filter
   const displayedCars = useMemo(() => {
