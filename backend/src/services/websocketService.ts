@@ -1,5 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import logger from '../utils/logger';
 
 // Event types for type safety
 export type WebSocketEvent =
@@ -58,6 +60,16 @@ export interface UserPresence {
   lastSeen: string;
 }
 
+// Socket with authenticated user
+interface AuthenticatedSocket extends Socket {
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+    companyId: string;
+  };
+}
+
 // Generate consistent color for user based on their ID
 function generateUserColor(userId: string): string {
   const colors = [
@@ -74,35 +86,105 @@ function generateUserColor(userId: string): string {
 
 class WebSocketService {
   private io: Server | null = null;
-  private connectedClients: Map<string, Socket> = new Map();
+  private connectedClients: Map<string, AuthenticatedSocket> = new Map();
   // Presence tracking: socketId -> UserPresence
   private presenceMap: Map<string, UserPresence> = new Map();
   // Cell locks: "companyId:shopId:month" -> socketId
   private cellLocks: Map<string, string> = new Map();
 
   initialize(httpServer: HttpServer): Server {
+    // Get allowed origins from environment
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+
     this.io = new Server(httpServer, {
       cors: {
-        origin: '*',
+        origin: allowedOrigins,
         methods: ['GET', 'POST'],
+        credentials: true,
       },
       path: '/socket.io',
     });
 
-    this.io.on('connection', (socket: Socket) => {
-      console.log(`Client connected: ${socket.id}`);
+    // SECURITY: Require JWT authentication for WebSocket connections
+    this.io.use((socket: AuthenticatedSocket, next) => {
+      const token = socket.handshake.auth.token;
+
+      if (!token) {
+        logger.warn('WebSocket connection rejected: No token provided', { socketId: socket.id });
+        return next(new Error('Authentication required'));
+      }
+
+      try {
+        const JWT_SECRET = process.env.JWT_SECRET;
+        if (!JWT_SECRET) {
+          logger.error('WebSocket: JWT_SECRET not configured');
+          return next(new Error('Server configuration error'));
+        }
+
+        const decoded = jwt.verify(token, JWT_SECRET) as {
+          id: string;
+          email: string;
+          role: string;
+          companyId: string;
+        };
+
+        // Attach user to socket for later use
+        socket.user = {
+          id: decoded.id,
+          email: decoded.email,
+          role: decoded.role,
+          companyId: decoded.companyId,
+        };
+
+        logger.info('WebSocket authenticated', {
+          socketId: socket.id,
+          userId: decoded.id,
+          email: decoded.email,
+        });
+
+        next();
+      } catch (error) {
+        if (error instanceof jwt.TokenExpiredError) {
+          logger.warn('WebSocket connection rejected: Token expired', { socketId: socket.id });
+          return next(new Error('Token expired'));
+        }
+        logger.warn('WebSocket connection rejected: Invalid token', { socketId: socket.id });
+        return next(new Error('Invalid token'));
+      }
+    });
+
+    this.io.on('connection', (socket: AuthenticatedSocket) => {
+      logger.info('Client connected', { socketId: socket.id, userId: socket.user?.id });
       this.connectedClients.set(socket.id, socket);
 
-      // Join company-specific room for multi-tenant isolation
+      // Automatically join the user's company room
+      if (socket.user?.companyId) {
+        socket.join(`company:${socket.user.companyId}`);
+        logger.debug('Socket auto-joined company room', {
+          socketId: socket.id,
+          companyId: socket.user.companyId,
+        });
+      }
+
+      // SECURITY: Verify companyId matches user's company before allowing room join
       socket.on('join:company', (companyId: string) => {
+        if (socket.user?.companyId !== companyId) {
+          logger.warn('Attempted unauthorized company room join', {
+            socketId: socket.id,
+            requestedCompany: companyId,
+            userCompany: socket.user?.companyId,
+          });
+          socket.emit('error', { message: 'Unauthorized: Cannot join this company room' });
+          return;
+        }
         socket.join(`company:${companyId}`);
-        console.log(`Socket ${socket.id} joined company room: ${companyId}`);
+        logger.debug('Socket joined company room', { socketId: socket.id, companyId });
       });
 
       // Join page-specific rooms for targeted updates
       socket.on('join:page', (page: string) => {
         socket.join(`page:${page}`);
-        console.log(`Socket ${socket.id} joined page room: ${page}`);
+        logger.debug('Socket joined page room', { socketId: socket.id, page });
       });
 
       socket.on('leave:page', (page: string) => {
@@ -111,6 +193,17 @@ class WebSocketService {
 
       // === Real-time Collaboration: Presence Management ===
       socket.on('presence:join', (data: { userId: string; userName: string; companyId: string; page: string }) => {
+        // SECURITY: Verify the user is joining with their own credentials
+        if (socket.user?.id !== data.userId || socket.user?.companyId !== data.companyId) {
+          logger.warn('Presence join mismatch', {
+            socketId: socket.id,
+            providedUserId: data.userId,
+            actualUserId: socket.user?.id,
+          });
+          socket.emit('error', { message: 'Unauthorized: User ID mismatch' });
+          return;
+        }
+
         const presence: UserPresence = {
           socketId: socket.id,
           userId: data.userId,
@@ -137,7 +230,7 @@ class WebSocketService {
           timestamp: new Date().toISOString(),
         });
 
-        console.log(`Presence: ${data.userName} joined ${data.page}`);
+        logger.debug('Presence join', { userName: data.userName, page: data.page });
       });
 
       socket.on('presence:update', (data: { page?: string; activity?: string }) => {
@@ -282,7 +375,7 @@ class WebSocketService {
       });
 
       socket.on('disconnect', () => {
-        console.log(`Client disconnected: ${socket.id}`);
+        logger.info('Client disconnected', { socketId: socket.id, userId: socket.user?.id });
 
         // Clean up presence and locks
         const presence = this.presenceMap.get(socket.id);
@@ -307,14 +400,14 @@ class WebSocketService {
       });
     });
 
-    console.log('WebSocket service initialized');
+    logger.info('WebSocket service initialized with JWT authentication');
     return this.io;
   }
 
   // Emit to all clients in a company
   emitToCompany(companyId: string, event: WebSocketEvent, data: Record<string, unknown>): void {
     if (!this.io) {
-      console.warn('WebSocket not initialized');
+      logger.warn('WebSocket not initialized');
       return;
     }
 
@@ -325,13 +418,13 @@ class WebSocketService {
     };
 
     this.io.to(`company:${companyId}`).emit(event, payload);
-    console.log(`Emitted ${event} to company ${companyId}`, data);
+    logger.debug('Emitted event to company', { event, companyId });
   }
 
   // Emit to specific page listeners
   emitToPage(page: string, event: WebSocketEvent, data: Record<string, unknown>): void {
     if (!this.io) {
-      console.warn('WebSocket not initialized');
+      logger.warn('WebSocket not initialized');
       return;
     }
 
@@ -347,7 +440,7 @@ class WebSocketService {
   // Emit to all connected clients
   emitToAll(event: WebSocketEvent, data: Record<string, unknown>): void {
     if (!this.io) {
-      console.warn('WebSocket not initialized');
+      logger.warn('WebSocket not initialized');
       return;
     }
 
