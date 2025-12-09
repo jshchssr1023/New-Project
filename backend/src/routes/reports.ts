@@ -6,6 +6,7 @@ import scheduledReportService from '../services/scheduledReportService';
 import auditService from '../services/auditService';
 import pdfService from '../services/pdfService';
 import schedulerService from '../services/schedulerService';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ router.get('/columns/:entityType', async (req, res) => {
 
     res.json(columns);
   } catch (error) {
-    console.error('Failed to get columns:', error);
+    logger.error('Failed to get columns:', error);
     res.status(500).json({ message: 'Failed to get columns' });
   }
 });
@@ -46,7 +47,7 @@ router.post('/execute', async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Failed to execute report:', error);
+    logger.error('Failed to execute report:', error);
     res.status(500).json({ message: 'Failed to execute report' });
   }
 });
@@ -85,7 +86,7 @@ router.post('/export/csv', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=${entityType.toLowerCase()}-report-${Date.now()}.csv`);
     res.send(csv);
   } catch (error) {
-    console.error('Failed to export CSV:', error);
+    logger.error('Failed to export CSV:', error);
     res.status(500).json({ message: 'Failed to export CSV' });
   }
 });
@@ -122,7 +123,7 @@ router.post('/export/xlsx', async (req, res) => {
 
     res.json(excelData);
   } catch (error) {
-    console.error('Failed to export Excel data:', error);
+    logger.error('Failed to export Excel data:', error);
     res.status(500).json({ message: 'Failed to export Excel data' });
   }
 });
@@ -185,7 +186,7 @@ router.post('/export/pdf', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename=${entityType.toLowerCase()}-report-${Date.now()}.pdf`);
     res.send(pdfBuffer);
   } catch (error) {
-    console.error('Failed to export PDF:', error);
+    logger.error('Failed to export PDF:', error);
     res.status(500).json({ message: 'Failed to export PDF' });
   }
 });
@@ -202,7 +203,7 @@ router.post('/schedules/:id/trigger', requireRole('admin'), async (req, res) => 
     const result = await schedulerService.triggerReport(id);
     res.json(result);
   } catch (error) {
-    console.error('Failed to trigger scheduled report:', error);
+    logger.error('Failed to trigger scheduled report:', error);
     res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to trigger report' });
   }
 });
@@ -216,7 +217,7 @@ router.get('/templates', async (req, res) => {
     const templates = await reportBuilderService.getTemplates(user.companyId, user.id);
     res.json(templates);
   } catch (error) {
-    console.error('Failed to get templates:', error);
+    logger.error('Failed to get templates:', error);
     res.status(500).json({ message: 'Failed to get templates' });
   }
 });
@@ -234,7 +235,7 @@ router.get('/templates/:id', async (req, res) => {
 
     res.json(template);
   } catch (error) {
-    console.error('Failed to get template:', error);
+    logger.error('Failed to get template:', error);
     res.status(500).json({ message: 'Failed to get template' });
   }
 });
@@ -273,7 +274,7 @@ router.post('/templates', async (req, res) => {
 
     res.status(201).json(template);
   } catch (error) {
-    console.error('Failed to create template:', error);
+    logger.error('Failed to create template:', error);
     res.status(500).json({ message: 'Failed to create template' });
   }
 });
@@ -303,7 +304,7 @@ router.put('/templates/:id', async (req, res) => {
 
     res.json({ message: 'Template updated successfully' });
   } catch (error) {
-    console.error('Failed to update template:', error);
+    logger.error('Failed to update template:', error);
     res.status(500).json({ message: 'Failed to update template' });
   }
 });
@@ -329,7 +330,7 @@ router.delete('/templates/:id', async (req, res) => {
 
     res.json({ message: 'Template deleted successfully' });
   } catch (error) {
-    console.error('Failed to delete template:', error);
+    logger.error('Failed to delete template:', error);
     res.status(500).json({ message: 'Failed to delete template' });
   }
 });
@@ -348,7 +349,7 @@ router.get('/schedules', async (req, res) => {
     const reports = await scheduledReportService.getScheduledReports(user.companyId);
     res.json(reports);
   } catch (error) {
-    console.error('Failed to get scheduled reports:', error);
+    logger.error('Failed to get scheduled reports:', error);
     res.status(500).json({ message: 'Failed to get scheduled reports' });
   }
 });
@@ -366,7 +367,7 @@ router.get('/schedules/:id', async (req, res) => {
 
     res.json(report);
   } catch (error) {
-    console.error('Failed to get scheduled report:', error);
+    logger.error('Failed to get scheduled report:', error);
     res.status(500).json({ message: 'Failed to get scheduled report' });
   }
 });
@@ -406,7 +407,7 @@ router.post('/schedules', async (req, res) => {
 
     res.status(201).json(report);
   } catch (error) {
-    console.error('Failed to create scheduled report:', error);
+    logger.error('Failed to create scheduled report:', error);
     res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to create scheduled report' });
   }
 });
@@ -435,7 +436,7 @@ router.put('/schedules/:id', async (req, res) => {
 
     res.json({ message: 'Scheduled report updated successfully' });
   } catch (error) {
-    console.error('Failed to update scheduled report:', error);
+    logger.error('Failed to update scheduled report:', error);
     res.status(500).json({ message: 'Failed to update scheduled report' });
   }
 });
@@ -461,7 +462,7 @@ router.post('/schedules/:id/toggle', async (req, res) => {
 
     res.json(report);
   } catch (error) {
-    console.error('Failed to toggle scheduled report:', error);
+    logger.error('Failed to toggle scheduled report:', error);
     res.status(500).json({ message: 'Failed to toggle scheduled report' });
   }
 });
@@ -487,7 +488,7 @@ router.delete('/schedules/:id', async (req, res) => {
 
     res.json({ message: 'Scheduled report deleted successfully' });
   } catch (error) {
-    console.error('Failed to delete scheduled report:', error);
+    logger.error('Failed to delete scheduled report:', error);
     res.status(500).json({ message: 'Failed to delete scheduled report' });
   }
 });
@@ -499,7 +500,7 @@ router.post('/schedules/:id/run', requireRole('admin'), async (req, res) => {
     const result = await scheduledReportService.executeScheduledReport(id);
     res.json(result);
   } catch (error) {
-    console.error('Failed to run scheduled report:', error);
+    logger.error('Failed to run scheduled report:', error);
     res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to run scheduled report' });
   }
 });

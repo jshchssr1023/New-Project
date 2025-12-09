@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -48,7 +49,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     res.json(shops);
   } catch (error) {
-    console.error('Get shops error:', error);
+    logger.error('Get shops error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -108,7 +109,7 @@ router.post('/capacity/batch', async (req: AuthRequest, res: Response) => {
       capacityData,
     });
   } catch (error) {
-    console.error('Batch capacity check error:', error);
+    logger.error('Batch capacity check error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -167,7 +168,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       monthlyCapacity,
     });
   } catch (error) {
-    console.error('Get shop error:', error);
+    logger.error('Get shop error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -204,7 +205,7 @@ router.get('/:id/capacity', async (req: AuthRequest, res: Response) => {
       utilizationPercent: Math.round((assignmentCount / shop.capacity) * 100),
     });
   } catch (error) {
-    console.error('Get shop capacity error:', error);
+    logger.error('Get shop capacity error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -272,7 +273,7 @@ router.get('/capacity/summary', async (req: AuthRequest, res: Response) => {
 
     res.json(summary);
   } catch (error) {
-    console.error('Get capacity summary error:', error);
+    logger.error('Get capacity summary error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -317,7 +318,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(shop);
   } catch (error) {
-    console.error('Create shop error:', error);
+    logger.error('Create shop error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -477,7 +478,7 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 
     res.json(results);
   } catch (error) {
-    console.error('Bulk import shops error:', error);
+    logger.error('Bulk import shops error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -552,7 +553,7 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csvContent);
   } catch (error) {
-    console.error('Export shops error:', error);
+    logger.error('Export shops error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -609,7 +610,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json(updatedShop);
   } catch (error) {
-    console.error('Update shop error:', error);
+    logger.error('Update shop error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -646,7 +647,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Delete shop error:', error);
+    logger.error('Delete shop error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -665,7 +666,7 @@ router.get('/meta/regions', async (req: AuthRequest, res: Response) => {
     const regions = shops.map(s => s.region).filter(r => r);
     res.json(regions);
   } catch (error) {
-    console.error('Get regions error:', error);
+    logger.error('Get regions error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -684,7 +685,7 @@ router.get('/meta/networks', async (req: AuthRequest, res: Response) => {
     const networks = shops.map(s => s.network).filter(n => n);
     res.json(networks);
   } catch (error) {
-    console.error('Get networks error:', error);
+    logger.error('Get networks error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -703,7 +704,7 @@ router.get('/meta/railroads', async (req: AuthRequest, res: Response) => {
     const railroads = shops.map(s => s.servingRailroad).filter(r => r);
     res.json(railroads);
   } catch (error) {
-    console.error('Get railroads error:', error);
+    logger.error('Get railroads error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -724,7 +725,7 @@ router.get('/meta/filters', async (req: AuthRequest, res: Response) => {
 
     res.json({ regions, networks, railroads });
   } catch (error) {
-    console.error('Get filter options error:', error);
+    logger.error('Get filter options error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -742,7 +743,7 @@ router.get('/:id/performance', async (req: AuthRequest, res: Response) => {
     );
     res.json(scorecard);
   } catch (error) {
-    console.error('Get shop performance error:', error);
+    logger.error('Get shop performance error:', error);
     res.status(500).json({ message: 'Failed to get shop performance' });
   }
 });
@@ -755,7 +756,7 @@ router.get('/performance/network', async (req: AuthRequest, res: Response) => {
     );
     res.json(networkScorecard);
   } catch (error) {
-    console.error('Get network performance error:', error);
+    logger.error('Get network performance error:', error);
     res.status(500).json({ message: 'Failed to get network performance' });
   }
 });
@@ -794,7 +795,7 @@ router.post('/:id/performance/calculate', async (req: AuthRequest, res: Response
 
     res.json(performance);
   } catch (error) {
-    console.error('Calculate shop performance error:', error);
+    logger.error('Calculate shop performance error:', error);
     res.status(500).json({ message: 'Failed to calculate shop performance' });
   }
 });
@@ -816,7 +817,7 @@ router.get('/:id/performance/concerns', async (req: AuthRequest, res: Response) 
       performanceScore: scorecard.metrics.performanceScore,
     });
   } catch (error) {
-    console.error('Get shop performance concerns error:', error);
+    logger.error('Get shop performance concerns error:', error);
     res.status(500).json({ message: 'Failed to get shop performance concerns' });
   }
 });

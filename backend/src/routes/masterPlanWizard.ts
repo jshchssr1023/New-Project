@@ -14,6 +14,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import masterPlanWizardService from '../services/masterPlanWizardService';
 import importValidationService from '../services/importValidationService';
 import shopHistoryService from '../services/shopHistoryService';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.get('/capacity/weeks', async (req: Request, res: Response) => {
     const weekKeys = masterPlanWizardService.generateWeekKeys(start, Number(weeks));
     res.json({ weekKeys });
   } catch (error) {
-    console.error('Error generating week keys:', error);
+    logger.error('Error generating week keys:', error);
     res.status(500).json({ error: 'Failed to generate week keys' });
   }
 });
@@ -64,7 +65,7 @@ router.get('/capacity', async (req: Request, res: Response) => {
 
     res.json({ capacities });
   } catch (error) {
-    console.error('Error getting weekly capacities:', error);
+    logger.error('Error getting weekly capacities:', error);
     res.status(500).json({ error: 'Failed to get weekly capacities' });
   }
 });
@@ -102,7 +103,7 @@ router.put('/capacity/:id', async (req: Request, res: Response) => {
 
     res.json({ capacity: result.capacity });
   } catch (error) {
-    console.error('Error updating weekly capacity:', error);
+    logger.error('Error updating weekly capacity:', error);
     res.status(500).json({ error: 'Failed to update weekly capacity' });
   }
 });
@@ -124,7 +125,7 @@ router.post('/capacity/:id/lock', async (req: Request, res: Response) => {
 
     res.json({ capacity });
   } catch (error) {
-    console.error('Error locking weekly capacity:', error);
+    logger.error('Error locking weekly capacity:', error);
     res.status(500).json({ error: 'Failed to lock weekly capacity' });
   }
 });
@@ -143,7 +144,7 @@ router.get('/versions/:masterPlanId', async (req: Request, res: Response) => {
     const versions = await masterPlanWizardService.getMasterPlanVersions(masterPlanId);
     res.json({ versions });
   } catch (error) {
-    console.error('Error getting master plan versions:', error);
+    logger.error('Error getting master plan versions:', error);
     res.status(500).json({ error: 'Failed to get versions' });
   }
 });
@@ -176,7 +177,7 @@ router.post('/versions', async (req: Request, res: Response) => {
 
     res.json({ version: result.version });
   } catch (error) {
-    console.error('Error creating master plan version:', error);
+    logger.error('Error creating master plan version:', error);
     res.status(500).json({ error: 'Failed to create version' });
   }
 });
@@ -209,7 +210,7 @@ router.post('/versions/:id/lock', async (req: Request, res: Response) => {
 
     res.json({ version: result.version });
   } catch (error) {
-    console.error('Error locking master plan version:', error);
+    logger.error('Error locking master plan version:', error);
     res.status(500).json({ error: 'Failed to lock version' });
   }
 });
@@ -239,7 +240,7 @@ router.post('/versions/:id/publish', async (req: Request, res: Response) => {
       integrationLog: result.integrationLog,
     });
   } catch (error) {
-    console.error('Error publishing master plan version:', error);
+    logger.error('Error publishing master plan version:', error);
     res.status(500).json({ error: 'Failed to publish version' });
   }
 });
@@ -273,7 +274,7 @@ router.post('/allocations/validate', async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error validating allocation:', error);
+    logger.error('Error validating allocation:', error);
     res.status(500).json({ error: 'Failed to validate allocation' });
   }
 });
@@ -314,7 +315,7 @@ router.post('/allocations/bulk', async (req: Request, res: Response) => {
 
     res.json({ allocated: result.allocated });
   } catch (error) {
-    console.error('Error bulk allocating cars:', error);
+    logger.error('Error bulk allocating cars:', error);
     res.status(500).json({ error: 'Failed to bulk allocate cars' });
   }
 });
@@ -339,7 +340,7 @@ router.get('/integrations', async (req: Request, res: Response) => {
 
     res.json({ logs });
   } catch (error) {
-    console.error('Error getting integration logs:', error);
+    logger.error('Error getting integration logs:', error);
     res.status(500).json({ error: 'Failed to get integration logs' });
   }
 });
@@ -358,7 +359,7 @@ router.get('/integrations/health', async (req: Request, res: Response) => {
 
     res.json(summary);
   } catch (error) {
-    console.error('Error getting integration health:', error);
+    logger.error('Error getting integration health:', error);
     res.status(500).json({ error: 'Failed to get integration health' });
   }
 });
@@ -394,7 +395,7 @@ router.post('/import/upload', async (req: Request, res: Response) => {
 
     res.json({ session });
   } catch (error) {
-    console.error('Error creating import session:', error);
+    logger.error('Error creating import session:', error);
     res.status(500).json({ error: 'Failed to create import session' });
   }
 });
@@ -411,7 +412,7 @@ router.post('/import/:sessionId/validate', async (req: Request, res: Response) =
 
     res.json({ session });
   } catch (error) {
-    console.error('Error validating import session:', error);
+    logger.error('Error validating import session:', error);
     res.status(500).json({ error: 'Failed to validate import session' });
   }
 });
@@ -433,7 +434,7 @@ router.put('/import/:sessionId/mappings', async (req: Request, res: Response) =>
 
     res.json({ session });
   } catch (error) {
-    console.error('Error updating field mappings:', error);
+    logger.error('Error updating field mappings:', error);
     res.status(500).json({ error: 'Failed to update field mappings' });
   }
 });
@@ -456,7 +457,7 @@ router.post('/import/:sessionId/execute', async (req: Request, res: Response) =>
 
     res.json({ result });
   } catch (error) {
-    console.error('Error executing import:', error);
+    logger.error('Error executing import:', error);
     res.status(500).json({ error: 'Failed to execute import' });
   }
 });
@@ -473,7 +474,7 @@ router.get('/import/:sessionId', async (req: Request, res: Response) => {
 
     res.json({ session });
   } catch (error) {
-    console.error('Error getting import session:', error);
+    logger.error('Error getting import session:', error);
     res.status(500).json({ error: 'Failed to get import session' });
   }
 });
@@ -494,7 +495,7 @@ router.get('/import/:sessionId/error-report', async (req: Request, res: Response
 
     res.json({ downloadUrl: errorReportPath });
   } catch (error) {
-    console.error('Error getting error report:', error);
+    logger.error('Error getting error report:', error);
     res.status(500).json({ error: 'Failed to get error report' });
   }
 });
@@ -515,7 +516,7 @@ router.get('/import', async (req: Request, res: Response) => {
 
     res.json({ sessions });
   } catch (error) {
-    console.error('Error getting import sessions:', error);
+    logger.error('Error getting import sessions:', error);
     res.status(500).json({ error: 'Failed to get import sessions' });
   }
 });
@@ -536,7 +537,7 @@ router.get('/shops/:shopId/history', async (req: Request, res: Response) => {
 
     res.json({ history });
   } catch (error) {
-    console.error('Error getting shop history:', error);
+    logger.error('Error getting shop history:', error);
     res.status(500).json({ error: 'Failed to get shop history' });
   }
 });
@@ -571,7 +572,7 @@ router.post('/shops/:shopId/rename', async (req: Request, res: Response) => {
 
     res.json({ shop: result.shop });
   } catch (error) {
-    console.error('Error renaming shop:', error);
+    logger.error('Error renaming shop:', error);
     res.status(500).json({ error: 'Failed to rename shop' });
   }
 });
@@ -605,7 +606,7 @@ router.post('/shops/:shopId/deactivate', async (req: Request, res: Response) => 
 
     res.json({ shop: result.shop });
   } catch (error) {
-    console.error('Error deactivating shop:', error);
+    logger.error('Error deactivating shop:', error);
     res.status(500).json({ error: 'Failed to deactivate shop' });
   }
 });
@@ -640,7 +641,7 @@ router.post('/shops/merge', async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error merging shops:', error);
+    logger.error('Error merging shops:', error);
     res.status(500).json({ error: 'Failed to merge shops' });
   }
 });
@@ -665,7 +666,7 @@ router.get('/shops/:shopId/name-at-time', async (req: Request, res: Response) =>
 
     res.json({ name });
   } catch (error) {
-    console.error('Error getting shop name at time:', error);
+    logger.error('Error getting shop name at time:', error);
     res.status(500).json({ error: 'Failed to get shop name' });
   }
 });
@@ -682,7 +683,7 @@ router.get('/shops/:shopId/previous-names', async (req: Request, res: Response) 
 
     res.json({ names });
   } catch (error) {
-    console.error('Error getting previous names:', error);
+    logger.error('Error getting previous names:', error);
     res.status(500).json({ error: 'Failed to get previous names' });
   }
 });
@@ -723,7 +724,7 @@ router.get('/audit', async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error getting audit logs:', error);
+    logger.error('Error getting audit logs:', error);
     res.status(500).json({ error: 'Failed to get audit logs' });
   }
 });
@@ -742,7 +743,7 @@ router.get('/audit/statistics', async (req: Request, res: Response) => {
 
     res.json(statistics);
   } catch (error) {
-    console.error('Error getting audit statistics:', error);
+    logger.error('Error getting audit statistics:', error);
     res.status(500).json({ error: 'Failed to get audit statistics' });
   }
 });
