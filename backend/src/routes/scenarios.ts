@@ -502,6 +502,32 @@ router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
 
   try {
+    // SECURITY: Verify scenario belongs to user's company before deleting
+    const scenario = await prisma.scenario.findFirst({
+      where: {
+        id: req.params.id,
+        companyId: req.user!.companyId,
+      },
+    });
+
+    if (!scenario) {
+      res.status(404).json({ message: 'Scenario not found' });
+      return;
+    }
+
+    // Also verify the car belongs to the same company for extra security
+    const car = await prisma.car.findFirst({
+      where: {
+        id: req.params.carId,
+        companyId: req.user!.companyId,
+      },
+    });
+
+    if (!car) {
+      res.status(404).json({ message: 'Car not found' });
+      return;
+    }
+
     await prisma.scenarioCar.deleteMany({
       where: {
         scenarioId: req.params.id,

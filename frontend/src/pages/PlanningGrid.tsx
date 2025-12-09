@@ -611,7 +611,14 @@ export default function PlanningGrid() {
         return;
       }
 
-      const data = JSON.parse(dataStr);
+      let data: { carIds: string[] };
+      try {
+        data = JSON.parse(dataStr);
+      } catch (parseError) {
+        console.error('Failed to parse drag data:', parseError);
+        return;
+      }
+
       const carIds = data.carIds as string[];
 
       if (!selectedPlan || carIds.length === 0) return;

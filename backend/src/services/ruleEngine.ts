@@ -187,9 +187,19 @@ export async function evaluateShopForCar(
   const reasons: string[] = [];
   let performanceAlertSeverity: 'none' | 'warning' | 'critical' = 'none';
 
-  // Parse shop JSON fields
-  const capabilities = shop.capabilities ? JSON.parse(shop.capabilities) : [];
-  const preferredCustomers = shop.preferredCustomers ? JSON.parse(shop.preferredCustomers) : [];
+  // Parse shop JSON fields with safe fallbacks
+  let capabilities: string[] = [];
+  let preferredCustomers: string[] = [];
+  try {
+    capabilities = shop.capabilities ? JSON.parse(shop.capabilities) : [];
+  } catch {
+    capabilities = [];
+  }
+  try {
+    preferredCustomers = shop.preferredCustomers ? JSON.parse(shop.preferredCustomers) : [];
+  } catch {
+    preferredCustomers = [];
+  }
 
   // Get available capacity
   const currentLoad = shopCapacity.get(shop.id) || 0;
@@ -197,8 +207,15 @@ export async function evaluateShopForCar(
 
   // Apply each rule
   for (const rule of rules.filter(r => r.isActive).sort((a, b) => b.priority - a.priority)) {
-    const conditions = JSON.parse(rule.conditions);
-    const actions = JSON.parse(rule.actions);
+    let conditions: Record<string, unknown> = {};
+    let actions: Record<string, unknown> = {};
+    try {
+      conditions = JSON.parse(rule.conditions);
+      actions = JSON.parse(rule.actions);
+    } catch {
+      // Skip malformed rules
+      continue;
+    }
 
     switch (rule.ruleType) {
       case 'tank_qualification':
