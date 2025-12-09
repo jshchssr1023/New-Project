@@ -1,26 +1,13 @@
 import { CheckIcon } from '@heroicons/react/24/outline';
-import ShoppingStatusBadge, { getShoppingStatus, getEarliestQualDate, type ShoppingStatus } from './ShoppingStatusBadge';
+import ShoppingStatusBadge, { getShoppingStatus, getEarliestQualDate } from './ShoppingStatusBadge';
 import type { Car } from '../../types';
 
-// Extended Car type with new qualification fields
-export interface ExtendedCar extends Car {
-  lined?: boolean;
-  liningType?: string;
-  minNoLining?: string | null;
-  minWLining?: string | null;
-  interiorLining?: string | null;
-  rule88B?: string | null;
-  safetyRelief?: string | null;
-  serviceEquipment?: string | null;
-  stubSill?: string | null;
-  tankThickness?: string | null;
-  tankQualificationDate?: string | null;
-  portfolio?: string;
-  fullPartialQual?: string;
-  performTankQual?: boolean;
-  scheduled?: string | null;
-  currentStatus?: string;
-}
+// Extended Car type - all qualification fields are now in Car
+// This type alias adds only extra fields that may come from extended queries
+export type ExtendedCar = Car & {
+  tankQualificationDate?: string | null; // Alternative field name
+  currentStatus?: string; // Alternative status field
+};
 
 interface CarCardProps {
   car: ExtendedCar;

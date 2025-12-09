@@ -96,8 +96,9 @@ async function checkRateLimitInDb(
     return { allowed, currentCount: result.requestCount, remaining };
   } catch (error) {
     logger.error('Rate limit check failed', error);
-    // On error, allow the request but log it
-    return { allowed: true, currentCount: 0, remaining: maxRequests };
+    // SECURITY: Fail closed - deny requests when rate limit check fails
+    // This prevents potential DoS bypasses through database errors
+    return { allowed: false, currentCount: maxRequests, remaining: 0 };
   }
 }
 

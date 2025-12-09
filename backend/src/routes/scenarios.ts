@@ -2,8 +2,21 @@ import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { recommendShopsForCar, recommendShopsForMultipleCars } from '../services/ruleEngine';
 import { createMasterPlanService } from '../services/masterPlanService';
+import { prisma } from '../services/db';
+import logger from '../utils/logger';
 
 const router = Router();
+
+// Safe JSON parse helper - prevents crashes from malformed JSON
+function safeJsonParse<T>(jsonString: string | null | undefined, defaultValue: T): T {
+  if (!jsonString) return defaultValue;
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch {
+    logger.warn('Failed to parse JSON', { jsonString: jsonString.substring(0, 100) });
+    return defaultValue;
+  }
+}
 
 router.use(authenticate);
 
@@ -79,7 +92,7 @@ router.post('/alternative-shops', async (req: AuthRequest, res: Response) => {
 
     res.json({ recommendations });
   } catch (error) {
-    console.error('Get alternative shops error:', error);
+    logger.error('Get alternative shops error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -111,16 +124,16 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Parse results JSON
+    // Parse results JSON safely
     const scenariosWithResults = scenarios.map((s) => ({
       ...s,
-      results: s.results ? JSON.parse(s.results) : null,
+      results: safeJsonParse(s.results, null),
       carCount: s.cars.length,
     }));
 
     res.json(scenariosWithResults);
   } catch (error) {
-    console.error('Get scenarios error:', error);
+    logger.error('Get scenarios error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -167,7 +180,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json({
       ...scenario,
-      results: scenario.results ? JSON.parse(scenario.results) : null,
+      results: safeJsonParse(scenario.results, null),
       cars: scenario.cars.map(c => ({
         ...c,
         suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
@@ -175,7 +188,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('Get scenario error:', error);
+    logger.error('Get scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -236,7 +249,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(scenario);
   } catch (error) {
-    console.error('Create scenario error:', error);
+    logger.error('Create scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -346,7 +359,7 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json({
       ...updatedScenario,
-      results: updatedScenario!.results ? JSON.parse(updatedScenario!.results) : null,
+      results: safeJsonParse(updatedScenario!.results, null),
       cars: updatedScenario!.cars.map(c => ({
         ...c,
         suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
@@ -354,7 +367,7 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('Add cars to scenario error:', error);
+    logger.error('Add cars to scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -471,7 +484,7 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
 
     res.status(201).json({
       ...updatedScenario,
-      results: updatedScenario!.results ? JSON.parse(updatedScenario!.results) : null,
+      results: safeJsonParse(updatedScenario!.results, null),
       cars: updatedScenario!.cars.map(c => ({
         ...c,
         suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
@@ -479,7 +492,7 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
       })),
     });
   } catch (error) {
-    console.error('Add cars by customer error:', error);
+    logger.error('Add cars by customer error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -498,7 +511,7 @@ router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Remove car from scenario error:', error);
+    logger.error('Remove car from scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -509,6 +522,37 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
   const { assignedShopId, scheduledMonth, estimatedCost, estimatedDays } = req.body;
 
   try {
+    // SECURITY: Verify scenarioCarId belongs to the scenario AND company
+    const scenarioCar = await prisma.scenarioCar.findFirst({
+      where: { id: req.params.scenarioCarId },
+      include: {
+        scenario: { select: { companyId: true, id: true } },
+      },
+    });
+
+    if (!scenarioCar) {
+      res.status(404).json({ message: 'Scenario car not found' });
+      return;
+    }
+
+    // Verify the scenario belongs to the user's company
+    if (scenarioCar.scenario.companyId !== req.user!.companyId) {
+      logger.warn('Unauthorized scenario car update attempt', {
+        userId: req.user!.id,
+        scenarioCarId: req.params.scenarioCarId,
+        attemptedCompanyId: scenarioCar.scenario.companyId,
+        userCompanyId: req.user!.companyId,
+      });
+      res.status(403).json({ message: 'Unauthorized' });
+      return;
+    }
+
+    // Verify the scenarioCar belongs to the specified scenario
+    if (scenarioCar.scenario.id !== req.params.id) {
+      res.status(400).json({ message: 'Scenario car does not belong to this scenario' });
+      return;
+    }
+
     await prisma.scenarioCar.update({
       where: { id: req.params.scenarioCarId },
       data: {
@@ -554,7 +598,7 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
 
     res.json({
       ...updatedScenario,
-      results: updatedScenario.results ? JSON.parse(updatedScenario.results) : null,
+      results: safeJsonParse(updatedScenario.results, null),
       cars: updatedScenario.cars.map(c => ({
         ...c,
         suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
@@ -562,7 +606,7 @@ router.put('/:id/cars/:scenarioCarId', async (req: AuthRequest, res: Response) =
       })),
     });
   } catch (error) {
-    console.error('Update scenario car error:', error);
+    logger.error('Update scenario car error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -602,7 +646,7 @@ router.get('/:id/cars/:scenarioCarId/recommendations', async (req: AuthRequest, 
 
     res.json(recommendation);
   } catch (error) {
-    console.error('Get recommendations error:', error);
+    logger.error('Get recommendations error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -796,7 +840,7 @@ router.post('/:id/analyze', async (req: AuthRequest, res: Response) => {
       })),
     });
   } catch (error) {
-    console.error('Analyze scenario error:', error);
+    logger.error('Analyze scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -926,7 +970,7 @@ router.post('/:id/confirm-assignments', async (req: AuthRequest, res: Response) 
       message: `Created ${sopAssignmentData.length} SOP assignments. Scenario is ready for approval.`,
       scenario: {
         ...updatedScenario,
-        results: updatedScenario!.results ? JSON.parse(updatedScenario!.results) : null,
+        results: safeJsonParse(updatedScenario!.results, null),
         cars: updatedScenario!.cars.map((c: any) => ({
           ...c,
           suggestedShop: c.suggestedShopId ? shopMap.get(c.suggestedShopId) : null,
@@ -936,7 +980,7 @@ router.post('/:id/confirm-assignments', async (req: AuthRequest, res: Response) 
       sopAssignmentCount: sopAssignmentData.length,
     });
   } catch (error: any) {
-    console.error('Confirm assignments error:', error);
+    logger.error('Confirm assignments error', error);
     res.status(500).json({
       message: error.message || 'Failed to confirm assignments',
     });
@@ -997,7 +1041,7 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
     // =========================================================================
     // STEP 1: Create or update SOPAssignments from ScenarioCars (ONE-STEP)
     // =========================================================================
-    console.log(`[Approve] Creating SOPAssignments for scenario ${scenario.id}...`);
+    logger.info(`Creating SOPAssignments for scenario ${scenario.id}`);
 
     // Delete existing SOPAssignments (fresh start)
     await prisma.sOPAssignment.deleteMany({
@@ -1043,12 +1087,12 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
       data: sopAssignmentData,
     });
 
-    console.log(`[Approve] Created ${sopAssignmentData.length} SOPAssignments`);
+    logger.info(`Created ${sopAssignmentData.length} SOPAssignments`);
 
     // =========================================================================
     // STEP 2: Update Car.assignedShopId for all cars being assigned
     // =========================================================================
-    console.log(`[Approve] Updating Car.assignedShopId for ${carsWithShops.length} cars...`);
+    logger.info(`Updating Car.assignedShopId for ${carsWithShops.length} cars`);
 
     for (const sc of carsWithShops) {
       const shopId = sc.assignedShopId || sc.suggestedShopId;
@@ -1063,7 +1107,7 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    console.log(`[Approve] Updated Car.assignedShopId for all cars`);
+    logger.info(`Updated Car.assignedShopId for all cars`);
 
     // =========================================================================
     // STEP 3: Refresh scenario and create MasterPlan
@@ -1128,7 +1172,7 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
       carsUpdated: carsWithShops.length,
     });
   } catch (error: any) {
-    console.error('Approve scenario error:', error);
+    logger.error('Approve scenario error', error);
     res.status(500).json({
       message: error.message || 'Failed to approve scenario',
     });
@@ -1210,7 +1254,7 @@ router.post('/:id/apply', async (req: AuthRequest, res: Response) => {
       ...results,
     });
   } catch (error) {
-    console.error('Apply scenario error:', error);
+    logger.error('Apply scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -1241,7 +1285,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json(updatedScenario);
   } catch (error) {
-    console.error('Update scenario error:', error);
+    logger.error('Update scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -1265,7 +1309,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Delete scenario error:', error);
+    logger.error('Delete scenario error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -1284,7 +1328,7 @@ router.get('/meta/customers', async (req: AuthRequest, res: Response) => {
     const customers = cars.map(c => c.customer).filter(c => c).sort();
     res.json(customers);
   } catch (error) {
-    console.error('Get customers error:', error);
+    logger.error('Get customers error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

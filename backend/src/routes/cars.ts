@@ -144,96 +144,136 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // Phase 1: Validate and transform all records first (no DB calls)
+    interface ValidatedCar {
+      rowNum: number;
+      railcarNumber: string;
+      dbCarData: {
+        railcarNumber: string;
+        carType: string;
+        isTankCar: boolean;
+        commodity: string;
+        customer: string;
+        projectNumber: string;
+        reasonsShopped: string;
+        status: string;
+        currentLocation: string;
+        homeRegion: string;
+        originRegion: string;
+        projectedCost: number | null;
+        daysInShop: number;
+        notes: string;
+        lastServiceDate: Date | null;
+        nextServiceDue: Date | null;
+      };
+    }
+
+    const validatedCars: ValidatedCar[] = [];
+    const railcarNumbers: string[] = [];
+
     for (let i = 0; i < cars.length; i++) {
       const car = cars[i];
       const rowNum = i + 2;
 
-      try {
-        const transformed = transformCarRecord(car, fieldMappings);
+      const transformed = transformCarRecord(car, fieldMappings);
 
-        for (const warning of transformed.warnings) {
-          results.warnings.push({ row: rowNum, message: warning });
+      for (const warning of transformed.warnings) {
+        results.warnings.push({ row: rowNum, message: warning });
+      }
+
+      if (!transformed.success) {
+        for (const error of transformed.errors) {
+          results.errors.push({ row: rowNum, reason: error });
         }
-
-        if (!transformed.success) {
-          for (const error of transformed.errors) {
-            results.errors.push({ row: rowNum, reason: error });
-          }
-          results.failedRows++;
-          continue;
-        }
-
-        const carData = transformed.data;
-
-        const railcarNum = carData.railcarNumber || carData.vehicleNumber;
-        if (!railcarNum) {
-          results.errors.push({ row: rowNum, reason: 'Missing required field: railcarNumber (or railcar_number)' });
-          results.failedRows++;
-          continue;
-        }
-
-        const railcarNumStr = String(railcarNum);
-        if (railcarNumStr.length < 4) {
-          results.errors.push({ row: rowNum, reason: `Invalid railcar number: "${railcarNumStr}" (too short, minimum 4 characters)` });
-          results.failedRows++;
-          continue;
-        }
-
-        const status = String(carData.status || 'available');
-        if (!VALID_STATUSES.includes(status)) {
-          results.errors.push({ row: rowNum, reason: `Invalid status: "${carData.status}". Must be one of: ${VALID_STATUSES.join(', ')}` });
-          results.failedRows++;
-          continue;
-        }
-
-        const existingCar = await prisma.car.findFirst({
-          where: {
-            railcarNumber: railcarNumStr,
-            companyId: req.user!.companyId,
-          },
-        });
-
-        const dbCarData = {
-          railcarNumber: railcarNumStr,
-          carType: String(carData.carType || ''),
-          isTankCar: Boolean(carData.isTankCar),
-          commodity: String(carData.commodity || ''),
-          customer: String(carData.customer || ''),
-          projectNumber: String(carData.projectNumber || ''),
-          reasonsShopped: String(carData.reasonsShopped || carData.reasonShopped || ''),
-          status: status,
-          currentLocation: String(carData.currentLocation || ''),
-          homeRegion: String(carData.homeRegion || ''),
-          originRegion: String(carData.originRegion || ''),
-          projectedCost: convertToFloat(carData.projectedCost),
-          daysInShop: convertToInt(carData.daysInShop),
-          notes: String(carData.notes || ''),
-          lastServiceDate: convertToDate(carData.lastServiceDate),
-          nextServiceDue: convertToDate(carData.nextServiceDue),
-        };
-
-        if (existingCar) {
-          await prisma.car.update({
-            where: { id: existingCar.id },
-            data: dbCarData,
-          });
-          results.existingCarsUpdated++;
-        } else {
-          await prisma.car.create({
-            data: {
-              ...dbCarData,
-              companyId: req.user!.companyId,
-            },
-          });
-          results.newCarsAdded++;
-        }
-      } catch (dbError: unknown) {
-        const message = dbError instanceof Error ? dbError.message : 'Unknown error';
-        logger.error(`Row ${rowNum} database error`, dbError);
-        results.errors.push({ row: rowNum, reason: `Database error: ${message}` });
         results.failedRows++;
+        continue;
+      }
+
+      const carData = transformed.data;
+
+      const railcarNum = carData.railcarNumber || carData.vehicleNumber;
+      if (!railcarNum) {
+        results.errors.push({ row: rowNum, reason: 'Missing required field: railcarNumber (or railcar_number)' });
+        results.failedRows++;
+        continue;
+      }
+
+      const railcarNumStr = String(railcarNum);
+      if (railcarNumStr.length < 4) {
+        results.errors.push({ row: rowNum, reason: `Invalid railcar number: "${railcarNumStr}" (too short, minimum 4 characters)` });
+        results.failedRows++;
+        continue;
+      }
+
+      const status = String(carData.status || 'available');
+      if (!VALID_STATUSES.includes(status)) {
+        results.errors.push({ row: rowNum, reason: `Invalid status: "${carData.status}". Must be one of: ${VALID_STATUSES.join(', ')}` });
+        results.failedRows++;
+        continue;
+      }
+
+      const dbCarData = {
+        railcarNumber: railcarNumStr,
+        carType: String(carData.carType || ''),
+        isTankCar: Boolean(carData.isTankCar),
+        commodity: String(carData.commodity || ''),
+        customer: String(carData.customer || ''),
+        projectNumber: String(carData.projectNumber || ''),
+        reasonsShopped: String(carData.reasonsShopped || carData.reasonShopped || ''),
+        status: status,
+        currentLocation: String(carData.currentLocation || ''),
+        homeRegion: String(carData.homeRegion || ''),
+        originRegion: String(carData.originRegion || ''),
+        projectedCost: convertToFloat(carData.projectedCost),
+        daysInShop: convertToInt(carData.daysInShop),
+        notes: String(carData.notes || ''),
+        lastServiceDate: convertToDate(carData.lastServiceDate),
+        nextServiceDue: convertToDate(carData.nextServiceDue),
+      };
+
+      validatedCars.push({ rowNum, railcarNumber: railcarNumStr, dbCarData });
+      railcarNumbers.push(railcarNumStr);
+    }
+
+    // Phase 2: Batch query for existing cars (single query instead of N queries)
+    const existingCars = await prisma.car.findMany({
+      where: {
+        railcarNumber: { in: railcarNumbers },
+        companyId: req.user!.companyId,
+      },
+      select: { id: true, railcarNumber: true },
+    });
+
+    const existingCarMap = new Map(existingCars.map(c => [c.railcarNumber, c.id]));
+
+    // Phase 3: Prepare batch operations
+    type CarCreateData = typeof validatedCars[0]['dbCarData'] & { companyId: string };
+    const carsToCreate: CarCreateData[] = [];
+    const carsToUpdate: Array<{ id: string; data: typeof validatedCars[0]['dbCarData'] }> = [];
+
+    for (const { railcarNumber, dbCarData } of validatedCars) {
+      const existingId = existingCarMap.get(railcarNumber);
+      if (existingId) {
+        carsToUpdate.push({ id: existingId, data: dbCarData });
+      } else {
+        carsToCreate.push({ ...dbCarData, companyId: req.user!.companyId });
       }
     }
+
+    // Phase 4: Execute batch operations in a transaction
+    await prisma.$transaction(async (tx) => {
+      // Batch create new cars
+      if (carsToCreate.length > 0) {
+        await tx.car.createMany({ data: carsToCreate });
+        results.newCarsAdded = carsToCreate.length;
+      }
+
+      // Update existing cars (within single transaction)
+      for (const { id, data } of carsToUpdate) {
+        await tx.car.update({ where: { id }, data });
+      }
+      results.existingCarsUpdated = carsToUpdate.length;
+    });
 
     if (results.failedRows === cars.length) {
       results.status = 'failed';

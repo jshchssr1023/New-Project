@@ -165,7 +165,7 @@ export default function Layout() {
         <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-steel-800 px-6 pb-4">
           <div className="flex h-20 shrink-0 items-center justify-center">
             <img
-              src="/images/chronos-logo.png"
+              src="/images/chronos-logo.svg"
               alt="Chronos"
               className="h-16 w-auto"
             />
