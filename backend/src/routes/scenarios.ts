@@ -4,6 +4,7 @@ import { recommendShopsForCar, recommendShopsForMultipleCars } from '../services
 import { createMasterPlanService } from '../services/masterPlanService';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
+import { DEFAULT_ESTIMATED_COST, DEFAULT_ESTIMATED_DAYS, DEFAULT_PRIORITY } from '../constants/defaults';
 
 const router = Router();
 
@@ -296,38 +297,40 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
       );
     }
 
-    // Create scenario cars
-    await Promise.all(
-      cars.map(async (car) => {
+    // Check which cars already exist in scenario (batch query instead of N queries)
+    const existingScenarioCars = await prisma.scenarioCar.findMany({
+      where: {
+        scenarioId: req.params.id,
+        carId: { in: cars.map(c => c.id) },
+      },
+      select: { carId: true },
+    });
+    const existingCarIds = new Set(existingScenarioCars.map(sc => sc.carId));
+
+    // Filter out cars that already exist and prepare batch insert data
+    const newCarsData = cars
+      .filter(car => !existingCarIds.has(car.id))
+      .map(car => {
         const recommendation = recommendations.find(r => r.carId === car.id);
+        return {
+          scenarioId: req.params.id,
+          carId: car.id,
+          scheduledMonth,
+          suggestedShopId: recommendation?.suggestedShopId || null,
+          estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || DEFAULT_ESTIMATED_COST,
+          estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || DEFAULT_ESTIMATED_DAYS,
+          ruleScore: recommendation?.allScores?.[0]?.score || 0,
+          ruleNotes: recommendation?.ruleNotes || '',
+        };
+      });
 
-        // Check if car already exists in scenario
-        const existing = await prisma.scenarioCar.findFirst({
-          where: {
-            scenarioId: req.params.id,
-            carId: car.id,
-          },
-        });
-
-        if (existing) {
-          return existing;
-        }
-
-        return prisma.scenarioCar.create({
-          data: {
-            scenarioId: req.params.id,
-            carId: car.id,
-            scheduledMonth,
-            suggestedShopId: recommendation?.suggestedShopId || null,
-            estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || 15000,
-            estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || 14,
-            ruleScore: recommendation?.allScores?.[0]?.score || 0,
-            ruleNotes: recommendation?.ruleNotes || '',
-          },
-          include: { car: true },
-        });
-      })
-    );
+    // Batch create all new scenario cars in single query
+    if (newCarsData.length > 0) {
+      await prisma.scenarioCar.createMany({
+        data: newCarsData,
+        skipDuplicates: true, // Extra safety against race conditions
+      });
+    }
 
     // Fetch the full scenario with all cars and shop data
     const updatedScenario = await prisma.scenario.findFirst({
@@ -445,8 +448,8 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
             carId: car.id,
             scheduledMonth,
             suggestedShopId: recommendation?.suggestedShopId || null,
-            estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || 15000,
-            estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || 14,
+            estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || DEFAULT_ESTIMATED_COST,
+            estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || DEFAULT_ESTIMATED_DAYS,
             ruleScore: recommendation?.allScores?.[0]?.score || 0,
             ruleNotes: recommendation?.ruleNotes || '',
           },
@@ -909,11 +912,6 @@ router.post('/:id/confirm-assignments', async (req: AuthRequest, res: Response) 
       return;
     }
 
-    // Delete any existing SOPAssignments for this scenario (replace mode)
-    await prisma.sOPAssignment.deleteMany({
-      where: { scenarioId: scenario.id },
-    });
-
     // Create SOPAssignment records from ScenarioCar records
     const sopAssignmentData = carsWithShops.map((sc: any) => {
       const shopId = sc.assignedShopId || sc.suggestedShopId;
@@ -941,21 +939,30 @@ router.post('/:id/confirm-assignments', async (req: AuthRequest, res: Response) 
         reasonsShopped: JSON.stringify(reasonsArray),
         status: 'PLANNED',
         monthKey: sc.scheduledMonth,
-        estimatedCost: sc.estimatedCost || 15000,
-        estimatedDays: sc.estimatedDays || 14,
-        priority: 3,
+        estimatedCost: sc.estimatedCost || DEFAULT_ESTIMATED_COST,
+        estimatedDays: sc.estimatedDays || DEFAULT_ESTIMATED_DAYS,
+        priority: DEFAULT_PRIORITY,
         notes: `Confirmed from scenario: ${scenario.name}`,
       };
     });
 
-    await prisma.sOPAssignment.createMany({
-      data: sopAssignmentData,
-    });
+    // Use transaction to ensure atomic delete and create (prevents race conditions)
+    await prisma.$transaction(async (tx: any) => {
+      // Delete any existing SOPAssignments for this scenario (replace mode)
+      await tx.sOPAssignment.deleteMany({
+        where: { scenarioId: scenario.id },
+      });
 
-    // Update scenario status to indicate assignments are confirmed
-    await prisma.scenario.update({
-      where: { id: scenario.id },
-      data: { status: 'completed' },
+      // Create new SOPAssignments
+      await tx.sOPAssignment.createMany({
+        data: sopAssignmentData,
+      });
+
+      // Update scenario status to indicate assignments are confirmed
+      await tx.scenario.update({
+        where: { id: scenario.id },
+        data: { status: 'completed' },
+      });
     });
 
     // Broadcast update via WebSocket
@@ -1102,9 +1109,9 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
         reasonsShopped: JSON.stringify(reasonsArray),
         status: 'PLANNED',
         monthKey: sc.scheduledMonth,
-        estimatedCost: sc.estimatedCost || 15000,
-        estimatedDays: sc.estimatedDays || 14,
-        priority: 3,
+        estimatedCost: sc.estimatedCost || DEFAULT_ESTIMATED_COST,
+        estimatedDays: sc.estimatedDays || DEFAULT_ESTIMATED_DAYS,
+        priority: DEFAULT_PRIORITY,
         notes: `Auto-created during approval: ${scenario.name}`,
       };
     });

@@ -89,6 +89,12 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    // SECURITY: Verify company ownership before returning data
+    if (plan.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Master plan belongs to another company' });
+      return;
+    }
+
     res.json(plan);
   } catch (error) {
     console.error('Get master plan error:', error);
@@ -105,6 +111,22 @@ router.get('/:id/summary', async (req: AuthRequest, res: Response) => {
   const service = createMasterPlanService(prisma);
 
   try {
+    // SECURITY: First verify company ownership
+    const plan = await prisma.masterPlan.findUnique({
+      where: { id: req.params.id },
+      select: { companyId: true },
+    });
+
+    if (!plan) {
+      res.status(404).json({ message: 'Master plan not found' });
+      return;
+    }
+
+    if (plan.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Master plan belongs to another company' });
+      return;
+    }
+
     const summary = await service.getMasterPlanSummary(req.params.id);
     res.json(summary);
   } catch (error) {
@@ -159,6 +181,22 @@ router.get('/:id/commitments', async (req: AuthRequest, res: Response) => {
   const service = createMasterPlanService(prisma);
 
   try {
+    // SECURITY: Verify master plan belongs to user's company
+    const plan = await prisma.masterPlan.findUnique({
+      where: { id: req.params.id },
+      select: { companyId: true },
+    });
+
+    if (!plan) {
+      res.status(404).json({ message: 'Master plan not found' });
+      return;
+    }
+
+    if (plan.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Master plan belongs to another company' });
+      return;
+    }
+
     const commitments = await service.getMasterPlanCommitments(req.params.id);
     res.json(commitments);
   } catch (error) {
@@ -210,6 +248,22 @@ router.get('/work-orders/:shopId/:month', async (req: AuthRequest, res: Response
   const { shopId, month } = req.params;
 
   try {
+    // SECURITY: Verify shop belongs to user's company
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { companyId: true },
+    });
+
+    if (!shop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    if (shop.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Shop belongs to another company' });
+      return;
+    }
+
     const workOrders = await service.getShopWorkOrders(shopId, month);
     res.json(workOrders);
   } catch (error) {
@@ -228,6 +282,22 @@ router.get('/work-orders/:shopId/:month/pdf', async (req: AuthRequest, res: Resp
   const { shopId, month } = req.params;
 
   try {
+    // SECURITY: Verify shop belongs to user's company
+    const shopCheck = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { companyId: true },
+    });
+
+    if (!shopCheck) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    if (shopCheck.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Shop belongs to another company' });
+      return;
+    }
+
     const workOrders = await service.getShopWorkOrders(shopId, month);
 
     if (workOrders.length === 0) {
@@ -304,6 +374,22 @@ router.post('/work-orders/:shopId/:month/send', async (req: AuthRequest, res: Re
   const { recipientEmails } = req.body;
 
   try {
+    // SECURITY: Verify shop belongs to user's company
+    const shopCheck = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { companyId: true },
+    });
+
+    if (!shopCheck) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    if (shopCheck.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Shop belongs to another company' });
+      return;
+    }
+
     const workOrders = await service.getShopWorkOrders(shopId, month);
 
     if (workOrders.length === 0) {
@@ -415,6 +501,22 @@ router.get('/customer-schedule/:customerId', async (req: AuthRequest, res: Respo
   const { masterPlanId } = req.query;
 
   try {
+    // SECURITY: Verify customer belongs to user's company
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { companyId: true },
+    });
+
+    if (!customer) {
+      res.status(404).json({ message: 'Customer not found' });
+      return;
+    }
+
+    if (customer.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Customer belongs to another company' });
+      return;
+    }
+
     const schedule = await service.getCustomerSchedule(
       customerId,
       masterPlanId as string | undefined
@@ -437,6 +539,22 @@ router.get('/customer-schedule/:customerId/pdf', async (req: AuthRequest, res: R
   const { masterPlanId } = req.query;
 
   try {
+    // SECURITY: Verify customer belongs to user's company
+    const customerCheck = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { companyId: true },
+    });
+
+    if (!customerCheck) {
+      res.status(404).json({ message: 'Customer not found' });
+      return;
+    }
+
+    if (customerCheck.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Customer belongs to another company' });
+      return;
+    }
+
     const schedule = await service.getCustomerSchedule(
       customerId,
       masterPlanId as string | undefined
@@ -518,6 +636,22 @@ router.post('/customer-schedule/:customerId/send', async (req: AuthRequest, res:
   const { recipientEmails, masterPlanId } = req.body;
 
   try {
+    // SECURITY: Verify customer belongs to user's company
+    const customerCheck = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { companyId: true },
+    });
+
+    if (!customerCheck) {
+      res.status(404).json({ message: 'Customer not found' });
+      return;
+    }
+
+    if (customerCheck.companyId !== req.user!.companyId) {
+      res.status(403).json({ message: 'Access denied: Customer belongs to another company' });
+      return;
+    }
+
     const schedule = await service.getCustomerSchedule(customerId, masterPlanId);
 
     if (schedule.length === 0) {
