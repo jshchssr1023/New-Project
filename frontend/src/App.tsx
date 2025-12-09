@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ShopManagement from './pages/ShopManagement';
@@ -69,6 +70,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -139,5 +141,6 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ErrorBoundary>
   );
 }

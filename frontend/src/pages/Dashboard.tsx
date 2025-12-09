@@ -41,9 +41,6 @@ export default function Dashboard() {
       const data = await analyticsApi.getDashboard();
       setAnalytics(data);
 
-      // Load cars for team filtering
-      loadTeamData(teamFilter);
-
       // Load monthly shoppings (arrived cars)
       loadMonthlyShoppings();
     } catch (error) {
@@ -51,7 +48,7 @@ export default function Dashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, [teamFilter]);
+  }, []);
 
   // Load cars based on team filter
   const loadTeamData = async (filter: TeamFilter) => {
@@ -121,9 +118,12 @@ export default function Dashboard() {
     }
   };
 
+  // Initial load - load analytics and initial team data
   useEffect(() => {
     loadAnalytics();
-  }, []);
+    loadTeamData(teamFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadAnalytics]); // Only re-run when loadAnalytics changes (which is stable due to empty deps)
 
   // Reload team data when filter changes
   useEffect(() => {

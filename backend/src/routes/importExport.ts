@@ -8,6 +8,7 @@ import { Router, Request, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import importExportService from '../services/importExportService';
 import auditService from '../services/auditService';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -43,7 +44,7 @@ router.post('/cars/preview', authenticateToken, async (req: Request, res: Respon
     const preview = await importExportService.previewCarImport(csvContent, companyId, customMappings);
     res.json(preview);
   } catch (error) {
-    console.error('Error previewing import:', error);
+    logger.error('Error previewing import:', error);
     res.status(500).json({ error: 'Failed to preview import' });
   }
 });
@@ -95,7 +96,7 @@ router.post('/cars', authenticateToken, async (req: Request, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error('Error importing cars:', error);
+    logger.error('Error importing cars:', error);
     res.status(500).json({ error: 'Failed to import cars' });
   }
 });
@@ -141,7 +142,7 @@ router.post('/shops', authenticateToken, async (req: Request, res: Response) => 
 
     res.json(result);
   } catch (error) {
-    console.error('Error importing shops:', error);
+    logger.error('Error importing shops:', error);
     res.status(500).json({ error: 'Failed to import shops' });
   }
 });
@@ -179,7 +180,7 @@ router.get('/cars/export', authenticateToken, async (req: Request, res: Response
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
   } catch (error) {
-    console.error('Error exporting cars:', error);
+    logger.error('Error exporting cars:', error);
     res.status(500).json({ error: 'Failed to export cars' });
   }
 });
@@ -208,7 +209,7 @@ router.get('/shops/export', authenticateToken, async (req: Request, res: Respons
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
   } catch (error) {
-    console.error('Error exporting shops:', error);
+    logger.error('Error exporting shops:', error);
     res.status(500).json({ error: 'Failed to export shops' });
   }
 });
@@ -239,7 +240,7 @@ router.get('/assignments/export', authenticateToken, async (req: Request, res: R
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
   } catch (error) {
-    console.error('Error exporting assignments:', error);
+    logger.error('Error exporting assignments:', error);
     res.status(500).json({ error: 'Failed to export assignments' });
   }
 });
@@ -266,7 +267,7 @@ router.get('/template/:entityType', authenticateToken, async (req: Request, res:
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(template);
   } catch (error) {
-    console.error('Error generating template:', error);
+    logger.error('Error generating template:', error);
     res.status(500).json({ error: 'Failed to generate template' });
   }
 });

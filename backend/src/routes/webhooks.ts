@@ -12,6 +12,7 @@ import webhookAlertService, {
   AlertSeverity,
   WebhookType,
 } from '../services/webhookAlertService';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get('/', async (req: Request, res: Response) => {
     const configs = await webhookAlertService.getWebhookConfigsForCompany(companyId);
     res.json({ configs });
   } catch (error) {
-    console.error('Error fetching webhook configs:', error);
+    logger.error('Error fetching webhook configs:', error);
     res.status(500).json({ error: 'Failed to fetch webhook configurations' });
   }
 });
@@ -95,7 +96,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     res.status(201).json({ config });
   } catch (error) {
-    console.error('Error creating webhook config:', error);
+    logger.error('Error creating webhook config:', error);
     res.status(500).json({ error: 'Failed to create webhook configuration' });
   }
 });
@@ -163,7 +164,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating webhook config:', error);
+    logger.error('Error updating webhook config:', error);
     res.status(500).json({ error: 'Failed to update webhook configuration' });
   }
 });
@@ -189,7 +190,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting webhook config:', error);
+    logger.error('Error deleting webhook config:', error);
     res.status(500).json({ error: 'Failed to delete webhook configuration' });
   }
 });
@@ -223,7 +224,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
       res.status(400).json({ success: false, error: result.error });
     }
   } catch (error) {
-    console.error('Error testing webhook:', error);
+    logger.error('Error testing webhook:', error);
     res.status(500).json({ error: 'Failed to test webhook' });
   }
 });
@@ -272,7 +273,7 @@ router.post('/test-url', async (req: Request, res: Response) => {
       res.status(400).json({ success: false, error: result.error });
     }
   } catch (error) {
-    console.error('Error testing webhook URL:', error);
+    logger.error('Error testing webhook URL:', error);
     res.status(500).json({ error: 'Failed to test webhook URL' });
   }
 });

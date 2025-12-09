@@ -31,9 +31,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     const response = await authApi.login({ email, password });
+    // Use token directly from response, not from localStorage (fixes race condition)
     setUser(response.user);
-    const authToken = localStorage.getItem('authToken');
-    setToken(authToken);
+    setToken(response.token);
   };
 
   const logout = async () => {

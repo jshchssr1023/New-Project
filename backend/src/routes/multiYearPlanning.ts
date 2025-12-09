@@ -8,6 +8,7 @@ import { Router, Request, Response } from 'express';
 import { authenticateToken, AuthRequest, requireRole } from '../middleware/auth';
 import { prisma } from '../services/db';
 import { createMultiYearPlanningService, MultiYearPlanConfig } from '../services/multiYearPlanningService';
+import logger from '../utils/logger';
 
 const router = Router();
 const planningService = createMultiYearPlanningService(prisma);
@@ -53,7 +54,7 @@ router.get('/projection', requireRole('admin', 'planner'), async (req: Request, 
     const projection = await planningService.generateMultiYearProjection(config);
     res.json(projection);
   } catch (error) {
-    console.error('Error generating multi-year projection:', error);
+    logger.error('Error generating multi-year projection:', error);
     res.status(500).json({ error: 'Failed to generate projection' });
   }
 });
@@ -81,7 +82,7 @@ router.get('/budget', requireRole('admin', 'planner', 'finance'), async (req: Re
     const budget = await planningService.getBudgetProjection(companyId, start, horizon);
     res.json(budget);
   } catch (error) {
-    console.error('Error generating budget projection:', error);
+    logger.error('Error generating budget projection:', error);
     res.status(500).json({ error: 'Failed to generate budget projection' });
   }
 });
@@ -150,7 +151,7 @@ router.get('/fiscal-years', requireRole('admin', 'planner'), async (req: Request
       fiscalYears: Object.values(byYear).sort((a, b) => b.fiscalYear - a.fiscalYear),
     });
   } catch (error) {
-    console.error('Error fetching fiscal years:', error);
+    logger.error('Error fetching fiscal years:', error);
     res.status(500).json({ error: 'Failed to fetch fiscal year data' });
   }
 });
@@ -249,7 +250,7 @@ router.get('/capacity-heatmap', requireRole('admin', 'planner'), async (req: Req
       totalCapacityPerMonth: shops.reduce((sum, s) => sum + s.capacity, 0),
     });
   } catch (error) {
-    console.error('Error generating capacity heatmap:', error);
+    logger.error('Error generating capacity heatmap:', error);
     res.status(500).json({ error: 'Failed to generate capacity heatmap' });
   }
 });
@@ -288,7 +289,7 @@ router.get('/quarterly-summary', requireRole('admin', 'planner', 'finance'), asy
       recommendations: projection.recommendations,
     });
   } catch (error) {
-    console.error('Error generating quarterly summary:', error);
+    logger.error('Error generating quarterly summary:', error);
     res.status(500).json({ error: 'Failed to generate quarterly summary' });
   }
 });

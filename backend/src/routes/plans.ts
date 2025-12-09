@@ -2,6 +2,8 @@ import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import websocketService from '../services/websocketService';
 import { recommendShopsForCar } from '../services/ruleEngine';
+import { prisma } from '../services/db';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -9,7 +11,6 @@ router.use(authenticate);
 
 // Get all plans
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { status } = req.query;
 
   try {
@@ -38,14 +39,13 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     res.json(plans);
   } catch (error) {
-    console.error('Get plans error:', error);
+    logger.error('Get plans error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Get plan by ID
 router.get('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -70,14 +70,13 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json(plan);
   } catch (error) {
-    console.error('Get plan error:', error);
+    logger.error('Get plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Get plan grid data
 router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -129,14 +128,13 @@ router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
       assignments: assignmentsByShop,
     });
   } catch (error) {
-    console.error('Get plan grid error:', error);
+    logger.error('Get plan grid error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Create plan
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { name, description, startDate, endDate } = req.body;
 
   try {
@@ -156,14 +154,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(plan);
   } catch (error) {
-    console.error('Create plan error:', error);
+    logger.error('Create plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Update plan
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { name, description, startDate, endDate, status } = req.body;
 
   try {
@@ -193,14 +190,13 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json(updatedPlan);
   } catch (error) {
-    console.error('Update plan error:', error);
+    logger.error('Update plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Delete plan
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.plan.deleteMany({
@@ -217,14 +213,13 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error('Delete plan error:', error);
+    logger.error('Delete plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Add assignment to plan
 router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { carId, shopId, scheduledMonth, estimatedCost, estimatedDuration } = req.body;
 
   try {
@@ -257,14 +252,13 @@ router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(assignment);
   } catch (error) {
-    console.error('Create assignment error:', error);
+    logger.error('Create assignment error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Update assignment
 router.put('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { shopId, scheduledMonth, estimatedCost, estimatedDuration, status } = req.body;
 
   try {
@@ -285,14 +279,13 @@ router.put('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Respo
 
     res.json(assignment);
   } catch (error) {
-    console.error('Update assignment error:', error);
+    logger.error('Update assignment error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Remove assignment
 router.delete('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     await prisma.planAssignment.delete({
@@ -301,14 +294,13 @@ router.delete('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Re
 
     res.status(204).send();
   } catch (error) {
-    console.error('Delete assignment error:', error);
+    logger.error('Delete assignment error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Activate plan
 router.post('/:id/activate', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.plan.updateMany({
@@ -331,14 +323,13 @@ router.post('/:id/activate', async (req: AuthRequest, res: Response) => {
 
     res.json(plan);
   } catch (error) {
-    console.error('Activate plan error:', error);
+    logger.error('Activate plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Archive plan
 router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const result = await prisma.plan.updateMany({
@@ -361,7 +352,7 @@ router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
 
     res.json(plan);
   } catch (error) {
-    console.error('Archive plan error:', error);
+    logger.error('Archive plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -369,7 +360,6 @@ router.post('/:id/archive', async (req: AuthRequest, res: Response) => {
 // Schedule car assignment using rule engine
 // This is the main scheduling action that locks a car into the schedule
 router.post('/schedule-car', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { carId, shopId, scheduledMonth, planId, estimatedCost, estimatedDuration, useRuleEngine = true } = req.body;
 
   if (!carId || !scheduledMonth) {
@@ -542,14 +532,13 @@ router.post('/schedule-car', async (req: AuthRequest, res: Response) => {
       } : null,
     });
   } catch (error) {
-    console.error('Schedule car error:', error);
+    logger.error('Schedule car error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Bulk schedule multiple cars using rule engine
 router.post('/schedule-cars-bulk', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { carIds, scheduledMonth, planId } = req.body;
 
   if (!Array.isArray(carIds) || carIds.length === 0 || !scheduledMonth) {
@@ -561,136 +550,140 @@ router.post('/schedule-cars-bulk', async (req: AuthRequest, res: Response) => {
     const results = {
       success: 0,
       failed: 0,
-      assignments: [] as any[],
+      assignments: [] as unknown[],
       errors: [] as { carId: string; error: string }[],
     };
 
-    for (const carId of carIds) {
-      try {
-        // Get the car
-        const car = await prisma.car.findFirst({
-          where: {
-            id: carId,
-            companyId: req.user!.companyId,
-          },
-        });
-
-        if (!car) {
-          results.failed++;
-          results.errors.push({ carId, error: 'Car not found' });
-          continue;
-        }
-
-        // Get recommendation from rule engine
-        const recommendation = await recommendShopsForCar(
-          prisma,
-          req.user!.companyId,
-          {
-            id: car.id,
-            vehicleNumber: car.railcarNumber || car.vehicleNumber,
-            carType: car.carType || '',
-            commodity: car.commodity || '',
-            customer: car.customer || '',
-            homeRegion: car.homeRegion || '',
-            reasonShopped: car.reasonShopped || '',
-            isTankCar: car.isTankCar || false,
-          },
-          scheduledMonth
-        );
-
-        if (!recommendation.suggestedShopId) {
-          results.failed++;
-          results.errors.push({ carId, error: 'No suitable shop found' });
-          continue;
-        }
-
-        // Find or use provided plan
-        let targetPlanId = planId;
-        if (!targetPlanId) {
-          const monthDate = new Date(scheduledMonth + '-01');
-          const existingPlan = await prisma.plan.findFirst({
+    // Use transaction for bulk operation
+    await prisma.$transaction(async (tx) => {
+      for (const carId of carIds) {
+        try {
+          // Get the car
+          const car = await tx.car.findFirst({
             where: {
+              id: carId,
               companyId: req.user!.companyId,
-              status: { in: ['active', 'draft'] },
-              startDate: { lte: monthDate },
-              endDate: { gte: monthDate },
             },
-            orderBy: { createdAt: 'desc' },
           });
 
-          if (existingPlan) {
-            targetPlanId = existingPlan.id;
-          } else {
-            const startOfMonth = new Date(scheduledMonth + '-01');
-            const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 12, 0);
-
-            const newPlan = await prisma.plan.create({
-              data: {
-                name: `Scheduling Plan ${scheduledMonth}`,
-                description: 'Auto-created plan for bulk car scheduling',
-                startDate: startOfMonth,
-                endDate: endOfMonth,
-                status: 'draft',
-                companyId: req.user!.companyId,
-                createdBy: req.user!.id,
-              },
-            });
-            targetPlanId = newPlan.id;
+          if (!car) {
+            results.failed++;
+            results.errors.push({ carId, error: 'Car not found' });
+            continue;
           }
-        }
 
-        // Check for existing assignment
-        const existingAssignment = await prisma.planAssignment.findFirst({
-          where: {
-            carId,
-            scheduledMonth,
-            plan: { companyId: req.user!.companyId },
-          },
-        });
+          // Get recommendation from rule engine
+          const recommendation = await recommendShopsForCar(
+            tx,
+            req.user!.companyId,
+            {
+              id: car.id,
+              vehicleNumber: car.railcarNumber || car.vehicleNumber,
+              carType: car.carType || '',
+              commodity: car.commodity || '',
+              customer: car.customer || '',
+              homeRegion: car.homeRegion || '',
+              reasonShopped: car.reasonShopped || '',
+              isTankCar: car.isTankCar || false,
+            },
+            scheduledMonth
+          );
 
-        if (existingAssignment) {
+          if (!recommendation.suggestedShopId) {
+            results.failed++;
+            results.errors.push({ carId, error: 'No suitable shop found' });
+            continue;
+          }
+
+          // Find or use provided plan
+          let targetPlanId = planId;
+          if (!targetPlanId) {
+            const monthDate = new Date(scheduledMonth + '-01');
+            const existingPlan = await tx.plan.findFirst({
+              where: {
+                companyId: req.user!.companyId,
+                status: { in: ['active', 'draft'] },
+                startDate: { lte: monthDate },
+                endDate: { gte: monthDate },
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+
+            if (existingPlan) {
+              targetPlanId = existingPlan.id;
+            } else {
+              const startOfMonth = new Date(scheduledMonth + '-01');
+              const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 12, 0);
+
+              const newPlan = await tx.plan.create({
+                data: {
+                  name: `Scheduling Plan ${scheduledMonth}`,
+                  description: 'Auto-created plan for bulk car scheduling',
+                  startDate: startOfMonth,
+                  endDate: endOfMonth,
+                  status: 'draft',
+                  companyId: req.user!.companyId,
+                  createdBy: req.user!.id,
+                },
+              });
+              targetPlanId = newPlan.id;
+            }
+          }
+
+          // Check for existing assignment
+          const existingAssignment = await tx.planAssignment.findFirst({
+            where: {
+              carId,
+              scheduledMonth,
+              plan: { companyId: req.user!.companyId },
+            },
+          });
+
+          if (existingAssignment) {
+            results.failed++;
+            results.errors.push({ carId, error: 'Already scheduled for this month' });
+            continue;
+          }
+
+          // Create assignment
+          const shop = recommendation.allScores[0];
+          const assignment = await tx.planAssignment.create({
+            data: {
+              planId: targetPlanId,
+              carId,
+              shopId: recommendation.suggestedShopId,
+              scheduledMonth,
+              estimatedCost: shop?.estimatedCost || 0,
+              estimatedDuration: shop?.estimatedDays || 14,
+              status: 'pending',
+            },
+            include: {
+              car: true,
+              shop: true,
+            },
+          });
+
+          // Update car status
+          await tx.car.update({
+            where: { id: carId },
+            data: { status: 'scheduled' },
+          });
+
+          results.success++;
+          results.assignments.push(assignment);
+        } catch (error: unknown) {
           results.failed++;
-          results.errors.push({ carId, error: 'Already scheduled for this month' });
-          continue;
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          results.errors.push({ carId, error: message });
         }
-
-        // Create assignment
-        const shop = recommendation.allScores[0];
-        const assignment = await prisma.planAssignment.create({
-          data: {
-            planId: targetPlanId,
-            carId,
-            shopId: recommendation.suggestedShopId,
-            scheduledMonth,
-            estimatedCost: shop?.estimatedCost || 0,
-            estimatedDuration: shop?.estimatedDays || 14,
-            status: 'pending',
-          },
-          include: {
-            car: true,
-            shop: true,
-          },
-        });
-
-        // Update car status
-        await prisma.car.update({
-          where: { id: carId },
-          data: { status: 'scheduled' },
-        });
-
-        results.success++;
-        results.assignments.push(assignment);
-      } catch (error: any) {
-        results.failed++;
-        results.errors.push({ carId, error: error.message || 'Unknown error' });
       }
-    }
+    });
 
-    // Emit bulk WebSocket event
+    // Emit bulk WebSocket event (outside transaction)
     if (results.success > 0) {
       websocketService.emitBulkAssignmentsCreated(
         req.user!.companyId,
-        results.assignments.map((a: any) => ({
+        results.assignments.map((a: { planId: string; carId: string; shopId: string; scheduledMonth: string }) => ({
           planId: a.planId,
           carId: a.carId,
           shopId: a.shopId,
@@ -705,14 +698,13 @@ router.post('/schedule-cars-bulk', async (req: AuthRequest, res: Response) => {
       ...results,
     });
   } catch (error) {
-    console.error('Bulk schedule cars error:', error);
+    logger.error('Bulk schedule cars error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Bulk add assignments to plan
 router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { assignments } = req.body;
 
   if (!Array.isArray(assignments) || assignments.length === 0) {
@@ -739,34 +731,38 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
       errors: [] as { carId: string; error: string }[],
     };
 
-    for (const assignment of assignments) {
-      try {
-        await prisma.planAssignment.create({
-          data: {
-            planId: req.params.id,
+    // Use transaction for bulk operation
+    await prisma.$transaction(async (tx) => {
+      for (const assignment of assignments) {
+        try {
+          await tx.planAssignment.create({
+            data: {
+              planId: req.params.id,
+              carId: assignment.carId,
+              shopId: assignment.shopId,
+              scheduledMonth: assignment.scheduledMonth,
+              estimatedCost: assignment.estimatedCost || 0,
+              estimatedDuration: assignment.estimatedDuration || 14,
+              status: assignment.status || 'pending',
+            },
+          });
+          results.success++;
+        } catch (error: unknown) {
+          results.failed++;
+          const message = error instanceof Error ? error.message : 'Failed to create assignment';
+          results.errors.push({
             carId: assignment.carId,
-            shopId: assignment.shopId,
-            scheduledMonth: assignment.scheduledMonth,
-            estimatedCost: assignment.estimatedCost || 0,
-            estimatedDuration: assignment.estimatedDuration || 14,
-            status: assignment.status || 'pending',
-          },
-        });
-        results.success++;
-      } catch (error: any) {
-        results.failed++;
-        results.errors.push({
-          carId: assignment.carId,
-          error: error.message || 'Failed to create assignment',
-        });
+            error: message,
+          });
+        }
       }
-    }
+    });
 
-    // Emit WebSocket event for real-time collaboration
+    // Emit WebSocket event for real-time collaboration (outside transaction)
     if (results.success > 0) {
       websocketService.emitBulkAssignmentsCreated(
         req.user!.companyId,
-        assignments.slice(0, results.success).map((a: any) => ({
+        assignments.slice(0, results.success).map((a: { carId: string; shopId: string; scheduledMonth: string }) => ({
           planId: req.params.id,
           carId: a.carId,
           shopId: a.shopId,
@@ -781,14 +777,13 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
       ...results,
     });
   } catch (error) {
-    console.error('Bulk assignment error:', error);
+    logger.error('Bulk assignment error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Export plan to Excel (CSV format)
 router.get('/:id/export', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -872,14 +867,13 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csvContent);
   } catch (error) {
-    console.error('Export plan error:', error);
+    logger.error('Export plan error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Generate report with recipient type configuration
 router.post('/:id/generate-report', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const { recipientType, dateRange, includeConfidentialStatement, hideCostData } = req.body;
 
   try {
@@ -938,14 +932,13 @@ router.post('/:id/generate-report', async (req: AuthRequest, res: Response) => {
 
     res.json(reportData);
   } catch (error) {
-    console.error('Generate report error:', error);
+    logger.error('Generate report error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Get report data for printing
 router.get('/:id/report-data', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
   const recipientType = req.query.recipientType as string || 'internal';
 
   try {
@@ -1004,14 +997,13 @@ router.get('/:id/report-data', async (req: AuthRequest, res: Response) => {
 
     res.json(reportData);
   } catch (error) {
-    console.error('Get report data error:', error);
+    logger.error('Get report data error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Export plan to Excel (JSON data for frontend Excel generation)
 router.get('/:id/export-data', async (req: AuthRequest, res: Response) => {
-  const prisma: any = req.app.locals.prisma;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -1090,7 +1082,7 @@ router.get('/:id/export-data', async (req: AuthRequest, res: Response) => {
 
     res.json(exportData);
   } catch (error) {
-    console.error('Export plan data error:', error);
+    logger.error('Export plan data error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

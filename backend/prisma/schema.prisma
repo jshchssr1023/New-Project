@@ -1183,6 +1183,31 @@ model ImportSession {
   @@index([uploadedById, createdAt])
 }
 
+// Invalidated JWT Tokens - For token blacklisting on logout
+model InvalidatedToken {
+  id          String   @id @default(uuid())
+  tokenHash   String   @unique // SHA-256 hash of the JWT token
+  userId      String
+  expiresAt   DateTime // When the token would have expired naturally
+  invalidatedAt DateTime @default(now())
+  reason      String   @default("logout") // logout, password_change, security_breach, admin_revoke
+
+  @@index([expiresAt]) // For cleanup job
+  @@index([tokenHash])
+}
+
+// Rate Limit Entry - For tracking API rate limits in database (multi-instance support)
+model RateLimitEntry {
+  id          String   @id @default(uuid())
+  identifier  String   // User ID, IP address, or API key ID
+  endpoint    String   // Route pattern being limited
+  windowStart DateTime // Start of the current rate limit window
+  requestCount Int     @default(1)
+
+  @@unique([identifier, endpoint, windowStart])
+  @@index([windowStart]) // For cleanup of old entries
+}
+
 // Allocation Override - Track user overrides in allocation matrix
 model AllocationOverride {
   id                String    @id @default(uuid())

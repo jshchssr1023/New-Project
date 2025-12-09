@@ -7,6 +7,7 @@
 
 import crypto from 'crypto';
 import { prisma } from './db';
+import logger from '../utils/logger';
 
 // =============================================================================
 // TYPES
@@ -59,9 +60,8 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<{ apiKey: 
   const keyPrefix = fullKey.substring(0, 12); // chr_live_xxx
   const keyHash = hashKey(fullKey);
 
-  // Check if ApiKey table exists (it might not be in schema yet)
   try {
-    const apiKey = await (prisma as any).apiKey.create({
+    const apiKey = await prisma.apiKey.create({
       data: {
         name: input.name,
         keyHash,
@@ -75,6 +75,8 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<{ apiKey: 
         createdById: input.createdById,
       },
     });
+
+    logger.info('API key created', { keyId: apiKey.id, name: input.name, companyId: input.companyId });
 
     return {
       apiKey: {
@@ -92,30 +94,15 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<{ apiKey: 
       },
       fullKey, // Only returned once at creation
     };
-  } catch {
-    // If table doesn't exist, return mock data
-    console.warn('ApiKey table not found, returning mock data');
-    return {
-      apiKey: {
-        id: crypto.randomUUID(),
-        name: input.name,
-        keyPrefix,
-        permissions: input.permissions,
-        rateLimit: input.rateLimit || 1000,
-        rateLimitWindow: input.rateLimitWindow || 3600,
-        isActive: true,
-        lastUsedAt: null,
-        expiresAt: input.expiresAt || null,
-        createdAt: new Date(),
-        companyId: input.companyId,
-      },
-      fullKey,
-    };
+  } catch (error) {
+    logger.error('Failed to create API key', error, { name: input.name, companyId: input.companyId });
+    throw new Error('Failed to create API key. Please try again.');
   }
 }
 
 /**
  * Validate an API key
+ * SECURITY: Does NOT allow fallback to dev mode - always validates properly
  */
 export async function validateApiKey(key: string): Promise<ApiKeyValidationResult> {
   if (!key.startsWith('chr_live_')) {
@@ -125,24 +112,27 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidationResul
   const keyHash = hashKey(key);
 
   try {
-    const apiKey = await (prisma as any).apiKey.findFirst({
+    const apiKey = await prisma.apiKey.findFirst({
       where: { keyHash },
     });
 
     if (!apiKey) {
+      logger.warn('API key not found', { keyPrefix: key.substring(0, 12) });
       return { valid: false, error: 'API key not found' };
     }
 
     if (!apiKey.isActive) {
+      logger.warn('Attempted use of disabled API key', { keyId: apiKey.id });
       return { valid: false, error: 'API key is disabled' };
     }
 
     if (apiKey.expiresAt && new Date() > apiKey.expiresAt) {
+      logger.warn('Attempted use of expired API key', { keyId: apiKey.id });
       return { valid: false, error: 'API key has expired' };
     }
 
     // Update last used timestamp
-    await (prisma as any).apiKey.update({
+    await prisma.apiKey.update({
       where: { id: apiKey.id },
       data: { lastUsedAt: new Date() },
     });
@@ -163,24 +153,12 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidationResul
         companyId: apiKey.companyId,
       },
     };
-  } catch {
-    // If table doesn't exist, allow all keys for dev
-    console.warn('ApiKey validation failed, allowing in dev mode');
+  } catch (error) {
+    // SECURITY: On database error, reject the key - do NOT allow access
+    logger.error('API key validation error - rejecting key for security', error);
     return {
-      valid: true,
-      apiKey: {
-        id: 'dev-key',
-        name: 'Development Key',
-        keyPrefix: key.substring(0, 12),
-        permissions: ['read:cars', 'read:shops', 'read:plans'],
-        rateLimit: 1000,
-        rateLimitWindow: 3600,
-        isActive: true,
-        lastUsedAt: new Date(),
-        expiresAt: null,
-        createdAt: new Date(),
-        companyId: 'dev-company',
-      },
+      valid: false,
+      error: 'API key validation failed. Please try again.',
     };
   }
 }
@@ -215,12 +193,12 @@ export function checkRateLimit(apiKey: ApiKeyData): { allowed: boolean; remainin
  */
 export async function listApiKeys(companyId: string): Promise<ApiKeyData[]> {
   try {
-    const keys = await (prisma as any).apiKey.findMany({
+    const keys = await prisma.apiKey.findMany({
       where: { companyId },
       orderBy: { createdAt: 'desc' },
     });
 
-    return keys.map((k: any) => ({
+    return keys.map((k) => ({
       id: k.id,
       name: k.name,
       keyPrefix: k.keyPrefix,
@@ -233,8 +211,9 @@ export async function listApiKeys(companyId: string): Promise<ApiKeyData[]> {
       createdAt: k.createdAt,
       companyId: k.companyId,
     }));
-  } catch {
-    return [];
+  } catch (error) {
+    logger.error('Failed to list API keys', error, { companyId });
+    throw new Error('Failed to retrieve API keys');
   }
 }
 
@@ -243,13 +222,20 @@ export async function listApiKeys(companyId: string): Promise<ApiKeyData[]> {
  */
 export async function revokeApiKey(id: string, companyId: string): Promise<boolean> {
   try {
-    await (prisma as any).apiKey.updateMany({
+    const result = await prisma.apiKey.updateMany({
       where: { id, companyId },
       data: { isActive: false },
     });
-    return true;
-  } catch {
+
+    if (result.count > 0) {
+      logger.info('API key revoked', { keyId: id, companyId });
+      return true;
+    }
+
     return false;
+  } catch (error) {
+    logger.error('Failed to revoke API key', error, { keyId: id, companyId });
+    throw new Error('Failed to revoke API key');
   }
 }
 
@@ -258,12 +244,19 @@ export async function revokeApiKey(id: string, companyId: string): Promise<boole
  */
 export async function deleteApiKey(id: string, companyId: string): Promise<boolean> {
   try {
-    await (prisma as any).apiKey.deleteMany({
+    const result = await prisma.apiKey.deleteMany({
       where: { id, companyId },
     });
-    return true;
-  } catch {
+
+    if (result.count > 0) {
+      logger.info('API key deleted', { keyId: id, companyId });
+      return true;
+    }
+
     return false;
+  } catch (error) {
+    logger.error('Failed to delete API key', error, { keyId: id, companyId });
+    throw new Error('Failed to delete API key');
   }
 }
 
