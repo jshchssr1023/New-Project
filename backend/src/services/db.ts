@@ -549,6 +549,9 @@ export const prisma = {
   masterPlan: createTableHandler('MasterPlan'),
   masterPlanCommitment: createTableHandler('MasterPlanCommitment'),
 
+  // Notification table
+  notification: createTableHandler('Notification'),
+
   // Gold Standard Wizard tables
   weeklyCapacity: createTableHandler('WeeklyCapacity'),
   capacityAudit: createTableHandler('CapacityAudit'),
