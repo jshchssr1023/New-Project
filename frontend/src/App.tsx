@@ -1,29 +1,47 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+
+// Eager load - frequently accessed, small pages
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import ShopManagement from './pages/ShopManagement';
-import CarManagement from './pages/CarManagement';
-import PlanningGrid from './pages/PlanningGrid';
-import CarFlowPlanning from './pages/CarFlowPlanning';
-import ScenarioManager from './pages/ScenarioManager';
-import AnalyticsDashboard from './pages/AnalyticsDashboard';
-import UserManagement from './pages/UserManagement';
-import Settings from './pages/Settings';
-import RuleBuilder from './pages/RuleBuilder';
-import ImportExport from './pages/ImportExport';
-import Webhooks from './pages/Webhooks';
-import ApiKeys from './pages/ApiKeys';
-import MasterPlanView from './pages/MasterPlanView';
-import CustomerSchedule from './pages/CustomerSchedule';
-import ShopSchedule from './pages/ShopSchedule';
 
-// Gold Standard Master Plan Wizard components
-import MasterPlanWizard from './pages/MasterPlanWizard';
-import MasterPlanAuditLog from './components/MasterPlanAuditLog';
-import ImportWorkflow from './components/ImportWorkflow';
+// Lazy load - heavy pages with code splitting
+const ShopManagement = lazy(() => import('./pages/ShopManagement'));
+const CarsPage = lazy(() => import('./pages/CarsPage'));
+const CarManagement = lazy(() => import('./pages/CarManagement')); // Keep old for fallback
+const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
+const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
+const ScenarioManager = lazy(() => import('./pages/ScenarioManager'));
+const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
+const UserManagement = lazy(() => import('./pages/UserManagement'));
+const Settings = lazy(() => import('./pages/Settings'));
+const RuleBuilder = lazy(() => import('./pages/RuleBuilder'));
+const ImportExport = lazy(() => import('./pages/ImportExport'));
+const Webhooks = lazy(() => import('./pages/Webhooks'));
+const ApiKeys = lazy(() => import('./pages/ApiKeys'));
+const MasterPlanView = lazy(() => import('./pages/MasterPlanView'));
+const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
+const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
+
+// Gold Standard Master Plan Wizard components - lazy loaded
+const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
+const MasterPlanAuditLog = lazy(() => import('./components/MasterPlanAuditLog'));
+const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
+
+// Page loading fallback
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rail-600 mx-auto"></div>
+        <p className="mt-3 text-sm text-steel-500">Loading...</p>
+      </div>
+    </div>
+  );
+}
 
 // Wrapper component for ImportWorkflow as a standalone page
 function ImportWorkflowPage() {
@@ -71,76 +89,81 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ErrorBoundary>
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/"
-        element={
-          <PrivateRoute>
-            <Layout />
-          </PrivateRoute>
-        }
-      >
-        <Route index element={<Dashboard />} />
-        <Route path="shops" element={<ShopManagement />} />
-        <Route path="cars" element={<CarManagement />} />
-        <Route path="planning" element={<PlanningGrid />} />
-        <Route path="car-flow" element={<CarFlowPlanning />} />
-        <Route path="scenarios" element={<ScenarioManager />} />
-        <Route path="masterplan" element={<MasterPlanView />} />
-        <Route path="masterplan/:id" element={<MasterPlanView />} />
-        <Route path="master-plan-wizard" element={<MasterPlanWizard />} />
-        <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} />
-        <Route path="master-plan-audit" element={<MasterPlanAuditLog />} />
-        <Route path="import-workflow" element={<ImportWorkflowPage />} />
-        <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
-        <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
-        <Route path="analytics" element={<AnalyticsDashboard />} />
-        <Route path="rules" element={<RuleBuilder />} />
-        {/* Admin-only routes */}
-        <Route
-          path="import-export"
-          element={
-            <AdminRoute>
-              <ImportExport />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="users"
-          element={
-            <AdminRoute>
-              <UserManagement />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="webhooks"
-          element={
-            <AdminRoute>
-              <Webhooks />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="api-keys"
-          element={
-            <AdminRoute>
-              <ApiKeys />
-            </AdminRoute>
-          }
-        />
-        <Route
-          path="settings"
-          element={
-            <AdminRoute>
-              <Settings />
-            </AdminRoute>
-          }
-        />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <PrivateRoute>
+                <Layout />
+              </PrivateRoute>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="shops" element={<ShopManagement />} />
+            {/* New redesigned cars page with card view */}
+            <Route path="cars" element={<CarsPage />} />
+            {/* Legacy table-only cars page (accessible via /cars-legacy) */}
+            <Route path="cars-legacy" element={<CarManagement />} />
+            <Route path="planning" element={<PlanningGrid />} />
+            <Route path="car-flow" element={<CarFlowPlanning />} />
+            <Route path="scenarios" element={<ScenarioManager />} />
+            <Route path="masterplan" element={<MasterPlanView />} />
+            <Route path="masterplan/:id" element={<MasterPlanView />} />
+            <Route path="master-plan-wizard" element={<MasterPlanWizard />} />
+            <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} />
+            <Route path="master-plan-audit" element={<MasterPlanAuditLog />} />
+            <Route path="import-workflow" element={<ImportWorkflowPage />} />
+            <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
+            <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
+            <Route path="analytics" element={<AnalyticsDashboard />} />
+            <Route path="rules" element={<RuleBuilder />} />
+            {/* Admin-only routes */}
+            <Route
+              path="import-export"
+              element={
+                <AdminRoute>
+                  <ImportExport />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="users"
+              element={
+                <AdminRoute>
+                  <UserManagement />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="webhooks"
+              element={
+                <AdminRoute>
+                  <Webhooks />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="api-keys"
+              element={
+                <AdminRoute>
+                  <ApiKeys />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <AdminRoute>
+                  <Settings />
+                </AdminRoute>
+              }
+            />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </ErrorBoundary>
   );
 }
