@@ -1322,7 +1322,7 @@ async function main() {
   console.log(`✓ Created ${customerRecords.length} customer records`);
 
   // Create Lease Contracts (upcoming releases within 6 months)
-  const now = new Date();
+  // Note: 'now' is already declared at the top of the seed function
   const leaseContracts = [];
 
   // Create 40 lease contracts expiring over the next 6 months
