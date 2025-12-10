@@ -13,6 +13,7 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { ScenarioService, createScenarioService } from '../services/scenarioService';
+import { DEFAULT_PRIORITY } from '../constants/defaults';
 
 const router = Router();
 
@@ -84,7 +85,8 @@ router.get('/scenarios', async (req: AuthRequest, res: Response) => {
 router.get('/scenarios/:id', async (req: AuthRequest, res: Response) => {
   try {
     const service = getScenarioService(req);
-    const scenario = await service.getScenario(req.params.id);
+    // SECURITY: Pass companyId to verify ownership
+    const scenario = await service.getScenario(req.params.id, req.user!.companyId);
 
     if (!scenario) {
       res.status(404).json({ message: 'Scenario not found' });
@@ -111,13 +113,18 @@ router.post('/scenarios/:id/clone', async (req: AuthRequest, res: Response) => {
     }
 
     const service = getScenarioService(req);
-    const cloned = await service.cloneScenario(req.params.id, name, req.user!.id);
+    // SECURITY: Pass companyId to verify ownership
+    const cloned = await service.cloneScenario(req.params.id, name, req.user!.id, req.user!.companyId);
 
     res.status(201).json(cloned);
   } catch (error: any) {
     console.error('Clone scenario error:', error);
     if (error.message.includes('not found')) {
       res.status(404).json({ message: error.message });
+      return;
+    }
+    if (error.message.includes('Access denied')) {
+      res.status(403).json({ message: error.message });
       return;
     }
     res.status(500).json({ message: error.message || 'Internal server error' });
@@ -130,12 +137,17 @@ router.post('/scenarios/:id/clone', async (req: AuthRequest, res: Response) => {
 router.delete('/scenarios/:id', async (req: AuthRequest, res: Response) => {
   try {
     const service = getScenarioService(req);
-    await service.deleteScenario(req.params.id);
+    // SECURITY: Pass companyId to verify ownership
+    await service.deleteScenario(req.params.id, req.user!.companyId);
     res.status(204).send();
   } catch (error: any) {
     console.error('Delete scenario error:', error);
     if (error.message.includes('not found')) {
       res.status(404).json({ message: error.message });
+      return;
+    }
+    if (error.message.includes('Access denied')) {
+      res.status(403).json({ message: error.message });
       return;
     }
     if (error.message.includes('clones')) {
@@ -159,13 +171,18 @@ router.get('/scenarios/compare', async (req: AuthRequest, res: Response) => {
     }
 
     const service = getScenarioService(req);
-    const comparison = await service.compareScenarios(a as string, b as string);
+    // SECURITY: Pass companyId to verify ownership of both scenarios
+    const comparison = await service.compareScenarios(a as string, b as string, req.user!.companyId);
 
     res.json(comparison);
   } catch (error: any) {
     console.error('Compare scenarios error:', error);
     if (error.message.includes('not found')) {
       res.status(404).json({ message: error.message });
+      return;
+    }
+    if (error.message.includes('Access denied')) {
+      res.status(403).json({ message: error.message });
       return;
     }
     res.status(500).json({ message: error.message || 'Internal server error' });
@@ -509,10 +526,16 @@ router.post('/capacity-check', async (req: AuthRequest, res: Response) => {
 
       carsScheduled += allocated;
 
-      // Advance to next month
+      // Advance to next month (month is 1-indexed from split, but Date constructor expects 0-indexed)
       const [year, month] = currentMonth.split('-').map(Number);
-      const nextDate = new Date(year, month, 1);
-      currentMonth = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+      // Subtract 1 from month to convert to 0-indexed, then add 1 to get next month
+      const nextDate = new Date(year, month, 1); // month (1-indexed) becomes next month in 0-indexed Date
+      // The above is correct because: month=3 (March in YYYY-03) -> Date(year, 3, 1) = April 1st
+      // Then getMonth() returns 3 (April in 0-indexed), +1 = 4, which is wrong for "next month after March"
+      // FIX: Use month-1 to get current month, then advance properly
+      const currentDate = new Date(year, month - 1, 1); // Correct: month-1 for 0-indexed
+      currentDate.setMonth(currentDate.getMonth() + 1); // Advance by 1 month
+      currentMonth = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
     }
 
     const passed = firstOverloadMonth === null;
@@ -687,7 +710,7 @@ router.post('/allocations', async (req: AuthRequest, res: Response) => {
                 workTypes: JSON.stringify(['qualification']),
                 status: 'PLANNED',
                 monthKey,
-                priority: 3,
+                priority: DEFAULT_PRIORITY,
               },
             });
             createdAssignments.push(assignment);

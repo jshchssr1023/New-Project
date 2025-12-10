@@ -329,7 +329,12 @@ export class MasterPlanService {
       const commitmentData: Prisma.MasterPlanCommitmentCreateManyInput[] =
         scenario.sopAssignments.map((assignment) => {
           const customerName = assignment.car.customer || 'Unknown';
-          const customerId = customerMap.get(customerName)!;
+          const customerId = customerMap.get(customerName);
+
+          // SAFETY: Ensure customerId exists (should always be true if loop above worked correctly)
+          if (!customerId) {
+            throw new Error(`Customer not found in map for: ${customerName}. This indicates a data integrity issue.`);
+          }
 
           // Parse reasonsShopped - handle both JSON string and plain string
           // Qualification is the priority/main cost driver when multiple reasons exist

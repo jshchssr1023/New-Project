@@ -172,7 +172,7 @@ export class ScenarioService {
   /**
    * Clone a scenario with all its assignments
    */
-  async cloneScenario(scenarioId: string, newName: string, userId: string): Promise<Scenario> {
+  async cloneScenario(scenarioId: string, newName: string, userId: string, companyId?: string): Promise<Scenario> {
     // Get the original scenario with all assignments
     const original = await this.prisma.scenario.findUnique({
       where: { id: scenarioId },
@@ -183,6 +183,11 @@ export class ScenarioService {
 
     if (!original) {
       throw new Error(`Scenario not found: ${scenarioId}`);
+    }
+
+    // SECURITY: Verify company ownership if companyId provided
+    if (companyId && original.companyId !== companyId) {
+      throw new Error('Access denied: Scenario belongs to another company');
     }
 
     // Create the cloned scenario
@@ -235,8 +240,9 @@ export class ScenarioService {
 
   /**
    * Get a scenario by ID with all assignments
+   * @param companyId - Optional company ID for security verification
    */
-  async getScenario(scenarioId: string): Promise<ScenarioWithAssignments | null> {
+  async getScenario(scenarioId: string, companyId?: string): Promise<ScenarioWithAssignments | null> {
     const scenario = await this.prisma.scenario.findUnique({
       where: { id: scenarioId },
       include: {
@@ -255,6 +261,11 @@ export class ScenarioService {
         },
       },
     });
+
+    // SECURITY: Verify company ownership if companyId provided
+    if (scenario && companyId && scenario.companyId !== companyId) {
+      return null; // Return null instead of throwing to match "not found" behavior
+    }
 
     return scenario as ScenarioWithAssignments | null;
   }
@@ -288,8 +299,9 @@ export class ScenarioService {
 
   /**
    * Delete a scenario and all its assignments
+   * @param companyId - Optional company ID for security verification
    */
-  async deleteScenario(scenarioId: string): Promise<void> {
+  async deleteScenario(scenarioId: string, companyId?: string): Promise<void> {
     // Check if scenario exists
     const scenario = await this.prisma.scenario.findUnique({
       where: { id: scenarioId },
@@ -300,6 +312,11 @@ export class ScenarioService {
 
     if (!scenario) {
       throw new Error(`Scenario not found: ${scenarioId}`);
+    }
+
+    // SECURITY: Verify company ownership if companyId provided
+    if (companyId && scenario.companyId !== companyId) {
+      throw new Error('Access denied: Scenario belongs to another company');
     }
 
     // Check if this scenario has clones (can't delete parent with active clones)
@@ -323,8 +340,9 @@ export class ScenarioService {
 
   /**
    * Compare two scenarios
+   * @param companyId - Optional company ID for security verification
    */
-  async compareScenarios(scenarioIdA: string, scenarioIdB: string): Promise<ScenarioComparison> {
+  async compareScenarios(scenarioIdA: string, scenarioIdB: string, companyId?: string): Promise<ScenarioComparison> {
     // Fetch both scenarios with their assignments
     const [scenarioA, scenarioB] = await Promise.all([
       this.prisma.scenario.findUnique({
@@ -350,6 +368,16 @@ export class ScenarioService {
     }
     if (!scenarioB) {
       throw new Error(`Scenario B not found: ${scenarioIdB}`);
+    }
+
+    // SECURITY: Verify both scenarios belong to the same company
+    if (companyId) {
+      if (scenarioA.companyId !== companyId) {
+        throw new Error('Access denied: Scenario A belongs to another company');
+      }
+      if (scenarioB.companyId !== companyId) {
+        throw new Error('Access denied: Scenario B belongs to another company');
+      }
     }
 
     // Calculate totals for scenario A
