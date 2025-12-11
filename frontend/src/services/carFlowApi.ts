@@ -146,6 +146,45 @@ export const scenarioApi = {
   delete: async (scenarioId: string): Promise<void> => {
     await apiClient.delete(`/car-flow/scenarios/${scenarioId}`);
   },
+
+  /**
+   * Export a scenario to PDF
+   */
+  exportPDF: async (scenarioId: string, branding: 'aitx' | 'customer' = 'aitx'): Promise<void> => {
+    const response = await apiClient.get(`/car-flow/scenarios/${scenarioId}/export`, {
+      params: { format: 'pdf', branding },
+      responseType: 'blob',
+    });
+
+    // Create download link
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `scenario-export-${new Date().toISOString().split('T')[0]}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Export a scenario to CSV (Excel-compatible)
+   */
+  exportCSV: async (scenarioId: string): Promise<void> => {
+    const response = await apiClient.get(`/car-flow/scenarios/${scenarioId}/export`, {
+      params: { format: 'csv' },
+      responseType: 'blob',
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `scenario-export-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 // =============================================================================
@@ -181,6 +220,55 @@ export const carFlowPlanApi = {
   cancel: async (id: string): Promise<CarFlowPlan> => {
     const response = await apiClient.patch<CarFlowPlan>(`/car-flow/plans/${id}/cancel`);
     return response.data;
+  },
+
+  /**
+   * Export Car Flow Plans to PDF
+   */
+  exportPDF: async (params?: {
+    year?: number;
+    month?: number;
+    shopId?: string;
+    customerId?: string;
+    branding?: 'aitx' | 'customer';
+  }): Promise<void> => {
+    const response = await apiClient.get('/car-flow/plans/export', {
+      params: { ...params, format: 'pdf' },
+      responseType: 'blob',
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `car-flow-plan-${new Date().toISOString().split('T')[0]}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Export Car Flow Plans to CSV
+   */
+  exportCSV: async (params?: {
+    year?: number;
+    month?: number;
+    shopId?: string;
+    customerId?: string;
+  }): Promise<void> => {
+    const response = await apiClient.get('/car-flow/plans/export', {
+      params: { ...params, format: 'csv' },
+      responseType: 'blob',
+    });
+
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `car-flow-plan-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
   },
 };
 

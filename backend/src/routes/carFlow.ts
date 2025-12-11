@@ -1162,6 +1162,88 @@ router.post(
 );
 
 // =============================================================================
+// EXPORTS
+// =============================================================================
+
+import { scenarioExportService } from '../services/scenarioExportService';
+
+/**
+ * GET /api/car-flow/scenarios/:id/export
+ * Export a scenario to PDF or CSV
+ */
+router.get('/scenarios/:id/export', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const format = (req.query.format as string) || 'pdf';
+    const branding = (req.query.branding as string) || 'aitx';
+
+    // Verify scenario belongs to user's company
+    const scenario = await prisma.scenario.findFirst({
+      where: { id, companyId: req.user!.companyId },
+    });
+
+    if (!scenario) {
+      return res.status(404).json({ message: 'Scenario not found' });
+    }
+
+    const buffer = await scenarioExportService.exportScenario({
+      scenarioId: id,
+      format: format as 'pdf' | 'csv',
+      branding: branding as 'aitx' | 'customer',
+    });
+
+    const filename = `scenario-${scenario.name.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}`;
+
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+    } else {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+    }
+
+    res.send(buffer);
+  } catch (error) {
+    logger.error('Failed to export scenario', error as Error);
+    res.status(500).json({ message: 'Failed to export scenario' });
+  }
+});
+
+/**
+ * GET /api/car-flow/plans/export
+ * Export Car Flow Plans to PDF or CSV
+ */
+router.get('/plans/export', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { year, month, shopId, customerId, format = 'pdf', branding = 'aitx' } = req.query;
+
+    const buffer = await scenarioExportService.exportCarFlowPlans({
+      year: year ? parseInt(year as string) : undefined,
+      month: month ? parseInt(month as string) : undefined,
+      shopId: shopId as string | undefined,
+      customerId: customerId as string | undefined,
+      format: format as 'pdf' | 'csv',
+      branding: branding as 'aitx' | 'customer',
+    });
+
+    const filename = `car-flow-plan-${new Date().toISOString().split('T')[0]}`;
+
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+    } else {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+    }
+
+    res.send(buffer);
+  } catch (error) {
+    logger.error('Failed to export Car Flow Plans', error as Error);
+    res.status(500).json({ message: 'Failed to export Car Flow Plans' });
+  }
+});
+
+// =============================================================================
 // CUSTOMERS
 // =============================================================================
 
