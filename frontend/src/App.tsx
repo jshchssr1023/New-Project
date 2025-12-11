@@ -22,13 +22,14 @@ const RuleBuilder = lazy(() => import('./pages/RuleBuilder'));
 const ImportExport = lazy(() => import('./pages/ImportExport'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
-const MasterPlanView = lazy(() => import('./pages/MasterPlanView'));
+// REMOVED: MasterPlanView - replaced by Car Flow Planning module
 const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
 const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
+const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
 
-// Gold Standard Master Plan Wizard components - lazy loaded
-const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
-const MasterPlanAuditLog = lazy(() => import('./components/MasterPlanAuditLog'));
+// REMOVED: Master Plan Wizard components - replaced by Car Flow Planning module
+// const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
+// const MasterPlanAuditLog = lazy(() => import('./components/MasterPlanAuditLog'));
 const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 
 // Page loading fallback
@@ -109,16 +110,26 @@ export default function App() {
             <Route path="planning" element={<PlanningGrid />} />
             <Route path="car-flow" element={<CarFlowPlanning />} />
             <Route path="scenarios" element={<ScenarioManager />} />
-            <Route path="masterplan" element={<MasterPlanView />} />
-            <Route path="masterplan/:id" element={<MasterPlanView />} />
-            <Route path="master-plan-wizard" element={<MasterPlanWizard />} />
-            <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} />
-            <Route path="master-plan-audit" element={<MasterPlanAuditLog />} />
+            {/* REMOVED: Master Plan routes - replaced by Car Flow Planning module */}
+            {/* <Route path="masterplan" element={<MasterPlanView />} /> */}
+            {/* <Route path="masterplan/:id" element={<MasterPlanView />} /> */}
+            {/* <Route path="master-plan-wizard" element={<MasterPlanWizard />} /> */}
+            {/* <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} /> */}
+            {/* <Route path="master-plan-audit" element={<MasterPlanAuditLog />} /> */}
             <Route path="import-workflow" element={<ImportWorkflowPage />} />
             <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
             <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
             <Route path="rules" element={<RuleBuilder />} />
+            {/* S&OP Supply Settings - admin only */}
+            <Route
+              path="sop-settings"
+              element={
+                <AdminRoute>
+                  <SOPSupplySettings />
+                </AdminRoute>
+              }
+            />
             {/* Admin-only routes */}
             <Route
               path="import-export"
