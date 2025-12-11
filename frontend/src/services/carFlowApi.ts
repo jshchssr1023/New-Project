@@ -120,11 +120,11 @@ export const scenarioApi = {
    */
   confirm: async (
     scenarioId: string,
-    confirmationText: string
+    overrideConflicts: boolean = false
   ): Promise<ConfirmScenarioResponse> => {
     const response = await apiClient.post<ConfirmScenarioResponse>(
       `/car-flow/scenarios/${scenarioId}/confirm`,
-      { confirmationText }
+      { overrideConflicts }
     );
     return response.data;
   },
@@ -138,6 +138,13 @@ export const scenarioApi = {
       { name }
     );
     return response.data;
+  },
+
+  /**
+   * Delete a scenario
+   */
+  delete: async (scenarioId: string): Promise<void> => {
+    await apiClient.delete(`/car-flow/scenarios/${scenarioId}`);
   },
 };
 
@@ -263,6 +270,26 @@ export const shoppingStatusApi = {
 };
 
 // =============================================================================
+// CUSTOMERS
+// =============================================================================
+
+export interface Customer {
+  id: string;
+  name: string;
+  code: string;
+}
+
+export const customersApi = {
+  /**
+   * Get all active customers
+   */
+  getAll: async (): Promise<Customer[]> => {
+    const response = await apiClient.get<Customer[]>('/car-flow/customers');
+    return response.data;
+  },
+};
+
+// =============================================================================
 // COMBINED EXPORT
 // =============================================================================
 
@@ -272,6 +299,7 @@ export const carFlowApi = {
   capacity: capacityApi,
   sopCommitments: sopCommitmentApi,
   shoppingStatus: shoppingStatusApi,
+  customers: customersApi,
 };
 
 export default carFlowApi;

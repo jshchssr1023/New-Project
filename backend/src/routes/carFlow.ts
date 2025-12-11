@@ -252,6 +252,44 @@ router.patch('/scenarios/:id', async (req: AuthenticatedRequest, res: Response) 
 });
 
 /**
+ * DELETE /api/car-flow/scenarios/:id
+ * Delete a draft scenario
+ */
+router.delete('/scenarios/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Verify scenario exists and is draft
+    const scenario = await prisma.scenario.findFirst({
+      where: {
+        id,
+        companyId: req.user!.companyId
+      }
+    });
+
+    if (!scenario) {
+      return res.status(404).json({ message: 'Scenario not found' });
+    }
+
+    if (scenario.status !== 'draft') {
+      return res.status(400).json({
+        message: 'Only draft scenarios can be deleted'
+      });
+    }
+
+    // Delete scenario (cascade deletes cars and customers)
+    await prisma.scenario.delete({
+      where: { id }
+    });
+
+    res.status(204).send();
+  } catch (error) {
+    logger.error('Failed to delete scenario', error as Error);
+    res.status(500).json({ message: 'Failed to delete scenario' });
+  }
+});
+
+/**
  * POST /api/car-flow/scenarios/:id/cars
  * Add cars to a scenario
  */
@@ -343,12 +381,7 @@ router.delete('/scenarios/:id/cars/:carId', async (req: AuthenticatedRequest, re
 router.post('/scenarios/:id/confirm', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { confirmationText } = req.body;
-
-    // Require "CONFIRM" text
-    if (confirmationText !== 'CONFIRM') {
-      return res.status(400).json({ message: 'Please type CONFIRM to proceed' });
-    }
+    const { overrideConflicts } = req.body;
 
     // Fetch scenario with all cars
     const scenario = await prisma.scenario.findFirst({
@@ -385,7 +418,7 @@ router.post('/scenarios/:id/confirm', async (req: AuthenticatedRequest, res: Res
       }
     });
 
-    if (existingPlans.length > 0) {
+    if (existingPlans.length > 0 && !overrideConflicts) {
       // Return conflict information with soft warning
       const conflicts = existingPlans.map(p => ({
         carId: p.carId,
@@ -396,10 +429,24 @@ router.post('/scenarios/:id/confirm', async (req: AuthenticatedRequest, res: Res
         committedAt: p.committedAt
       }));
 
-      return res.status(409).json({
+      return res.json({
         message: 'Some cars are already committed to a Car Flow Plan',
         conflicts,
-        allowOverride: true // Soft warning - can proceed with force flag
+        allowOverride: true // Soft warning - can proceed with overrideConflicts=true
+      });
+    }
+
+    // If overriding, cancel existing plans for these cars
+    if (existingPlans.length > 0 && overrideConflicts) {
+      await prisma.carFlowPlan.updateMany({
+        where: {
+          carId: { in: existingPlans.map(p => p.carId) },
+          status: { not: 'Cancelled' }
+        },
+        data: {
+          status: 'Cancelled',
+          cancelledAt: new Date()
+        }
       });
     }
 
@@ -1113,5 +1160,35 @@ router.post(
     }
   }
 );
+
+// =============================================================================
+// CUSTOMERS
+// =============================================================================
+
+/**
+ * GET /api/car-flow/customers
+ * List customers for the current user's company
+ */
+router.get('/customers', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const customers = await prisma.customer.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    res.json(customers);
+  } catch (error) {
+    logger.error('Failed to fetch customers', error as Error);
+    res.status(500).json({ message: 'Failed to fetch customers' });
+  }
+});
 
 export default router;
