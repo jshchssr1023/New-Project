@@ -26,6 +26,7 @@ import { carsApi } from '../services/api';
 // Lazy load modals
 const ImportModal = lazy(() => import('../components/cars/ImportModal'));
 const CarFormModal = lazy(() => import('../components/cars/CarFormModal'));
+const PlanCarsModal = lazy(() => import('../components/carflow/PlanCarsModal'));
 
 // Constants
 const CAR_TYPE_OPTIONS = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
@@ -68,6 +69,7 @@ export default function CarsPage() {
   // Modal states
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+  const [isPlanCarsModalOpen, setIsPlanCarsModalOpen] = useState(false);
   const [editingCar, setEditingCar] = useState<Car | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; carId: string | null; isBulk: boolean }>({
     isOpen: false,
@@ -178,8 +180,7 @@ export default function CarsPage() {
   };
 
   const handleUseInCarFlow = () => {
-    selectMultiple(selectedCars);
-    navigate('/car-flow');
+    setIsPlanCarsModalOpen(true);
   };
 
   // Hierarchical filter handler
@@ -453,6 +454,18 @@ export default function CarsPage() {
           editingCar={editingCar}
           carTypeOptions={CAR_TYPE_OPTIONS}
           reasonOptions={REASON_OPTIONS}
+        />
+        <PlanCarsModal
+          isOpen={isPlanCarsModalOpen}
+          onClose={() => {
+            setIsPlanCarsModalOpen(false);
+            clearSelection();
+          }}
+          selectedCars={selectedCars}
+          onSuccess={(scenarioId) => {
+            clearSelection();
+            navigate(`/scenarios?id=${scenarioId}`);
+          }}
         />
       </Suspense>
 
