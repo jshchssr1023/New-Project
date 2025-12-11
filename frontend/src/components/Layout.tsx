@@ -45,6 +45,7 @@ const reportingNavigation = [
 
 // System Administration - System and user management (admin only)
 const adminNavigation = [
+  { name: 'S&OP Supply', href: '/sop-settings', icon: CalendarDaysIcon },
   { name: 'Import/Export', href: '/import-export', icon: ArrowUpTrayIcon },
   { name: 'Users', href: '/users', icon: UsersIcon },
   { name: 'Webhooks', href: '/webhooks', icon: BellAlertIcon },

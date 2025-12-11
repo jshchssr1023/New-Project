@@ -25,6 +25,7 @@ const ApiKeys = lazy(() => import('./pages/ApiKeys'));
 // REMOVED: MasterPlanView - replaced by Car Flow Planning module
 const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
 const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
+const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
 
 // REMOVED: Master Plan Wizard components - replaced by Car Flow Planning module
 // const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
@@ -120,6 +121,15 @@ export default function App() {
             <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
             <Route path="rules" element={<RuleBuilder />} />
+            {/* S&OP Supply Settings - admin only */}
+            <Route
+              path="sop-settings"
+              element={
+                <AdminRoute>
+                  <SOPSupplySettings />
+                </AdminRoute>
+              }
+            />
             {/* Admin-only routes */}
             <Route
               path="import-export"
