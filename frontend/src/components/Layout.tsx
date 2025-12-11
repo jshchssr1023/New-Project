@@ -17,7 +17,6 @@ import {
   ArrowUpTrayIcon,
   BellAlertIcon,
   KeyIcon,
-  DocumentChartBarIcon,
   XMarkIcon,
   CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
@@ -34,9 +33,8 @@ const operationsNavigation = [
   { name: 'Railcars', href: '/cars', icon: TruckIcon },
   { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
-  { name: 'Master Plan', href: '/masterplan', icon: DocumentChartBarIcon },
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
-  { name: 'Scenario Builder', href: '/scenarios', icon: BeakerIcon },
+  { name: 'Scenarios', href: '/scenarios', icon: BeakerIcon },
 ];
 
 // Reporting & Rules - Data review and configuration

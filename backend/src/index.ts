@@ -18,14 +18,15 @@ import auditRoutes from './routes/audit';
 import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
-import masterPlansRoutes from './routes/masterPlans';
+// REMOVED: masterPlansRoutes - replaced by Car Flow Planning module
 import shopRulesRoutes from './routes/shopRules';
 import importExportRoutes from './routes/importExport';
 import notificationsRoutes from './routes/notifications';
 import webhooksRoutes from './routes/webhooks';
 import multiYearPlanningRoutes from './routes/multiYearPlanning';
 import apiKeysRoutes from './routes/apiKeys';
-import masterPlanWizardRoutes from './routes/masterPlanWizard';
+// REMOVED: masterPlanWizardRoutes - replaced by Car Flow Planning module
+import carFlowRoutes from './routes/carFlow';
 import publicApiV1 from './routes/api/v1';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
@@ -80,14 +81,15 @@ app.use('/api/audit', apiRateLimit);
 app.use('/api/permissions', apiRateLimit);
 app.use('/api/sop', apiRateLimit);
 app.use('/api/lease-qualification', apiRateLimit);
-app.use('/api/masterplans', apiRateLimit);
+// REMOVED: app.use('/api/masterplans', apiRateLimit);
 app.use('/api/shop-rules', apiRateLimit);
 app.use('/api/import-export', apiRateLimit);
 app.use('/api/notifications', apiRateLimit);
 app.use('/api/webhooks', apiRateLimit);
 app.use('/api/multi-year-planning', apiRateLimit);
 app.use('/api/api-keys', apiRateLimit);
-app.use('/api/master-plan-wizard', apiRateLimit);
+// REMOVED: app.use('/api/master-plan-wizard', apiRateLimit);
+app.use('/api/car-flow', apiRateLimit);
 app.use('/api/v1', apiRateLimit);
 
 // Routes
@@ -103,14 +105,15 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api/sop', sopRoutes);
 app.use('/api/lease-qualification', leaseQualificationRoutes);
-app.use('/api/masterplans', masterPlansRoutes);
+// REMOVED: app.use('/api/masterplans', masterPlansRoutes);
 app.use('/api/shop-rules', shopRulesRoutes);
 app.use('/api/import-export', importExportRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/multi-year-planning', multiYearPlanningRoutes);
 app.use('/api/api-keys', apiKeysRoutes);
-app.use('/api/master-plan-wizard', masterPlanWizardRoutes);
+// REMOVED: app.use('/api/master-plan-wizard', masterPlanWizardRoutes);
+app.use('/api/car-flow', carFlowRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);
