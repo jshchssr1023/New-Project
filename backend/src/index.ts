@@ -5,7 +5,7 @@ import { createServer } from 'http';
 import { prisma } from './services/db';
 import logger from './utils/logger';
 import { cleanupExpiredTokens } from './middleware/auth';
-import { cleanupRateLimitEntries, loginRateLimit, apiRateLimit } from './middleware/rateLimit';
+import { cleanupRateLimitEntries, loginRateLimit, apiRateLimit, initializeRateLimiter } from './middleware/rateLimit';
 import authRoutes from './routes/auth';
 import carsRoutes from './routes/cars';
 import shopsRoutes from './routes/shops';
@@ -149,6 +149,13 @@ function startCleanupJobs() {
 httpServer.listen(PORT, async () => {
   logger.info('Chronos Scheduler API started', { port: PORT });
   logger.info('WebSocket server ready', { port: PORT });
+
+  // Initialize rate limiter (check database availability)
+  try {
+    await initializeRateLimiter();
+  } catch (error) {
+    logger.error('Failed to initialize rate limiter', error);
+  }
 
   // Start the scheduler service for scheduled reports
   try {

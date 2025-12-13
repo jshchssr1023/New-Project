@@ -760,6 +760,12 @@ router.post('/plans', async (req: AuthenticatedRequest, res: Response) => {
  * POST /api/car-flow/plans/bulk
  * Create multiple Car Flow Plan entries directly (skip scenario)
  * This is the main endpoint for "Plan Selected Cars" functionality
+ *
+ * Includes comprehensive validation:
+ * - Tank car → tank-qualified shop validation
+ * - Capacity checking
+ * - Conflict detection with override option
+ * - Atomic transaction for reliability
  */
 router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -768,52 +774,210 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
 
     if (!Array.isArray(assignments) || assignments.length === 0) {
       return res.status(400).json({
-        message: 'assignments array is required with at least one entry'
+        success: false,
+        message: 'assignments array is required with at least one entry',
+        code: 'INVALID_INPUT'
       });
     }
 
     // Validate all assignments have required fields
+    const missingFieldErrors: { carId?: string; error: string; code: string }[] = [];
     for (const a of assignments) {
       if (!a.carId || !a.shopId || !a.plannedMonth || !a.plannedYear) {
-        return res.status(400).json({
-          message: 'Each assignment must have carId, shopId, plannedMonth, and plannedYear'
+        missingFieldErrors.push({
+          carId: a.carId,
+          error: 'Missing required fields: carId, shopId, plannedMonth, or plannedYear',
+          code: 'MISSING_FIELDS'
         });
       }
     }
 
-    const carIds = assignments.map((a: { carId: string }) => a.carId);
-
-    // Check for existing active plans
-    const existingPlans = await prisma.carFlowPlan.findMany({
-      where: {
-        carId: { in: carIds },
-        status: { not: 'Cancelled' }
-      },
-      include: {
-        car: { select: { railcarNumber: true } },
-        shop: { select: { name: true, city: true } }
-      }
-    });
-
-    if (existingPlans.length > 0 && !overrideConflicts) {
-      // Return conflicts for user to decide
-      const conflicts = existingPlans.map(p => ({
-        carId: p.carId,
-        railcarNumber: p.car.railcarNumber,
-        existingShop: `${p.shop.name}, ${p.shop.city}`,
-        existingMonth: `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}`,
-        status: p.status
-      }));
-
-      return res.json({
+    if (missingFieldErrors.length > 0) {
+      return res.status(400).json({
         success: false,
-        message: 'Some cars already have active plans',
-        conflicts,
-        allowOverride: true
+        message: 'Some assignments are missing required fields',
+        errors: missingFieldErrors,
+        code: 'INVALID_INPUT'
       });
     }
 
-    // If overriding, cancel existing plans
+    const carIds = assignments.map((a: { carId: string }) => a.carId);
+    const shopIds = [...new Set(assignments.map((a: { shopId: string }) => a.shopId))];
+
+    // Pre-fetch all data needed for validation
+    const [cars, shops, existingPlans, sopCommitments] = await Promise.all([
+      prisma.car.findMany({
+        where: { id: { in: carIds }, companyId: req.user!.companyId },
+        select: { id: true, customerId: true, railcarNumber: true, isTankCar: true, carType: true }
+      }),
+      prisma.shop.findMany({
+        where: { id: { in: shopIds }, companyId: req.user!.companyId },
+        select: { id: true, name: true, code: true, city: true, tankQualified: true, capacity: true }
+      }),
+      prisma.carFlowPlan.findMany({
+        where: {
+          carId: { in: carIds },
+          status: { not: 'Cancelled' }
+        },
+        include: {
+          car: { select: { railcarNumber: true } },
+          shop: { select: { name: true, city: true } }
+        }
+      }),
+      prisma.sOPCommitment.findMany({
+        where: {
+          shopId: { in: shopIds },
+          year: { in: [...new Set(assignments.map((a: { plannedYear: number }) => a.plannedYear))] }
+        }
+      })
+    ]);
+
+    const carMap = new Map(cars.map(c => [c.id, c]));
+    const shopMap = new Map(shops.map(s => [s.id, s]));
+    const existingPlanMap = new Map(existingPlans.map(p => [p.carId, p]));
+
+    // Build S&OP commitment lookup
+    const sopMap = new Map<string, typeof sopCommitments[0]>();
+    for (const sop of sopCommitments) {
+      const key = `${sop.shopId}-${sop.year}-${sop.month}`;
+      sopMap.set(key, sop);
+    }
+
+    // Comprehensive validation
+    const validationErrors: {
+      carId: string;
+      railcarNumber?: string;
+      error: string;
+      code: string;
+    }[] = [];
+    const conflicts: {
+      carId: string;
+      railcarNumber: string;
+      existingShop: string;
+      existingMonth: string;
+      status: string;
+    }[] = [];
+    const capacityWarnings: {
+      shopId: string;
+      shopName: string;
+      month: string;
+      currentUsage: number;
+      capacity: number;
+      carCount: number;
+    }[] = [];
+    const validAssignments: typeof assignments = [];
+
+    // Track assignments per shop/month for capacity checking
+    const assignmentCountPerShopMonth = new Map<string, number>();
+    for (const a of assignments) {
+      const key = `${a.shopId}-${a.plannedYear}-${a.plannedMonth}`;
+      assignmentCountPerShopMonth.set(key, (assignmentCountPerShopMonth.get(key) || 0) + 1);
+    }
+
+    for (const assignment of assignments as Array<{
+      carId: string;
+      shopId: string;
+      plannedMonth: number;
+      plannedYear: number;
+      shopReason?: string;
+      notes?: string;
+    }>) {
+      const car = carMap.get(assignment.carId);
+      const shop = shopMap.get(assignment.shopId);
+
+      // Car not found
+      if (!car) {
+        validationErrors.push({
+          carId: assignment.carId,
+          error: 'Car not found or not accessible',
+          code: 'CAR_NOT_FOUND'
+        });
+        continue;
+      }
+
+      // Shop not found
+      if (!shop) {
+        validationErrors.push({
+          carId: assignment.carId,
+          railcarNumber: car.railcarNumber,
+          error: 'Shop not found or not accessible',
+          code: 'SHOP_NOT_FOUND'
+        });
+        continue;
+      }
+
+      // Tank car validation - HARD BLOCK
+      if (car.isTankCar && !shop.tankQualified) {
+        validationErrors.push({
+          carId: assignment.carId,
+          railcarNumber: car.railcarNumber,
+          error: `Tank car ${car.railcarNumber} cannot be assigned to non-tank-qualified shop "${shop.name}" (${shop.code}). Please select a tank-qualified facility.`,
+          code: 'TANK_CAR_INVALID_SHOP'
+        });
+        continue;
+      }
+
+      // Check for existing plan conflict
+      const existingPlan = existingPlanMap.get(assignment.carId);
+      if (existingPlan && !overrideConflicts) {
+        conflicts.push({
+          carId: existingPlan.carId,
+          railcarNumber: existingPlan.car.railcarNumber,
+          existingShop: `${existingPlan.shop.name}, ${existingPlan.shop.city}`,
+          existingMonth: `${existingPlan.plannedYear}-${String(existingPlan.plannedMonth).padStart(2, '0')}`,
+          status: existingPlan.status
+        });
+        continue;
+      }
+
+      // Capacity check - warning only (not blocking)
+      const sopKey = `${assignment.shopId}-${assignment.plannedYear}-${assignment.plannedMonth}`;
+      const sop = sopMap.get(sopKey);
+      if (shop.capacity > 0) {
+        const currentUsage = sop?.currentUsage || 0;
+        const newAssignmentsToThisShopMonth = assignmentCountPerShopMonth.get(sopKey) || 0;
+
+        if (currentUsage + newAssignmentsToThisShopMonth > shop.capacity) {
+          // Check if we already added a warning for this shop/month
+          const existingWarning = capacityWarnings.find(w => w.shopId === shop.id && w.month === sopKey);
+          if (!existingWarning) {
+            capacityWarnings.push({
+              shopId: shop.id,
+              shopName: shop.name,
+              month: `${assignment.plannedYear}-${String(assignment.plannedMonth).padStart(2, '0')}`,
+              currentUsage,
+              capacity: shop.capacity,
+              carCount: newAssignmentsToThisShopMonth
+            });
+          }
+        }
+      }
+
+      validAssignments.push(assignment);
+    }
+
+    // Return conflicts if any exist and not overriding
+    if (conflicts.length > 0 && !overrideConflicts) {
+      return res.json({
+        success: false,
+        message: `${conflicts.length} car(s) already have active plans. Override to replace them.`,
+        conflicts,
+        allowOverride: true,
+        code: 'EXISTING_PLANS_CONFLICT'
+      });
+    }
+
+    // Return hard validation errors (tank cars, missing data)
+    if (validationErrors.length > 0 && validAssignments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'All assignments failed validation',
+        errors: validationErrors,
+        code: 'VALIDATION_FAILED'
+      });
+    }
+
+    // If overriding, cancel existing plans first
     if (existingPlans.length > 0 && overrideConflicts) {
       await prisma.carFlowPlan.updateMany({
         where: {
@@ -841,18 +1005,11 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
       }
     }
 
-    // Get car details for all cars
-    const cars = await prisma.car.findMany({
-      where: { id: { in: carIds } },
-      select: { id: true, customerId: true, railcarNumber: true }
-    });
-    const carMap = new Map(cars.map(c => [c.id, c]));
-
-    // Create all plans in a transaction
+    // Create all valid plans in an atomic transaction
     const result = await prisma.$transaction(async (tx) => {
       const createdPlans = [];
 
-      for (const assignment of assignments as Array<{
+      for (const assignment of validAssignments as Array<{
         carId: string;
         shopId: string;
         plannedMonth: number;
@@ -897,6 +1054,10 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
       }
 
       return createdPlans;
+    }, {
+      // Transaction options for reliability
+      maxWait: 10000, // 10 seconds max wait
+      timeout: 30000, // 30 seconds timeout
     });
 
     // Update shopping status for all affected cars
@@ -914,7 +1075,9 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
         changes: JSON.stringify({
           created: result.length,
           planIds: result.map(p => p.id),
-          carNumbers: result.map(p => p.car.railcarNumber)
+          carNumbers: result.map(p => p.car.railcarNumber),
+          validationErrors: validationErrors.length,
+          capacityWarnings: capacityWarnings.length
         }),
         companyId: req.user!.companyId
       }
@@ -922,13 +1085,39 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
 
     res.status(201).json({
       success: true,
-      message: `Successfully planned ${result.length} cars`,
+      message: `Successfully planned ${result.length} car(s)${validationErrors.length > 0 ? `, ${validationErrors.length} skipped due to validation errors` : ''}`,
       plansCreated: result.length,
-      plans: result
+      plans: result,
+      skipped: validationErrors.length > 0 ? validationErrors : undefined,
+      warnings: capacityWarnings.length > 0 ? capacityWarnings : undefined
     });
   } catch (error) {
     logger.error('Failed to create bulk car flow plans', error as Error);
-    res.status(500).json({ message: 'Failed to create car flow plans' });
+
+    // Provide specific error messages for known error types
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.includes('Unique constraint')) {
+      return res.status(409).json({
+        success: false,
+        message: 'A car is already planned for this month. Please refresh and try again.',
+        code: 'DUPLICATE_PLAN'
+      });
+    }
+
+    if (errorMessage.includes('Foreign key constraint')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid car or shop reference. Please refresh the page and try again.',
+        code: 'INVALID_REFERENCE'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save car flow plans. Please try again.',
+      code: 'INTERNAL_ERROR'
+    });
   }
 });
 

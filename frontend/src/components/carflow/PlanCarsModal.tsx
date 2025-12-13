@@ -106,18 +106,52 @@ export default function PlanCarsModal({
     }
   }, [isOpen, selectedCars, currentMonth, currentYear]);
 
+  // Enhanced error state for detailed validation errors
+  const [validationErrors, setValidationErrors] = useState<{
+    carId: string;
+    railcarNumber?: string;
+    error: string;
+    code: string;
+  }[]>([]);
+  const [capacityWarnings, setCapacityWarnings] = useState<{
+    shopId: string;
+    shopName: string;
+    month: string;
+    currentUsage: number;
+    capacity: number;
+    carCount: number;
+  }[]>([]);
+
   // Create plans mutation - saves directly to master schedule
   const saveMutation = useMutation({
     mutationFn: async (data: { assignments: BulkPlanAssignment[]; overrideConflicts: boolean }) => {
       return await carFlowPlanApi.bulkCreate(data.assignments, data.overrideConflicts);
     },
     onSuccess: (response) => {
+      // Reset validation state
+      setValidationErrors([]);
+      setCapacityWarnings([]);
+
       if (!response.success && response.conflicts && response.conflicts.length > 0) {
         // Show conflicts for user to decide
         setConflicts(response.conflicts);
         setStep('conflicts');
+      } else if (!response.success && response.errors && response.errors.length > 0) {
+        // Show validation errors (tank car issues, etc.)
+        setValidationErrors(response.errors);
+        setError(`${response.errors.length} assignment(s) failed validation`);
+        setStep('assign');
       } else {
         // Success - plans created
+        // Store any warnings
+        if (response.warnings && response.warnings.length > 0) {
+          setCapacityWarnings(response.warnings);
+        }
+        // Store any skipped assignments
+        if (response.skipped && response.skipped.length > 0) {
+          setValidationErrors(response.skipped);
+        }
+
         queryClient.invalidateQueries({ queryKey: ['car-flow-plans'] });
         queryClient.invalidateQueries({ queryKey: ['cars'] });
         queryClient.invalidateQueries({ queryKey: ['capacity'] });
@@ -128,8 +162,17 @@ export default function PlanCarsModal({
         }, 2000);
       }
     },
-    onError: (err: Error) => {
-      setError(err.message || 'Failed to save to schedule');
+    onError: (err: any) => {
+      // Try to extract detailed error information
+      const errorData = err.response?.data;
+      if (errorData?.errors && Array.isArray(errorData.errors)) {
+        setValidationErrors(errorData.errors);
+        setError(errorData.message || 'Validation failed');
+      } else if (errorData?.message) {
+        setError(errorData.message);
+      } else {
+        setError(err.message || 'Failed to save to schedule');
+      }
       setStep('assign');
     },
   });
@@ -530,9 +573,52 @@ export default function PlanCarsModal({
 
                         {/* Error Display */}
                         {error && (
-                          <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
-                            <ExclamationTriangleIcon className="h-5 w-5 text-red-500 flex-shrink-0" />
-                            <p className="text-sm text-red-700">{error}</p>
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <div className="flex items-start gap-2">
+                              <ExclamationTriangleIcon className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-red-700">{error}</p>
+                                {/* Detailed validation errors */}
+                                {validationErrors.length > 0 && (
+                                  <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                                    {validationErrors.map((err, idx) => (
+                                      <div
+                                        key={idx}
+                                        className={`text-xs p-2 rounded ${
+                                          err.code === 'TANK_CAR_INVALID_SHOP'
+                                            ? 'bg-red-100 text-red-800 border border-red-200'
+                                            : 'bg-amber-50 text-amber-800 border border-amber-200'
+                                        }`}
+                                      >
+                                        <span className="font-mono font-medium">{err.railcarNumber || err.carId}</span>
+                                        <span className="ml-2">{err.error}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Capacity Warnings */}
+                        {capacityWarnings.length > 0 && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                            <div className="flex items-start gap-2">
+                              <ExclamationTriangleIcon className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-amber-700">Capacity Warnings</p>
+                                <div className="mt-2 space-y-1">
+                                  {capacityWarnings.map((warning, idx) => (
+                                    <div key={idx} className="text-xs text-amber-800">
+                                      <span className="font-medium">{warning.shopName}</span>
+                                      <span> ({warning.month}): </span>
+                                      <span>Adding {warning.carCount} cars exceeds capacity ({warning.currentUsage + warning.carCount}/{warning.capacity})</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>

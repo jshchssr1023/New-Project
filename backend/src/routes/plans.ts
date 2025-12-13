@@ -703,9 +703,9 @@ router.post('/schedule-cars-bulk', async (req: AuthRequest, res: Response) => {
   }
 });
 
-// Bulk add assignments to plan
+// Bulk add assignments to plan with atomicity guarantees
 router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => {
-  const { assignments } = req.body;
+  const { assignments, overrideConflicts = false } = req.body;
 
   if (!Array.isArray(assignments) || assignments.length === 0) {
     res.status(400).json({ message: 'No assignments provided' });
@@ -725,44 +725,156 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
       return;
     }
 
+    // Pre-fetch all cars and shops for validation
+    const carIds = assignments.map((a: { carId: string }) => a.carId);
+    const shopIds = [...new Set(assignments.map((a: { shopId: string }) => a.shopId))];
+
+    const [cars, shops, existingAssignments] = await Promise.all([
+      prisma.car.findMany({
+        where: { id: { in: carIds }, companyId: req.user!.companyId },
+        select: { id: true, railcarNumber: true, isTankCar: true },
+      }),
+      prisma.shop.findMany({
+        where: { id: { in: shopIds }, companyId: req.user!.companyId },
+        select: { id: true, name: true, code: true, tankQualified: true, capacity: true },
+      }),
+      prisma.planAssignment.findMany({
+        where: {
+          planId: req.params.id,
+          carId: { in: carIds },
+        },
+        select: { carId: true, scheduledMonth: true },
+      }),
+    ]);
+
+    const carMap = new Map(cars.map(c => [c.id, c]));
+    const shopMap = new Map(shops.map(s => [s.id, s]));
+    const existingSet = new Set(existingAssignments.map(a => `${a.carId}-${a.scheduledMonth}`));
+
+    // Validate all assignments before creating any
+    const validationErrors: { carId: string; railcarNumber?: string; error: string; code: string }[] = [];
+    const validAssignments: typeof assignments = [];
+
+    for (const assignment of assignments) {
+      const car = carMap.get(assignment.carId);
+      const shop = shopMap.get(assignment.shopId);
+
+      if (!car) {
+        validationErrors.push({
+          carId: assignment.carId,
+          error: 'Car not found or not accessible',
+          code: 'CAR_NOT_FOUND',
+        });
+        continue;
+      }
+
+      if (!shop) {
+        validationErrors.push({
+          carId: assignment.carId,
+          railcarNumber: car.railcarNumber,
+          error: 'Shop not found or not accessible',
+          code: 'SHOP_NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Tank car validation - hard block
+      if (car.isTankCar && !shop.tankQualified) {
+        validationErrors.push({
+          carId: assignment.carId,
+          railcarNumber: car.railcarNumber,
+          error: `Tank car ${car.railcarNumber} cannot be assigned to non-tank-qualified shop ${shop.name} (${shop.code})`,
+          code: 'TANK_CAR_INVALID_SHOP',
+        });
+        continue;
+      }
+
+      // Check for existing assignment
+      const existingKey = `${assignment.carId}-${assignment.scheduledMonth}`;
+      if (existingSet.has(existingKey) && !overrideConflicts) {
+        validationErrors.push({
+          carId: assignment.carId,
+          railcarNumber: car.railcarNumber,
+          error: `Car ${car.railcarNumber} already has an assignment for ${assignment.scheduledMonth}`,
+          code: 'DUPLICATE_ASSIGNMENT',
+        });
+        continue;
+      }
+
+      validAssignments.push(assignment);
+    }
+
+    // If there are validation errors and we have no valid assignments, return errors
+    if (validationErrors.length > 0 && validAssignments.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: 'All assignments failed validation',
+        failed: validationErrors.length,
+        errors: validationErrors,
+      });
+      return;
+    }
+
     const results = {
       success: 0,
-      failed: 0,
-      errors: [] as { carId: string; error: string }[],
+      failed: validationErrors.length,
+      errors: validationErrors,
+      created: [] as { id: string; carId: string; shopId: string; scheduledMonth: string }[],
     };
 
-    // Use transaction for bulk operation
+    // Use transaction for atomicity - all or nothing for valid assignments
     await prisma.$transaction(async (tx) => {
-      for (const assignment of assignments) {
-        try {
-          await tx.planAssignment.create({
-            data: {
+      // Delete existing assignments if overriding
+      if (overrideConflicts) {
+        const existingCarMonths = validAssignments.map((a: { carId: string; scheduledMonth: string }) => ({
+          carId: a.carId,
+          scheduledMonth: a.scheduledMonth,
+        }));
+
+        for (const { carId, scheduledMonth } of existingCarMonths) {
+          await tx.planAssignment.deleteMany({
+            where: {
               planId: req.params.id,
-              carId: assignment.carId,
-              shopId: assignment.shopId,
-              scheduledMonth: assignment.scheduledMonth,
-              estimatedCost: assignment.estimatedCost || 0,
-              estimatedDuration: assignment.estimatedDuration || 14,
-              status: assignment.status || 'pending',
+              carId,
+              scheduledMonth,
             },
-          });
-          results.success++;
-        } catch (error: unknown) {
-          results.failed++;
-          const message = error instanceof Error ? error.message : 'Failed to create assignment';
-          results.errors.push({
-            carId: assignment.carId,
-            error: message,
           });
         }
       }
+
+      // Create all valid assignments
+      for (const assignment of validAssignments) {
+        const created = await tx.planAssignment.create({
+          data: {
+            planId: req.params.id,
+            carId: assignment.carId,
+            shopId: assignment.shopId,
+            scheduledMonth: assignment.scheduledMonth,
+            estimatedCost: assignment.estimatedCost || 0,
+            estimatedDuration: assignment.estimatedDuration || 14,
+            status: assignment.status || 'pending',
+          },
+        });
+
+        results.success++;
+        results.created.push({
+          id: created.id,
+          carId: created.carId,
+          shopId: created.shopId,
+          scheduledMonth: created.scheduledMonth,
+        });
+      }
+    }, {
+      // Transaction options for improved reliability
+      maxWait: 10000, // 10 seconds max wait
+      timeout: 30000, // 30 seconds timeout
     });
 
     // Emit WebSocket event for real-time collaboration (outside transaction)
     if (results.success > 0) {
       websocketService.emitBulkAssignmentsCreated(
         req.user!.companyId,
-        assignments.slice(0, results.success).map((a: { carId: string; shopId: string; scheduledMonth: string }) => ({
+        results.created.map(a => ({
           planId: req.params.id,
           carId: a.carId,
           shopId: a.shopId,
@@ -773,12 +885,38 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
     }
 
     res.json({
+      success: results.failed === 0,
       message: `Created ${results.success} assignments${results.failed > 0 ? `, ${results.failed} failed` : ''}`,
       ...results,
     });
   } catch (error) {
     logger.error('Bulk assignment error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('Unique constraint')) {
+        res.status(409).json({
+          success: false,
+          message: 'Duplicate assignment conflict - one or more cars already assigned for the specified month',
+          code: 'DUPLICATE_ASSIGNMENT_CONFLICT',
+        });
+        return;
+      }
+      if (error.message.includes('Foreign key constraint')) {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid car or shop reference',
+          code: 'INVALID_REFERENCE',
+        });
+        return;
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save assignments. Please try again.',
+      code: 'INTERNAL_ERROR',
+    });
   }
 });
 
