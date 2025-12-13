@@ -342,6 +342,8 @@ model PlanAssignment {
   @@index([scheduledMonth])
   @@index([status])
   @@index([shopId, scheduledMonth])
+  // Composite index for planning grid performance (primary query optimization)
+  @@index([planId, scheduledMonth])
 }
 
 // =============================================================================

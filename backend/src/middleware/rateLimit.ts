@@ -60,6 +60,79 @@ function defaultKeyGenerator(req: Request): string {
   return `ip:${ip}`;
 }
 
+// In-memory fallback rate limiter when database is unavailable
+const inMemoryRateLimits = new Map<string, { count: number; windowStart: number }>();
+let dbAvailable = true;
+let dbCheckPending = false;
+
+/**
+ * Periodically check if database is available
+ */
+async function checkDbAvailability(): Promise<boolean> {
+  if (dbCheckPending) return dbAvailable;
+  dbCheckPending = true;
+
+  try {
+    // Try a simple query to check if the table exists
+    await prisma.rateLimitEntry.findFirst({ take: 1 });
+    dbAvailable = true;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('no such table') || message.includes('does not exist')) {
+      logger.warn('RateLimitEntry table not found - using in-memory rate limiting. Run "npx prisma db push" to create the table.');
+      dbAvailable = false;
+    } else {
+      // Other errors - still try to use DB
+      dbAvailable = true;
+    }
+  } finally {
+    dbCheckPending = false;
+  }
+
+  return dbAvailable;
+}
+
+/**
+ * Clean up old in-memory rate limit entries
+ */
+function cleanupInMemoryEntries(windowMs: number): void {
+  const now = Date.now();
+  for (const [key, value] of inMemoryRateLimits.entries()) {
+    if (now - value.windowStart > windowMs * 2) {
+      inMemoryRateLimits.delete(key);
+    }
+  }
+}
+
+/**
+ * In-memory rate limit check (fallback when DB unavailable)
+ */
+function checkRateLimitInMemory(
+  identifier: string,
+  endpoint: string,
+  windowMs: number,
+  maxRequests: number
+): { allowed: boolean; currentCount: number; remaining: number } {
+  const key = `${identifier}:${endpoint}`;
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+
+  const existing = inMemoryRateLimits.get(key);
+
+  // New window or no existing entry
+  if (!existing || existing.windowStart !== windowStart) {
+    inMemoryRateLimits.set(key, { count: 1, windowStart });
+    return { allowed: true, currentCount: 1, remaining: maxRequests - 1 };
+  }
+
+  // Increment existing entry
+  existing.count++;
+  const allowed = existing.count <= maxRequests;
+  const remaining = Math.max(0, maxRequests - existing.count);
+
+  return { allowed, currentCount: existing.count, remaining };
+}
+
 /**
  * Check and update rate limit in database
  */
@@ -67,8 +140,22 @@ async function checkRateLimitInDb(
   identifier: string,
   endpoint: string,
   windowStart: Date,
+  windowMs: number,
   maxRequests: number
 ): Promise<{ allowed: boolean; currentCount: number; remaining: number }> {
+  // Check if DB is available
+  if (!dbAvailable) {
+    // Try to reconnect periodically (every 60 seconds)
+    const lastCheck = (global as any).__rateLimitDbLastCheck || 0;
+    if (Date.now() - lastCheck > 60000) {
+      (global as any).__rateLimitDbLastCheck = Date.now();
+      checkDbAvailability().catch(() => {}); // Fire and forget
+    }
+
+    // Use in-memory fallback
+    return checkRateLimitInMemory(identifier, endpoint, windowMs, maxRequests);
+  }
+
   try {
     // Use upsert to atomically check and increment
     const result = await prisma.rateLimitEntry.upsert({
@@ -94,11 +181,20 @@ async function checkRateLimitInDb(
     const remaining = Math.max(0, maxRequests - result.requestCount);
 
     return { allowed, currentCount: result.requestCount, remaining };
-  } catch (error) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    // If table doesn't exist, switch to in-memory mode
+    if (message.includes('no such table') || message.includes('does not exist')) {
+      logger.warn('RateLimitEntry table not found - switching to in-memory rate limiting');
+      dbAvailable = false;
+      return checkRateLimitInMemory(identifier, endpoint, windowMs, maxRequests);
+    }
+
     logger.error('Rate limit check failed', error);
-    // SECURITY: Fail closed - deny requests when rate limit check fails
-    // This prevents potential DoS bypasses through database errors
-    return { allowed: false, currentCount: maxRequests, remaining: 0 };
+    // For other errors, allow the request (fail open for transient DB issues)
+    // but log for monitoring
+    return { allowed: true, currentCount: 0, remaining: maxRequests };
   }
 }
 
@@ -123,8 +219,14 @@ export function createRateLimit(config: RateLimitConfig) {
         identifier,
         endpoint,
         windowStart,
+        windowMs,
         maxRequests
       );
+
+      // Periodically clean up in-memory entries
+      if (Math.random() < 0.01) { // 1% chance per request
+        cleanupInMemoryEntries(windowMs);
+      }
 
       // Set rate limit headers
       const resetTime = new Date(windowStart.getTime() + windowMs);
@@ -199,11 +301,27 @@ export async function cleanupRateLimitEntries(olderThanMs: number = 3600000): Pr
   }
 }
 
+/**
+ * Initialize rate limiter - check database availability
+ * Call this on server startup
+ */
+export async function initializeRateLimiter(): Promise<void> {
+  logger.info('Initializing rate limiter...');
+  const isDbAvailable = await checkDbAvailability();
+  if (isDbAvailable) {
+    logger.info('Rate limiter using database storage');
+  } else {
+    logger.warn('Rate limiter using in-memory storage (database table missing)');
+    logger.warn('Run "npx prisma db push" to enable database-backed rate limiting');
+  }
+}
+
 export default {
   createRateLimit,
   loginRateLimit,
   apiRateLimit,
   strictRateLimit,
   cleanupRateLimitEntries,
+  initializeRateLimiter,
   RATE_LIMIT_CONFIGS,
 };
