@@ -117,7 +117,7 @@ export default function Layout() {
                 <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-steel-800 px-6 pb-4">
                   <div className="flex h-20 shrink-0 items-center justify-center">
                     <img
-                      src="/images/chronos-logo.svg"
+                      src="/images/chronos-logo.png"
                       alt="Chronos"
                       className="h-12 w-auto"
                     />
@@ -164,7 +164,7 @@ export default function Layout() {
         <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-steel-800 px-6 pb-4">
           <div className="flex h-20 shrink-0 items-center justify-center">
             <img
-              src="/images/chronos-logo.svg"
+              src="/images/chronos-logo.png"
               alt="Chronos"
               className="h-16 w-auto"
             />
@@ -235,7 +235,7 @@ export default function Layout() {
             <div className="flex items-center gap-x-4 lg:gap-x-6">
               {/* Logo in top right */}
               <img
-                src="/images/chronos-logo.svg"
+                src="/images/chronos-logo.png"
                 alt="Chronos"
                 className="h-8 w-auto"
               />
