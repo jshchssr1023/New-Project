@@ -935,7 +935,7 @@ async function main() {
   await prisma.leaseContract.deleteMany();
 
   // S&OP tables
-  await prisma.sOPAssignment.deleteMany();
+  await prisma.sOPCommitment.deleteMany();
   await prisma.shopCapacitySlot.deleteMany();
 
   // Core planning tables
