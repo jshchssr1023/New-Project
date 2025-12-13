@@ -49,7 +49,7 @@ interface CarImportData {
   buildYear: number | null;
   qualificationType: string;
   tankQualified: boolean;
-  tankQualDueDate: Date | null;
+  tankQualification: Date | null;
   performScheduled: boolean;
   planStatus: string;
   // Additional fields from extended CSV
@@ -97,7 +97,7 @@ const OPTIONAL_HEADERS: Record<string, string[]> = {
   'buildYear': ['build yr', 'build year', 'buildyr', 'built', 'year built', 'mfg year'],
   'qualificationType': ['qual type', 'qualification type', 'qualtype', 'full/partial qual'],
   'tankQualified': ['tank qual', 'tank qualified', 'tankqual', 'qualified'],
-  'tankQualDueDate': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
+  'tankQualification': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
   'performScheduled': ['perf sched', 'performance scheduled', 'scheduled', 'perform scheduled'],
   'planStatus': ['plan status', 'planstatus', 'status', 'planning status'],
   'currentLocation': ['location', 'current location', 'currentlocation', 'city'],
@@ -570,12 +570,12 @@ async function importCarsFromCSV(
         const buildYear = parseIntSafe(getField(record, 'buildYear'));
         const qualificationType = getField(record, 'qualificationType');
         const tankQualified = parseBoolean(getField(record, 'tankQualified'));
-        const tankQualDueDate = parseDate(getField(record, 'tankQualDueDate'));
+        const tankQualification = parseDate(getField(record, 'tankQualification'));
         const performScheduled = parseBoolean(getField(record, 'performScheduled'));
         const planStatus = getField(record, 'planStatus');
         const currentLocation = getField(record, 'currentLocation') || locations[Math.floor(Math.random() * locations.length)];
         const homeRegion = getField(record, 'homeRegion') || regions[Math.floor(Math.random() * regions.length)];
-        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualDueDate ? 'qualification' : '');
+        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualification ? 'qualification' : '');
         const projectedCost = parseFloatSafe(getField(record, 'projectedCost'));
         const notes = getField(record, 'notes');
 
@@ -598,7 +598,7 @@ async function importCarsFromCSV(
           daysInShop: 0,
           shopEntryDate: null,
           lastServiceDate: null,
-          nextServiceDue: tankQualDueDate,
+          nextServiceDue: tankQualification,
           notes,
           contractNumber,
           contractExpiration,
@@ -607,7 +607,7 @@ async function importCarsFromCSV(
           buildYear,
           qualificationType,
           tankQualified,
-          tankQualDueDate,
+          tankQualification,
           performScheduled,
           planStatus,
         };
@@ -791,15 +791,15 @@ async function generateRandomCars(
     const performScheduled = Math.random() > 0.7;
     const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
 
-    let tankQualDueDate: Date | null = null;
+    let tankQualification: Date | null = null;
     if (isTankCar) {
       const qualRand = Math.random();
       if (qualRand < 0.2) {
-        tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
+        tankQualification = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
       } else if (qualRand < 0.5) {
-        tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
+        tankQualification = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
       } else {
-        tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
+        tankQualification = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
       }
     }
 
@@ -832,7 +832,7 @@ async function generateRandomCars(
       buildYear,
       qualificationType,
       tankQualified,
-      tankQualDueDate,
+      tankQualification,
       performScheduled,
       planStatus,
     };
@@ -934,12 +934,8 @@ async function main() {
   await prisma.leaseQualificationEntry.deleteMany();
   await prisma.leaseContract.deleteMany();
 
-  // MasterPlan tables (delete commitments first due to FK)
-  await prisma.masterPlanCommitment.deleteMany();
-  await prisma.masterPlan.deleteMany();
-
   // S&OP tables
-  await prisma.sOPAssignment.deleteMany();
+  await prisma.sOPCommitment.deleteMany();
   await prisma.shopCapacitySlot.deleteMany();
 
   // Core planning tables
@@ -1454,109 +1450,6 @@ async function main() {
   }
 
   console.log(`✓ Created ${capacitySlotCount} shop capacity slots`);
-
-  // ==========================================================================
-  // MASTER PLAN SEED DATA
-  // ==========================================================================
-  // Create an approved MasterPlan with 3 sample commitments
-  // This demonstrates the MasterPlan workflow for the planning team
-
-  // Get the first 3 cars, shops, and customers for the sample commitments
-  const sampleCars = cars.slice(0, 3);
-  const sampleShops = shops.slice(0, 3);
-  const sampleCustomers = customerRecords.slice(0, 3);
-
-  // Define the plan period (next fiscal year)
-  const currentYear = new Date().getFullYear();
-  const planFiscalYear = currentYear + 1;
-  const planValidFrom = new Date(`${planFiscalYear}-01-01T00:00:00Z`);
-  const planValidTo = new Date(`${planFiscalYear}-12-31T23:59:59Z`);
-
-  // Create the MasterPlan
-  const masterPlan = await prisma.masterPlan.create({
-    data: {
-      id: uuidv4(),
-      companyId: company.id,
-      planName: `${planFiscalYear} Qualification Plan – Final v1`,
-      fiscalYear: planFiscalYear,
-      version: 1,
-      status: 'approved', // Approved but not yet active
-      baseScenarioId: scenario.id, // Link to the sample scenario created earlier
-      approvedAt: new Date(),
-      approvedById: admin.id,
-      validFrom: planValidFrom,
-      validTo: planValidTo,
-    },
-  });
-
-  console.log(`✓ Created MasterPlan: ${masterPlan.planName}`);
-
-  // Create 3 sample MasterPlanCommitments
-  // These represent committed shop visits for specific cars
-  const commitmentData = [
-    {
-      carIndex: 0,
-      shopIndex: 0,
-      customerIndex: 0,
-      scheduledMonth: `${planFiscalYear}-03`,
-      workTypes: ['qualification'],
-      priority: 2, // HIGH
-      estimatedCost: 18500,
-      notes: 'Annual tank qualification due - priority customer',
-    },
-    {
-      carIndex: 1,
-      shopIndex: 1,
-      customerIndex: 1,
-      scheduledMonth: `${planFiscalYear}-04`,
-      workTypes: ['qualification', 'repair'],
-      priority: 3, // MEDIUM
-      estimatedCost: 25000,
-      notes: 'Bundled qualification and minor repair work',
-    },
-    {
-      carIndex: 2,
-      shopIndex: 2,
-      customerIndex: 2,
-      scheduledMonth: `${planFiscalYear}-06`,
-      workTypes: ['assignment'],
-      priority: 4, // LOW
-      estimatedCost: 12000,
-      notes: 'Assignment work for lease transition',
-    },
-  ];
-
-  for (const data of commitmentData) {
-    const car = sampleCars[data.carIndex];
-    const shop = sampleShops[data.shopIndex];
-    const customer = sampleCustomers[data.customerIndex];
-
-    // Calculate planned dates within the scheduled month
-    const [year, month] = data.scheduledMonth.split('-').map(Number);
-    const plannedArrival = new Date(year, month - 1, 5); // 5th of the month
-    const plannedRelease = new Date(year, month - 1, 19); // 19th of the month (14 days later)
-
-    await prisma.masterPlanCommitment.create({
-      data: {
-        id: uuidv4(),
-        masterPlanId: masterPlan.id,
-        carId: car.id,
-        shopId: shop.id,
-        customerId: customer.id,
-        scheduledMonth: data.scheduledMonth,
-        plannedArrival,
-        plannedRelease,
-        reasonsShopped: JSON.stringify(data.workTypes),
-        isBundled: data.workTypes.length > 1,
-        estimatedCost: data.estimatedCost,
-        priority: data.priority,
-        status: 'committed',
-        notes: data.notes,
-      },
-    });
-  }
-
-  console.log(`✓ Created 3 MasterPlanCommitments for ${masterPlan.planName}`);
 
   // ==========================================================================
   // FINAL DATA INTEGRITY TEST PLAN

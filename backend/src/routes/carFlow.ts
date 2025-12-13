@@ -11,7 +11,7 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../services/db';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/auth';
-import { requireRole } from '../middleware/requireAdmin';
+import { requireRoles } from '../middleware/requireAdmin';
 import { createShoppingStatusService, ShoppingStatus } from '../services/shoppingStatusService';
 import logger from '../utils/logger';
 
@@ -1371,7 +1371,7 @@ router.get('/sop-commitments', async (req: AuthenticatedRequest, res: Response) 
  */
 router.post(
   '/sop-commitments',
-  requireRole('admin'),
+  requireRoles('admin'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { shopId, year, month, committedVolume } = req.body;
@@ -1429,7 +1429,7 @@ router.post(
  */
 router.post(
   '/sop-commitments/batch',
-  requireRole('admin'),
+  requireRoles('admin'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { commitments } = req.body;
@@ -1493,7 +1493,7 @@ router.get('/shopping-status/stats', async (req: AuthenticatedRequest, res: Resp
  */
 router.post(
   '/shopping-status/recalculate',
-  requireRole('admin'),
+  requireRoles('admin'),
   async (req: AuthenticatedRequest, res: Response) => {
     try {
       const { carIds } = req.body;
