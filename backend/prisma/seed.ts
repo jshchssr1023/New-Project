@@ -934,10 +934,6 @@ async function main() {
   await prisma.leaseQualificationEntry.deleteMany();
   await prisma.leaseContract.deleteMany();
 
-  // MasterPlan tables (delete commitments first due to FK)
-  await prisma.masterPlanCommitment.deleteMany();
-  await prisma.masterPlan.deleteMany();
-
   // S&OP tables
   await prisma.sOPAssignment.deleteMany();
   await prisma.shopCapacitySlot.deleteMany();
@@ -1454,109 +1450,6 @@ async function main() {
   }
 
   console.log(`✓ Created ${capacitySlotCount} shop capacity slots`);
-
-  // ==========================================================================
-  // MASTER PLAN SEED DATA
-  // ==========================================================================
-  // Create an approved MasterPlan with 3 sample commitments
-  // This demonstrates the MasterPlan workflow for the planning team
-
-  // Get the first 3 cars, shops, and customers for the sample commitments
-  const sampleCars = cars.slice(0, 3);
-  const sampleShops = shops.slice(0, 3);
-  const sampleCustomers = customerRecords.slice(0, 3);
-
-  // Define the plan period (next fiscal year)
-  const currentYear = new Date().getFullYear();
-  const planFiscalYear = currentYear + 1;
-  const planValidFrom = new Date(`${planFiscalYear}-01-01T00:00:00Z`);
-  const planValidTo = new Date(`${planFiscalYear}-12-31T23:59:59Z`);
-
-  // Create the MasterPlan
-  const masterPlan = await prisma.masterPlan.create({
-    data: {
-      id: uuidv4(),
-      companyId: company.id,
-      planName: `${planFiscalYear} Qualification Plan – Final v1`,
-      fiscalYear: planFiscalYear,
-      version: 1,
-      status: 'approved', // Approved but not yet active
-      baseScenarioId: scenario.id, // Link to the sample scenario created earlier
-      approvedAt: new Date(),
-      approvedById: admin.id,
-      validFrom: planValidFrom,
-      validTo: planValidTo,
-    },
-  });
-
-  console.log(`✓ Created MasterPlan: ${masterPlan.planName}`);
-
-  // Create 3 sample MasterPlanCommitments
-  // These represent committed shop visits for specific cars
-  const commitmentData = [
-    {
-      carIndex: 0,
-      shopIndex: 0,
-      customerIndex: 0,
-      scheduledMonth: `${planFiscalYear}-03`,
-      workTypes: ['qualification'],
-      priority: 2, // HIGH
-      estimatedCost: 18500,
-      notes: 'Annual tank qualification due - priority customer',
-    },
-    {
-      carIndex: 1,
-      shopIndex: 1,
-      customerIndex: 1,
-      scheduledMonth: `${planFiscalYear}-04`,
-      workTypes: ['qualification', 'repair'],
-      priority: 3, // MEDIUM
-      estimatedCost: 25000,
-      notes: 'Bundled qualification and minor repair work',
-    },
-    {
-      carIndex: 2,
-      shopIndex: 2,
-      customerIndex: 2,
-      scheduledMonth: `${planFiscalYear}-06`,
-      workTypes: ['assignment'],
-      priority: 4, // LOW
-      estimatedCost: 12000,
-      notes: 'Assignment work for lease transition',
-    },
-  ];
-
-  for (const data of commitmentData) {
-    const car = sampleCars[data.carIndex];
-    const shop = sampleShops[data.shopIndex];
-    const customer = sampleCustomers[data.customerIndex];
-
-    // Calculate planned dates within the scheduled month
-    const [year, month] = data.scheduledMonth.split('-').map(Number);
-    const plannedArrival = new Date(year, month - 1, 5); // 5th of the month
-    const plannedRelease = new Date(year, month - 1, 19); // 19th of the month (14 days later)
-
-    await prisma.masterPlanCommitment.create({
-      data: {
-        id: uuidv4(),
-        masterPlanId: masterPlan.id,
-        carId: car.id,
-        shopId: shop.id,
-        customerId: customer.id,
-        scheduledMonth: data.scheduledMonth,
-        plannedArrival,
-        plannedRelease,
-        reasonsShopped: JSON.stringify(data.workTypes),
-        isBundled: data.workTypes.length > 1,
-        estimatedCost: data.estimatedCost,
-        priority: data.priority,
-        status: 'committed',
-        notes: data.notes,
-      },
-    });
-  }
-
-  console.log(`✓ Created 3 MasterPlanCommitments for ${masterPlan.planName}`);
 
   // ==========================================================================
   // FINAL DATA INTEGRITY TEST PLAN
