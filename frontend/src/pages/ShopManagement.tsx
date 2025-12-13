@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon, Squares2X2Icon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { shopsApi } from '../services/api';
+import { capacityApi } from '../services/carFlowApi';
+import { Slicer, SlicerBar, ShopCard, ShopCardGrid } from '../components/ui';
 import type { Shop } from '../types';
 
-type ViewMode = 'list' | 'network';
+type ViewMode = 'cards' | 'list' | 'network';
 
 const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Canada', 'Mexico'];
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
@@ -51,10 +53,12 @@ export default function ShopManagement() {
   const [viewingShop, setViewingShop] = useState<Shop | null>(null);
   const [regionFilter, setRegionFilter] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<string>('');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
   const [networkFilter, setNetworkFilter] = useState<string>('');
   const [ownershipFilter, setOwnershipFilter] = useState<string>(''); // 'aitx', '3p', or ''
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [capacityData, setCapacityData] = useState<Record<string, any[]>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Get unique networks from shops
@@ -235,8 +239,38 @@ export default function ShopManagement() {
     isAitxInternal: false,
   });
 
+  // Filter shops for card view
+  const filteredShopsForCards = useMemo(() => {
+    let filtered = shops;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(s =>
+        s.name.toLowerCase().includes(query) ||
+        s.code.toLowerCase().includes(query) ||
+        s.city?.toLowerCase().includes(query) ||
+        s.state?.toLowerCase().includes(query)
+      );
+    }
+    if (regionFilter) {
+      filtered = filtered.filter(s => s.region === regionFilter);
+    }
+    if (activeFilter) {
+      filtered = filtered.filter(s => s.isActive === (activeFilter === 'active'));
+    }
+    if (networkFilter) {
+      filtered = filtered.filter(s => s.network === networkFilter);
+    }
+    if (ownershipFilter === 'aitx') {
+      filtered = filtered.filter(s => s.isAitxInternal);
+    } else if (ownershipFilter === '3p') {
+      filtered = filtered.filter(s => !s.isAitxInternal);
+    }
+    return filtered;
+  }, [shops, searchQuery, regionFilter, activeFilter, networkFilter, ownershipFilter]);
+
   useEffect(() => {
     loadShops();
+    loadCapacity();
   }, [regionFilter, activeFilter]);
 
   const loadShops = async () => {
@@ -254,6 +288,28 @@ export default function ShopManagement() {
       console.error('Failed to load shops:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadCapacity = async () => {
+    try {
+      const currentYear = new Date().getFullYear();
+      const data = await capacityApi.get({ year: currentYear });
+      if (data?.capacity) {
+        const capacityMap: Record<string, any[]> = {};
+        data.capacity.forEach((shopCapacity: any) => {
+          capacityMap[shopCapacity.shopId] = Object.entries(shopCapacity.months || {}).map(([month, values]: [string, any]) => ({
+            month: parseInt(month),
+            year: currentYear,
+            committed: values.committed || 0,
+            planned: values.planned || 0,
+            available: values.available || 0,
+          }));
+        });
+        setCapacityData(capacityMap);
+      }
+    } catch (error) {
+      console.error('Failed to load capacity data:', error);
     }
   };
 
@@ -582,98 +638,170 @@ export default function ShopManagement() {
       </div>
 
       {/* View Mode Toggle and Filters */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center space-x-4">
-          {/* View Mode Toggle */}
-          <div className="flex rounded-lg border border-steel-300 overflow-hidden">
-            <button
-              onClick={() => setViewMode('list')}
-              className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'list' ? 'bg-rail-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
-            >
-              <ListBulletIcon className="h-4 w-4 mr-1" />
-              List
-            </button>
-            <button
-              onClick={() => setViewMode('network')}
-              className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'network' ? 'bg-rail-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
-            >
-              <BuildingOffice2Icon className="h-4 w-4 mr-1" />
-              By Network
-            </button>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center space-x-4">
+            {/* View Mode Toggle */}
+            <div className="flex rounded-lg border border-steel-300 overflow-hidden">
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'cards' ? 'bg-crimson-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
+              >
+                <Squares2X2Icon className="h-4 w-4 mr-1" />
+                Cards
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'list' ? 'bg-crimson-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
+              >
+                <ListBulletIcon className="h-4 w-4 mr-1" />
+                List
+              </button>
+              <button
+                onClick={() => setViewMode('network')}
+                className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'network' ? 'bg-crimson-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
+              >
+                <BuildingOffice2Icon className="h-4 w-4 mr-1" />
+                Network
+              </button>
+            </div>
+          </div>
+          <span className="text-sm text-steel-500">
+            {viewMode === 'cards'
+              ? `${filteredShopsForCards.length} shops`
+              : viewMode === 'list'
+                ? `${shops.length} shops`
+                : `${filteredNetworkGroups.length} networks, ${shops.length} shops`}
+          </span>
+        </div>
+
+        {/* Slicer Filter Bar */}
+        <div className="flex items-center gap-4 bg-white p-4 rounded-lg border border-steel-200">
+          {/* Search Input */}
+          <div className="relative flex-1 max-w-sm">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+            <input
+              type="text"
+              placeholder="Search shop name, code, city..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input w-full pl-9 py-2"
+            />
           </div>
 
-          {viewMode === 'list' ? (
-            <>
-              <select
-                value={regionFilter}
-                onChange={(e) => setRegionFilter(e.target.value)}
-                className="input w-40"
-              >
-                <option value="">All Regions</option>
-                {regions.map(region => (
-                  <option key={region} value={region}>{region}</option>
-                ))}
-              </select>
-              <select
-                value={activeFilter}
-                onChange={(e) => setActiveFilter(e.target.value)}
-                className="input w-40"
-              >
-                <option value="">All Status</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </>
-          ) : (
-            <>
-              <select
-                value={ownershipFilter}
-                onChange={(e) => setOwnershipFilter(e.target.value)}
-                className="input w-40"
-              >
-                <option value="">All Ownership</option>
-                <option value="aitx">AITX Owned</option>
-                <option value="3p">3rd Party</option>
-              </select>
-              <select
-                value={networkFilter}
-                onChange={(e) => setNetworkFilter(e.target.value)}
-                className="input w-48"
-              >
-                <option value="">All Networks</option>
-                {uniqueNetworks.map(network => (
-                  <option key={network} value={network}>{network}</option>
-                ))}
-              </select>
-              <div className="flex space-x-2">
-                <button
-                  onClick={expandAllNetworks}
-                  className="text-xs text-rail-600 hover:text-rail-800"
-                >
-                  Expand All
-                </button>
-                <span className="text-steel-300">|</span>
-                <button
-                  onClick={collapseAllNetworks}
-                  className="text-xs text-rail-600 hover:text-rail-800"
-                >
-                  Collapse All
-                </button>
-              </div>
-            </>
+          <SlicerBar>
+            <Slicer
+              label="Region"
+              options={regions.map(r => ({ value: r, label: r }))}
+              value={regionFilter}
+              onChange={(v) => setRegionFilter(v as string)}
+              placeholder="All"
+              size="sm"
+            />
+            <Slicer
+              label="Status"
+              options={[
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ]}
+              value={activeFilter}
+              onChange={(v) => setActiveFilter(v as string)}
+              placeholder="All"
+              size="sm"
+            />
+            <Slicer
+              label="Ownership"
+              options={[
+                { value: 'aitx', label: 'AITX Owned' },
+                { value: '3p', label: '3rd Party' },
+              ]}
+              value={ownershipFilter}
+              onChange={(v) => setOwnershipFilter(v as string)}
+              placeholder="All"
+              size="sm"
+            />
+            <Slicer
+              label="Network"
+              options={uniqueNetworks.map(n => ({ value: n, label: n }))}
+              value={networkFilter}
+              onChange={(v) => setNetworkFilter(v as string)}
+              placeholder="All"
+              size="sm"
+            />
+          </SlicerBar>
+
+          {/* Clear filters */}
+          {(searchQuery || regionFilter || activeFilter || ownershipFilter || networkFilter) && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setRegionFilter('');
+                setActiveFilter('');
+                setOwnershipFilter('');
+                setNetworkFilter('');
+              }}
+              className="text-sm text-crimson-600 hover:text-crimson-700 font-medium"
+            >
+              Clear all
+            </button>
           )}
         </div>
-        <span className="text-sm text-steel-500">
-          {viewMode === 'list'
-            ? `${shops.length} shops`
-            : `${filteredNetworkGroups.length} networks, ${shops.length} shops`}
-        </span>
+
+        {/* Network view controls */}
+        {viewMode === 'network' && (
+          <div className="flex space-x-2">
+            <button
+              onClick={expandAllNetworks}
+              className="text-xs text-crimson-600 hover:text-crimson-800"
+            >
+              Expand All
+            </button>
+            <span className="text-steel-300">|</span>
+            <button
+              onClick={collapseAllNetworks}
+              className="text-xs text-crimson-600 hover:text-crimson-800"
+            >
+              Collapse All
+            </button>
+          </div>
+        )}
       </div>
 
       {isLoading ? (
         <div className="card">
           <p className="text-steel-500">Loading shops...</p>
         </div>
+      ) : viewMode === 'cards' ? (
+        /* Cards View */
+        filteredShopsForCards.length === 0 ? (
+          <div className="card text-center py-12">
+            <p className="text-steel-500">No shops match your filters</p>
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setRegionFilter('');
+                setActiveFilter('');
+                setOwnershipFilter('');
+                setNetworkFilter('');
+              }}
+              className="mt-2 text-crimson-600 hover:text-crimson-800 font-medium"
+            >
+              Clear all filters
+            </button>
+          </div>
+        ) : (
+          <ShopCardGrid columns={3}>
+            {filteredShopsForCards.map((shop) => (
+              <ShopCard
+                key={shop.id}
+                shop={shop}
+                capacityData={capacityData[shop.id] || []}
+                onEdit={handleOpenModal}
+                onDelete={handleDelete}
+              />
+            ))}
+          </ShopCardGrid>
+        )
       ) : viewMode === 'network' ? (
         /* Parent/Child Hierarchy View */
         <div className="space-y-4">

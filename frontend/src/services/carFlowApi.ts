@@ -160,6 +160,33 @@ export const scenarioApi = {
 // CAR FLOW PLANS
 // =============================================================================
 
+// Types for bulk plan creation
+export interface BulkPlanAssignment {
+  carId: string;
+  shopId: string;
+  plannedMonth: number;
+  plannedYear: number;
+  shopReason?: string;
+  notes?: string;
+}
+
+export interface BulkPlanConflict {
+  carId: string;
+  railcarNumber: string;
+  existingShop: string;
+  existingMonth: string;
+  status: string;
+}
+
+export interface BulkPlanResponse {
+  success: boolean;
+  message: string;
+  plansCreated?: number;
+  plans?: CarFlowPlan[];
+  conflicts?: BulkPlanConflict[];
+  allowOverride?: boolean;
+}
+
 export const carFlowPlanApi = {
   /**
    * List Car Flow Plan entries
@@ -180,6 +207,21 @@ export const carFlowPlanApi = {
    */
   create: async (data: CreateCarFlowPlanRequest): Promise<CarFlowPlan> => {
     const response = await apiClient.post<CarFlowPlan>('/car-flow/plans', data);
+    return response.data;
+  },
+
+  /**
+   * Bulk create Car Flow Plan entries (main "Plan Selected Cars" endpoint)
+   * Saves directly to the master schedule - no scenario intermediate step
+   */
+  bulkCreate: async (
+    assignments: BulkPlanAssignment[],
+    overrideConflicts: boolean = false
+  ): Promise<BulkPlanResponse> => {
+    const response = await apiClient.post<BulkPlanResponse>('/car-flow/plans/bulk', {
+      assignments,
+      overrideConflicts
+    });
     return response.data;
   },
 

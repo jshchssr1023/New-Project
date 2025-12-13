@@ -13,3 +13,14 @@ export {
   DashboardSkeleton,
   FormSkeleton,
 } from './LoadingSkeleton';
+
+// Slicers / Filters
+export { default as Slicer, SlicerBar, SlicerGroup } from './Slicer';
+export type { SlicerOption } from './Slicer';
+
+// Car Components
+export { default as CompactCarCard, CompactCarCardGrid } from './CompactCarCard';
+export { default as CarDetailModal } from './CarDetailModal';
+
+// Shop Components
+export { default as ShopCard, ShopCardGrid } from './ShopCard';

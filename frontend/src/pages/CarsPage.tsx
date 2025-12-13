@@ -9,6 +9,7 @@ import {
   FunnelIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { useCars } from '../hooks/useCars';
 import { useCarSelection } from '../contexts/CarSelectionContext';
@@ -20,6 +21,7 @@ import ShoppingStatusBadge, { getShoppingStatus } from '../components/cars/Shopp
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CarCardGridSkeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
+import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal } from '../components/ui';
 import type { Car } from '../types';
 import { carsApi } from '../services/api';
 
@@ -71,6 +73,7 @@ export default function CarsPage() {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isPlanCarsModalOpen, setIsPlanCarsModalOpen] = useState(false);
   const [editingCar, setEditingCar] = useState<Car | null>(null);
+  const [viewingCar, setViewingCar] = useState<Car | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; carId: string | null; isBulk: boolean }>({
     isOpen: false,
     carId: null,
@@ -316,28 +319,72 @@ export default function CarsPage() {
             </div>
           </div>
 
-          {/* Filters */}
-          <CarFilters
-            searchTerm={filters.search || ''}
-            onSearchChange={(value) => updateFilters({ search: value })}
-            statusFilter={filters.status || ''}
-            onStatusChange={(value) => updateFilters({ status: value })}
-            carTypeFilter={filters.carType || ''}
-            onCarTypeChange={(value) => updateFilters({ carType: value })}
-            customerFilter={filters.customer || ''}
-            onCustomerChange={(value) => updateFilters({ customer: value })}
-            reasonFilter={filters.reasonShopped || ''}
-            onReasonChange={(value) => updateFilters({ reasonShopped: value })}
-            shoppingStatusFilter={filters.shoppingStatus}
-            onShoppingStatusChange={(value) => updateFilters({ shoppingStatus: value as any })}
-            qualTypeFilter=""
-            onQualTypeChange={() => {}}
-            customers={filterOptions.customers}
-            carTypeOptions={CAR_TYPE_OPTIONS}
-            reasonOptions={REASON_OPTIONS}
-            totalCount={displayedCars.length}
-            onClearFilters={handleClearAllFilters}
-          />
+          {/* Slicer Filter Bar */}
+          <div className="flex items-center gap-4">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+              <input
+                type="text"
+                placeholder="Search car #, customer, project..."
+                value={filters.search || ''}
+                onChange={(e) => updateFilters({ search: e.target.value })}
+                className="input w-full pl-9 py-2"
+              />
+            </div>
+
+            {/* Slicer Filters */}
+            <SlicerBar>
+              <Slicer
+                label="Car Type"
+                options={CAR_TYPE_OPTIONS.map(t => ({ value: t, label: t }))}
+                value={filters.carType || ''}
+                onChange={(v) => updateFilters({ carType: v as string })}
+                placeholder="All"
+                size="sm"
+              />
+              <Slicer
+                label="Status"
+                options={[
+                  { value: 'available', label: 'Available' },
+                  { value: 'in_service', label: 'In Service' },
+                  { value: 'in_shop', label: 'In Shop' },
+                  { value: 'scheduled', label: 'Scheduled' },
+                  { value: 'retired', label: 'Retired' },
+                ]}
+                value={filters.status || ''}
+                onChange={(v) => updateFilters({ status: v as string })}
+                placeholder="All"
+                size="sm"
+              />
+              <Slicer
+                label="Customer"
+                options={filterOptions.customers.map(c => ({ value: c, label: c }))}
+                value={filters.customer || ''}
+                onChange={(v) => updateFilters({ customer: v as string })}
+                placeholder="All"
+                size="sm"
+              />
+              <Slicer
+                label="Reason"
+                options={REASON_OPTIONS.map(r => ({ value: r, label: r }))}
+                value={filters.reasonShopped || ''}
+                onChange={(v) => updateFilters({ reasonShopped: v as string })}
+                placeholder="All"
+                size="sm"
+              />
+            </SlicerBar>
+
+            {/* Clear Filters */}
+            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonShopped) && (
+              <button
+                onClick={handleClearAllFilters}
+                className="text-sm text-crimson-600 hover:text-crimson-700 font-medium"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
 
           {/* Bulk Actions */}
           {selectedCarIds.size > 0 && (
@@ -374,17 +421,17 @@ export default function CarsPage() {
               </button>
             </div>
           ) : viewMode === 'cards' ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <CompactCarCardGrid columns={5}>
               {displayedCars.map((car) => (
-                <CarCard
+                <CompactCarCard
                   key={car.id}
-                  car={car as any}
+                  car={car}
                   isSelected={selectedCarIds.has(car.id)}
-                  onSelect={toggleSelection}
-                  onViewDetails={(c) => handleOpenForm(c as Car)}
+                  onSelect={() => toggleSelection(car.id)}
+                  onViewDetails={(c) => setViewingCar(c)}
                 />
               ))}
-            </div>
+            </CompactCarCardGrid>
           ) : (
             <TableView
               cars={displayedCars}
@@ -462,9 +509,10 @@ export default function CarsPage() {
             clearSelection();
           }}
           selectedCars={selectedCars}
-          onSuccess={(scenarioId) => {
+          onSuccess={(planCount) => {
             clearSelection();
-            navigate(`/scenarios?id=${scenarioId}`);
+            // Navigate to car flow plans page to see the saved plans
+            navigate('/car-flow?tab=plans');
           }}
         />
       </Suspense>
@@ -483,6 +531,13 @@ export default function CarsPage() {
         confirmText="Delete"
         variant="danger"
         isLoading={isDeleting || isBulkDeleting}
+      />
+
+      {/* Car Detail Modal */}
+      <CarDetailModal
+        isOpen={viewingCar !== null}
+        onClose={() => setViewingCar(null)}
+        car={viewingCar}
       />
     </div>
   );
