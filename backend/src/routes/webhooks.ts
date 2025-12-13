@@ -16,6 +16,80 @@ import logger from '../utils/logger';
 
 const router = Router();
 
+// =============================================================================
+// SECURITY: SSRF Protection - Block internal/private URLs
+// =============================================================================
+const BLOCKED_HOSTNAMES = new Set([
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  '::1',
+  '[::1]',
+  'metadata.google.internal',
+  '169.254.169.254', // AWS/GCP metadata
+  'metadata.internal',
+]);
+
+const PRIVATE_IP_RANGES = [
+  /^10\./,                          // 10.0.0.0/8
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+  /^192\.168\./,                    // 192.168.0.0/16
+  /^127\./,                         // 127.0.0.0/8
+  /^169\.254\./,                    // Link-local
+  /^fc00:/i,                        // IPv6 ULA
+  /^fe80:/i,                        // IPv6 link-local
+];
+
+/**
+ * Validates a webhook URL to prevent SSRF attacks
+ * @returns object with safe boolean and optional reason
+ */
+function isUrlSafeFromSSRF(urlString: string): { safe: boolean; reason?: string } {
+  try {
+    const url = new URL(urlString);
+
+    // Must be HTTPS in production (allow HTTP for development)
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction && url.protocol !== 'https:') {
+      return { safe: false, reason: 'URL must use HTTPS in production' };
+    }
+
+    // Block if protocol is not http(s)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return { safe: false, reason: 'URL must use HTTP or HTTPS protocol' };
+    }
+
+    // Block known internal hostnames
+    const hostname = url.hostname.toLowerCase();
+    if (BLOCKED_HOSTNAMES.has(hostname)) {
+      return { safe: false, reason: 'URL points to blocked hostname' };
+    }
+
+    // Block private IP ranges
+    for (const pattern of PRIVATE_IP_RANGES) {
+      if (pattern.test(hostname)) {
+        return { safe: false, reason: 'URL points to private IP range' };
+      }
+    }
+
+    // Block URLs with credentials
+    if (url.username || url.password) {
+      return { safe: false, reason: 'URL must not contain credentials' };
+    }
+
+    // Block non-standard ports that might indicate internal services
+    const port = url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80);
+    const allowedPorts = [80, 443, 8080, 8443];
+    if (!allowedPorts.includes(port)) {
+      return { safe: false, reason: `Port ${port} is not allowed for webhooks` };
+    }
+
+    return { safe: true };
+  } catch {
+    return { safe: false, reason: 'Invalid URL format' };
+  }
+}
+
 // All routes require admin role
 router.use(authenticateToken);
 router.use(requireRole('admin'));
@@ -64,11 +138,10 @@ router.post('/', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid webhook type. Must be: slack, teams, or custom' });
   }
 
-  // Validate URL format
-  try {
-    new URL(url);
-  } catch {
-    return res.status(400).json({ error: 'Invalid URL format' });
+  // Validate URL format and SSRF protection
+  const urlCheck = isUrlSafeFromSSRF(url);
+  if (!urlCheck.safe) {
+    return res.status(400).json({ error: urlCheck.reason || 'Invalid URL' });
   }
 
   // Validate categories
@@ -123,12 +196,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
   }
 
-  // Validate URL if provided
+  // Validate URL if provided (with SSRF protection)
   if (url) {
-    try {
-      new URL(url);
-    } catch {
-      return res.status(400).json({ error: 'Invalid URL format' });
+    const urlCheck = isUrlSafeFromSSRF(url);
+    if (!urlCheck.safe) {
+      return res.status(400).json({ error: urlCheck.reason || 'Invalid URL' });
     }
   }
 
@@ -246,11 +318,10 @@ router.post('/test-url', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Type and URL are required' });
   }
 
-  // Validate URL
-  try {
-    new URL(url);
-  } catch {
-    return res.status(400).json({ error: 'Invalid URL format' });
+  // Validate URL with SSRF protection
+  const urlCheck = isUrlSafeFromSSRF(url);
+  if (!urlCheck.safe) {
+    return res.status(400).json({ error: urlCheck.reason || 'Invalid URL' });
   }
 
   const testConfig: WebhookConfig = {

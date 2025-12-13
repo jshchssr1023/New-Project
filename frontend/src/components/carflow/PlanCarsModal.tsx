@@ -539,16 +539,29 @@ export default function PlanCarsModal({
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button onClick={onClose} className="btn-secondary">
+                      <button
+                        onClick={onClose}
+                        disabled={createMutation.isPending}
+                        className="btn-secondary disabled:opacity-50"
+                      >
                         Cancel
                       </button>
                       <button
                         onClick={handleCreate}
-                        disabled={assignedCount === 0 || !scenarioName.trim()}
-                        className="btn-primary disabled:opacity-50"
+                        disabled={assignedCount === 0 || !scenarioName.trim() || createMutation.isPending}
+                        className="btn-primary disabled:opacity-50 flex items-center"
                       >
-                        <BeakerIcon className="h-4 w-4 mr-2" />
-                        Create Scenario
+                        {createMutation.isPending ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <BeakerIcon className="h-4 w-4 mr-2" />
+                            Create Scenario
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>

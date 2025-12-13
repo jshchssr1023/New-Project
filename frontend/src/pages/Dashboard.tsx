@@ -27,6 +27,7 @@ type TeamFilter = 'all' | 'qualification' | 'assignment_release' | 'in_service_r
 export default function Dashboard() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [teamFilter, setTeamFilter] = useState<TeamFilter>('all');
   const [filteredCars, setFilteredCars] = useState<Car[]>([]);
   const [monthlyShoppings, setMonthlyShoppings] = useState<{ month: string; count: number }[]>([]);
@@ -38,13 +39,15 @@ export default function Dashboard() {
 
   const loadAnalytics = useCallback(async () => {
     try {
+      setError(null);
       const data = await analyticsApi.getDashboard();
       setAnalytics(data);
 
       // Load monthly shoppings (arrived cars)
       loadMonthlyShoppings();
-    } catch (error) {
-      console.error('Failed to load analytics:', error);
+    } catch (err) {
+      console.error('Failed to load analytics:', err);
+      setError('Failed to load dashboard data. Please try refreshing the page.');
     } finally {
       setIsLoading(false);
     }
@@ -118,14 +121,12 @@ export default function Dashboard() {
     }
   };
 
-  // Initial load - load analytics and initial team data
+  // Initial load - load analytics only on mount
   useEffect(() => {
     loadAnalytics();
-    loadTeamData(teamFilter);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadAnalytics]); // Only re-run when loadAnalytics changes (which is stable due to empty deps)
+  }, [loadAnalytics]);
 
-  // Reload team data when filter changes
+  // Load team data when filter changes (including initial load)
   useEffect(() => {
     loadTeamData(teamFilter);
   }, [teamFilter]);
@@ -229,6 +230,25 @@ export default function Dashboard() {
           Rail car service scheduling overview
         </p>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="flex items-center gap-3">
+            <ExclamationTriangleIcon className="h-5 w-5 text-red-600 flex-shrink-0" />
+            <p className="text-sm text-red-700">{error}</p>
+            <button
+              onClick={() => {
+                setError(null);
+                loadAnalytics();
+              }}
+              className="ml-auto text-sm font-medium text-red-600 hover:text-red-800"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Team Filter Buttons */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -487,7 +507,7 @@ export default function Dashboard() {
                           {car.status.replace('_', ' ')}
                         </span>
                       </td>
-                      <td className="py-2 text-steel-700">{car.reasonsShopped || (car as any).reasonShopped || '-'}</td>
+                      <td className="py-2 text-steel-700">{car.reasonsShopped || car.reasonShopped || '-'}</td>
                       {teamFilter === 'qualification' && (
                         <td className="py-2 text-steel-700">
                           {car.tankQualDueDate
@@ -562,7 +582,7 @@ export default function Dashboard() {
                     >
                       <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
                       <td className="py-2 text-steel-700">{car.customer || '-'}</td>
-                      <td className="py-2 text-steel-700">{car.reasonsShopped || (car as any).reasonShopped || '-'}</td>
+                      <td className="py-2 text-steel-700">{car.reasonsShopped || car.reasonShopped || '-'}</td>
                       <td className={`py-2 text-right ${getDaysUntilDueColor(car.daysUntilDue)}`}>
                         {car.daysUntilDue !== null ? (
                           car.daysUntilDue < 0 ? `${Math.abs(car.daysUntilDue)} overdue` : car.daysUntilDue
