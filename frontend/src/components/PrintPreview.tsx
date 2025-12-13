@@ -265,7 +265,7 @@ const PrintPreview = forwardRef<PrintPreviewRef, PrintPreviewProps>(
             {recipientType === 'internal' && (
               <div className="logo-container">
                 <img
-                  src="/images/chronos-logo.svg"
+                  src="/images/chronos-logo.png"
                   alt="Chronos"
                   className="logo"
                 />
