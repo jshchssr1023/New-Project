@@ -757,6 +757,182 @@ router.post('/plans', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 /**
+ * POST /api/car-flow/plans/bulk
+ * Create multiple Car Flow Plan entries directly (skip scenario)
+ * This is the main endpoint for "Plan Selected Cars" functionality
+ */
+router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { assignments, overrideConflicts } = req.body;
+    // assignments: Array<{ carId, shopId, plannedMonth, plannedYear, shopReason?, notes? }>
+
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      return res.status(400).json({
+        message: 'assignments array is required with at least one entry'
+      });
+    }
+
+    // Validate all assignments have required fields
+    for (const a of assignments) {
+      if (!a.carId || !a.shopId || !a.plannedMonth || !a.plannedYear) {
+        return res.status(400).json({
+          message: 'Each assignment must have carId, shopId, plannedMonth, and plannedYear'
+        });
+      }
+    }
+
+    const carIds = assignments.map((a: { carId: string }) => a.carId);
+
+    // Check for existing active plans
+    const existingPlans = await prisma.carFlowPlan.findMany({
+      where: {
+        carId: { in: carIds },
+        status: { not: 'Cancelled' }
+      },
+      include: {
+        car: { select: { railcarNumber: true } },
+        shop: { select: { name: true, city: true } }
+      }
+    });
+
+    if (existingPlans.length > 0 && !overrideConflicts) {
+      // Return conflicts for user to decide
+      const conflicts = existingPlans.map(p => ({
+        carId: p.carId,
+        railcarNumber: p.car.railcarNumber,
+        existingShop: `${p.shop.name}, ${p.shop.city}`,
+        existingMonth: `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}`,
+        status: p.status
+      }));
+
+      return res.json({
+        success: false,
+        message: 'Some cars already have active plans',
+        conflicts,
+        allowOverride: true
+      });
+    }
+
+    // If overriding, cancel existing plans
+    if (existingPlans.length > 0 && overrideConflicts) {
+      await prisma.carFlowPlan.updateMany({
+        where: {
+          carId: { in: existingPlans.map(p => p.carId) },
+          status: { not: 'Cancelled' }
+        },
+        data: {
+          status: 'Cancelled',
+          cancelledAt: new Date()
+        }
+      });
+
+      // Decrement S&OP usage for cancelled plans
+      for (const plan of existingPlans) {
+        await prisma.sOPCommitment.updateMany({
+          where: {
+            shopId: plan.shopId,
+            year: plan.plannedYear,
+            month: plan.plannedMonth
+          },
+          data: {
+            currentUsage: { decrement: 1 }
+          }
+        });
+      }
+    }
+
+    // Get car details for all cars
+    const cars = await prisma.car.findMany({
+      where: { id: { in: carIds } },
+      select: { id: true, customerId: true, railcarNumber: true }
+    });
+    const carMap = new Map(cars.map(c => [c.id, c]));
+
+    // Create all plans in a transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const createdPlans = [];
+
+      for (const assignment of assignments as Array<{
+        carId: string;
+        shopId: string;
+        plannedMonth: number;
+        plannedYear: number;
+        shopReason?: string;
+        notes?: string;
+      }>) {
+        const car = carMap.get(assignment.carId);
+        if (!car) continue;
+
+        const plan = await tx.carFlowPlan.create({
+          data: {
+            carId: assignment.carId,
+            shopId: assignment.shopId,
+            customerId: car.customerId,
+            plannedMonth: assignment.plannedMonth,
+            plannedYear: assignment.plannedYear,
+            committedById: req.user!.id,
+            shopReason: assignment.shopReason || '',
+            notes: assignment.notes || '',
+            status: 'Planned',
+            companyId: req.user!.companyId
+          },
+          include: {
+            car: { select: { railcarNumber: true } },
+            shop: { select: { name: true, city: true, code: true } }
+          }
+        });
+        createdPlans.push(plan);
+
+        // Update S&OP Commitment usage
+        await tx.sOPCommitment.updateMany({
+          where: {
+            shopId: assignment.shopId,
+            year: assignment.plannedYear,
+            month: assignment.plannedMonth
+          },
+          data: {
+            currentUsage: { increment: 1 }
+          }
+        });
+      }
+
+      return createdPlans;
+    });
+
+    // Update shopping status for all affected cars
+    await shoppingStatusService.updateBatchShoppingStatus(carIds);
+
+    // Audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        userEmail: req.user!.email,
+        action: 'create',
+        entityType: 'CarFlowPlan',
+        entityId: 'bulk',
+        entityName: `Bulk plan: ${result.length} cars`,
+        changes: JSON.stringify({
+          created: result.length,
+          planIds: result.map(p => p.id),
+          carNumbers: result.map(p => p.car.railcarNumber)
+        }),
+        companyId: req.user!.companyId
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully planned ${result.length} cars`,
+      plansCreated: result.length,
+      plans: result
+    });
+  } catch (error) {
+    logger.error('Failed to create bulk car flow plans', error as Error);
+    res.status(500).json({ message: 'Failed to create car flow plans' });
+  }
+});
+
+/**
  * PATCH /api/car-flow/plans/:id/cancel
  * Cancel a Car Flow Plan entry
  */

@@ -17,6 +17,7 @@ import {
   CursorArrowRaysIcon,
 } from '@heroicons/react/24/outline';
 import { plansApi, shopsApi, carsApi, scenariosApi } from '../services/api';
+import { carFlowPlanApi, type BulkPlanAssignment } from '../services/carFlowApi';
 import type { Plan, Shop, PlanAssignment, Car, ReportGenerationConfig, ReportData, RecipientType } from '../types';
 import { getCellColorClasses, getBorderColorClass, getUtilizationLevel } from '../utils/utilizationColors';
 import ReportGenerationModal from '../components/ReportGenerationModal';
@@ -163,7 +164,7 @@ export default function PlanningGrid() {
         carsApi.getAll({ pageSize: 1000 }),
         shopsApi.getFilters(),
       ]);
-      setPlans(plansData);
+
       setShops(shopsData);
       setCars(carsResponse.data);
       setShopFilters(filterData);
@@ -172,7 +173,32 @@ export default function PlanningGrid() {
       const types = [...new Set(carsResponse.data.map(c => c.reasonShopped?.toLowerCase()).filter((t): t is string => Boolean(t)))];
       setShoppingTypes(types);
 
-      if (plansData.length > 0) {
+      // Auto-create or find Master Schedule plan
+      let masterPlan = plansData.find((p: Plan) => p.name === 'Master Schedule');
+
+      if (!masterPlan && plansData.length === 0) {
+        // Create a Master Schedule plan if none exists
+        try {
+          masterPlan = await plansApi.create({
+            name: 'Master Schedule',
+            description: 'Primary planning schedule for all car-to-shop assignments',
+            status: 'active',
+          });
+          setPlans([masterPlan, ...plansData]);
+        } catch (createError) {
+          console.error('Failed to create Master Schedule:', createError);
+          // Use first plan if available
+          if (plansData.length > 0) {
+            masterPlan = plansData[0];
+          }
+        }
+      } else {
+        setPlans(plansData);
+      }
+
+      if (masterPlan) {
+        setSelectedPlan(masterPlan);
+      } else if (plansData.length > 0) {
         setSelectedPlan(plansData[0]);
       }
     } catch (error) {
@@ -663,7 +689,7 @@ export default function PlanningGrid() {
       setAssignments(prev => [...prev, ...optimisticAssignments]);
 
       try {
-        // Use bulk API for efficiency
+        // Use bulk API for efficiency - save to PlanAssignment
         const assignmentsData = carIds.map(carId => ({
           carId,
           shopId,
@@ -678,6 +704,28 @@ export default function PlanningGrid() {
         if (result.failed > 0) {
           const errorMessages = result.errors.map(err => err.error).join(', ');
           alert(`${result.success} assignments created, ${result.failed} failed: ${errorMessages}`);
+        }
+
+        // ALSO save to CarFlowPlan (source of truth for committed schedules)
+        // Parse month from scheduledMonth format "YYYY-MM"
+        const [yearStr, monthStr] = scheduledMonth.split('-');
+        const plannedYear = parseInt(yearStr, 10);
+        const plannedMonth = parseInt(monthStr, 10);
+
+        const carFlowAssignments: BulkPlanAssignment[] = carIds.map(carId => ({
+          carId,
+          shopId,
+          plannedMonth,
+          plannedYear,
+          shopReason: 'Planning Grid assignment',
+        }));
+
+        // Save to CarFlowPlan - this commits to the master schedule
+        try {
+          await carFlowPlanApi.bulkCreate(carFlowAssignments, true); // Override conflicts
+        } catch (carFlowError) {
+          console.warn('CarFlowPlan sync warning:', carFlowError);
+          // Don't fail the whole operation - PlanAssignment was saved
         }
 
         // Reload actual assignments from server

@@ -462,9 +462,10 @@ export default function CarsPage() {
             clearSelection();
           }}
           selectedCars={selectedCars}
-          onSuccess={(scenarioId) => {
+          onSuccess={(planCount) => {
             clearSelection();
-            navigate(`/scenarios?id=${scenarioId}`);
+            // Navigate to car flow plans page to see the saved plans
+            navigate('/car-flow?tab=plans');
           }}
         />
       </Suspense>
