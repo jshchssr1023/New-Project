@@ -796,6 +796,8 @@ export default function ShopManagement() {
                 key={shop.id}
                 shop={shop}
                 capacityData={capacityData[shop.id] || []}
+                onEdit={handleOpenModal}
+                onDelete={handleDelete}
               />
             ))}
           </ShopCardGrid>

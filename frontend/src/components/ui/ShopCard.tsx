@@ -14,6 +14,8 @@ import {
   WrenchScrewdriverIcon,
   CurrencyDollarIcon,
   CalendarDaysIcon,
+  PencilIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import type { Shop } from '../../types';
 
@@ -21,6 +23,8 @@ interface ShopCardProps {
   shop: Shop;
   capacityData?: MonthlyCapacity[];
   onViewCapacity?: (shop: Shop) => void;
+  onEdit?: (shop: Shop) => void;
+  onDelete?: (shopId: string) => void;
   className?: string;
 }
 
@@ -36,6 +40,8 @@ export default function ShopCard({
   shop,
   capacityData = [],
   onViewCapacity,
+  onEdit,
+  onDelete,
   className = '',
 }: ShopCardProps) {
   const [showCapacityModal, setShowCapacityModal] = useState(false);
@@ -72,15 +78,43 @@ export default function ShopCard({
                 <p className="text-xs text-steel-500">{shop.code}</p>
               </div>
             </div>
-            <span
-              className={`px-2 py-1 rounded text-xs font-medium ${
-                shop.isActive
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-steel-100 text-steel-500'
-              }`}
-            >
-              {shop.isActive ? 'Active' : 'Inactive'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-2 py-1 rounded text-xs font-medium ${
+                  shop.isActive
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-steel-100 text-steel-500'
+                }`}
+              >
+                {shop.isActive ? 'Active' : 'Inactive'}
+              </span>
+              {/* Edit Button */}
+              {onEdit && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEdit(shop);
+                  }}
+                  className="p-1.5 text-steel-400 hover:text-crimson-600 hover:bg-crimson-50 rounded transition-colors"
+                  title="Edit shop"
+                >
+                  <PencilIcon className="h-4 w-4" />
+                </button>
+              )}
+              {/* Delete Button */}
+              {onDelete && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(shop.id);
+                  }}
+                  className="p-1.5 text-steel-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                  title="Delete shop"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Location */}
