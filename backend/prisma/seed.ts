@@ -49,7 +49,7 @@ interface CarImportData {
   buildYear: number | null;
   qualificationType: string;
   tankQualified: boolean;
-  tankQualDueDate: Date | null;
+  tankQualification: Date | null;
   performScheduled: boolean;
   planStatus: string;
   // Additional fields from extended CSV
@@ -97,7 +97,7 @@ const OPTIONAL_HEADERS: Record<string, string[]> = {
   'buildYear': ['build yr', 'build year', 'buildyr', 'built', 'year built', 'mfg year'],
   'qualificationType': ['qual type', 'qualification type', 'qualtype', 'full/partial qual'],
   'tankQualified': ['tank qual', 'tank qualified', 'tankqual', 'qualified'],
-  'tankQualDueDate': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
+  'tankQualification': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
   'performScheduled': ['perf sched', 'performance scheduled', 'scheduled', 'perform scheduled'],
   'planStatus': ['plan status', 'planstatus', 'status', 'planning status'],
   'currentLocation': ['location', 'current location', 'currentlocation', 'city'],
@@ -570,12 +570,12 @@ async function importCarsFromCSV(
         const buildYear = parseIntSafe(getField(record, 'buildYear'));
         const qualificationType = getField(record, 'qualificationType');
         const tankQualified = parseBoolean(getField(record, 'tankQualified'));
-        const tankQualDueDate = parseDate(getField(record, 'tankQualDueDate'));
+        const tankQualification = parseDate(getField(record, 'tankQualification'));
         const performScheduled = parseBoolean(getField(record, 'performScheduled'));
         const planStatus = getField(record, 'planStatus');
         const currentLocation = getField(record, 'currentLocation') || locations[Math.floor(Math.random() * locations.length)];
         const homeRegion = getField(record, 'homeRegion') || regions[Math.floor(Math.random() * regions.length)];
-        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualDueDate ? 'qualification' : '');
+        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualification ? 'qualification' : '');
         const projectedCost = parseFloatSafe(getField(record, 'projectedCost'));
         const notes = getField(record, 'notes');
 
@@ -598,7 +598,7 @@ async function importCarsFromCSV(
           daysInShop: 0,
           shopEntryDate: null,
           lastServiceDate: null,
-          nextServiceDue: tankQualDueDate,
+          nextServiceDue: tankQualification,
           notes,
           contractNumber,
           contractExpiration,
@@ -607,7 +607,7 @@ async function importCarsFromCSV(
           buildYear,
           qualificationType,
           tankQualified,
-          tankQualDueDate,
+          tankQualification,
           performScheduled,
           planStatus,
         };
@@ -791,15 +791,15 @@ async function generateRandomCars(
     const performScheduled = Math.random() > 0.7;
     const planStatus = planStatuses[Math.floor(Math.random() * planStatuses.length)];
 
-    let tankQualDueDate: Date | null = null;
+    let tankQualification: Date | null = null;
     if (isTankCar) {
       const qualRand = Math.random();
       if (qualRand < 0.2) {
-        tankQualDueDate = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
+        tankQualification = new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000);
       } else if (qualRand < 0.5) {
-        tankQualDueDate = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
+        tankQualification = new Date(Date.now() + Math.random() * 90 * 24 * 60 * 60 * 1000);
       } else {
-        tankQualDueDate = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
+        tankQualification = new Date(Date.now() + (90 + Math.random() * 275) * 24 * 60 * 60 * 1000);
       }
     }
 
@@ -832,7 +832,7 @@ async function generateRandomCars(
       buildYear,
       qualificationType,
       tankQualified,
-      tankQualDueDate,
+      tankQualification,
       performScheduled,
       planStatus,
     };
