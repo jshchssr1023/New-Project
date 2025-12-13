@@ -155,8 +155,13 @@ export function createRateLimit(config: RateLimitConfig) {
       next();
     } catch (error) {
       logger.error('Rate limit middleware error', error);
-      // On error, allow the request to proceed
-      next();
+      // SECURITY: Fail closed - deny requests when rate limit check fails
+      // This prevents potential DoS bypasses through database errors
+      res.status(503).json({
+        message: 'Service temporarily unavailable. Please try again later.',
+        retryAfter: 30,
+      });
+      return;
     }
   };
 }

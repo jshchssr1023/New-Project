@@ -2,9 +2,10 @@
  * Car Flow Planning API Service
  *
  * Frontend API client for the Car Flow Planning module
+ * Uses the shared axios instance from api.ts for consistent auth, retry, and error handling
  */
 
-import axios from 'axios';
+import apiClient from './api';
 import {
   Scenario,
   CreateScenarioRequest,
@@ -18,38 +19,6 @@ import {
   ShoppingStatusStats,
   ScenarioStatus,
 } from '../types/carFlow';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
-
-// Create axios instance with default config
-const apiClient = axios.create({
-  baseURL: API_BASE,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Add auth token to requests
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('authToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Handle auth errors
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
 
 // =============================================================================
 // SCENARIOS

@@ -9,6 +9,54 @@ const db = new Database(dbPath);
 db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL'); // Better concurrent access
 
+// =============================================================================
+// SECURITY: Whitelist of allowed table and column names to prevent SQL injection
+// =============================================================================
+const ALLOWED_TABLES = new Set([
+  'User', 'Company', 'Car', 'Shop', 'Plan', 'PlanAssignment', 'Scenario',
+  'ScenarioCar', 'ScenarioModification', 'Customer', 'ShopRule', 'CarShopEligibility',
+  'AuditLog', 'RolePermission', 'FieldSecurity', 'ShopPerformance', 'ReportTemplate',
+  'ScheduledReport', 'ShopCapacitySlot', 'SOPAssignment', 'LeaseContract',
+  'LeaseQualificationEntry', 'QualificationPlanEvent', 'QualificationScenario',
+  'QualificationPlanAssignment', 'QualificationPlanDocument', 'MasterPlan',
+  'MasterPlanCommitment', 'Notification', 'WeeklyCapacity', 'CapacityAudit',
+  'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
+  'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
+  'InvalidatedToken',
+]);
+
+// Column name validation regex - only allows alphanumeric and underscores
+const VALID_COLUMN_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Validates a table name against the whitelist
+ * @throws Error if table name is not allowed
+ */
+function validateTableName(tableName: string): void {
+  if (!ALLOWED_TABLES.has(tableName)) {
+    throw new Error(`SECURITY: Invalid table name "${tableName}" - not in whitelist`);
+  }
+}
+
+/**
+ * Validates a column name to prevent SQL injection
+ * @throws Error if column name contains invalid characters
+ */
+function validateColumnName(columnName: string): void {
+  if (!VALID_COLUMN_REGEX.test(columnName)) {
+    throw new Error(`SECURITY: Invalid column name "${columnName}" - contains invalid characters`);
+  }
+}
+
+/**
+ * Validates all column names in an object
+ */
+function validateColumnNames(obj: Record<string, any>): void {
+  for (const key of Object.keys(obj)) {
+    validateColumnName(key);
+  }
+}
+
 // Helper to convert SQLite rows to proper types
 function rowToObject<T>(row: any): T {
   if (!row) return row;
@@ -60,44 +108,47 @@ function buildWhereClause(where: WhereClause | undefined): { sql: string; params
   const params: any[] = [];
 
   for (const [key, value] of Object.entries(where)) {
+    // SECURITY: Validate column name before using in query
+    validateColumnName(key);
+
     if (value === null) {
-      conditions.push(`${key} IS NULL`);
+      conditions.push(`"${key}" IS NULL`);
     } else if (typeof value === 'object' && value !== null) {
       // Handle operators like { gte, lte, contains, etc. }
       if ('gte' in value) {
-        conditions.push(`${key} >= ?`);
+        conditions.push(`"${key}" >= ?`);
         params.push(value.gte);
       }
       if ('lte' in value) {
-        conditions.push(`${key} <= ?`);
+        conditions.push(`"${key}" <= ?`);
         params.push(value.lte);
       }
       if ('gt' in value) {
-        conditions.push(`${key} > ?`);
+        conditions.push(`"${key}" > ?`);
         params.push(value.gt);
       }
       if ('lt' in value) {
-        conditions.push(`${key} < ?`);
+        conditions.push(`"${key}" < ?`);
         params.push(value.lt);
       }
       if ('contains' in value) {
-        conditions.push(`${key} LIKE ?`);
+        conditions.push(`"${key}" LIKE ?`);
         params.push(`%${value.contains}%`);
       }
       if ('in' in value && Array.isArray(value.in)) {
-        conditions.push(`${key} IN (${value.in.map(() => '?').join(', ')})`);
+        conditions.push(`"${key}" IN (${value.in.map(() => '?').join(', ')})`);
         params.push(...value.in);
       }
       if ('not' in value) {
         if (value.not === null) {
-          conditions.push(`${key} IS NOT NULL`);
+          conditions.push(`"${key}" IS NOT NULL`);
         } else {
-          conditions.push(`${key} != ?`);
+          conditions.push(`"${key}" != ?`);
           params.push(value.not);
         }
       }
     } else {
-      conditions.push(`${key} = ?`);
+      conditions.push(`"${key}" = ?`);
       params.push(typeof value === 'boolean' ? (value ? 1 : 0) : value);
     }
   }
@@ -114,7 +165,14 @@ function buildOrderByClause(orderBy: OrderByClause | OrderByClause[] | undefined
   const orders = Array.isArray(orderBy) ? orderBy : [orderBy];
   const parts = orders.map(o => {
     const [key, dir] = Object.entries(o)[0];
-    return `${key} ${dir.toUpperCase()}`;
+    // SECURITY: Validate column name before using in query
+    validateColumnName(key);
+    // Validate direction is only 'asc' or 'desc'
+    const direction = dir.toUpperCase();
+    if (direction !== 'ASC' && direction !== 'DESC') {
+      throw new Error(`SECURITY: Invalid ORDER BY direction "${dir}"`);
+    }
+    return `"${key}" ${direction}`;
   });
 
   return parts.length > 0 ? `ORDER BY ${parts.join(', ')}` : '';
@@ -309,6 +367,9 @@ async function resolveIncludes(tableName: string, records: any[], include: any):
 
 // Create a table handler
 function createTableHandler(tableName: string) {
+  // SECURITY: Validate table name at handler creation time
+  validateTableName(tableName);
+
   return {
     findMany: async (options: FindManyOptions = {}) => {
       const { sql: whereClause, params } = buildWhereClause(options.where);
@@ -316,7 +377,7 @@ function createTableHandler(tableName: string) {
       const limitClause = options.take ? `LIMIT ${options.take}` : '';
       const offsetClause = options.skip ? `OFFSET ${options.skip}` : '';
 
-      const query = `SELECT * FROM ${tableName} ${whereClause} ${orderByClause} ${limitClause} ${offsetClause}`;
+      const query = `SELECT * FROM "${tableName}" ${whereClause} ${orderByClause} ${limitClause} ${offsetClause}`;
       const rows = db.prepare(query).all(...params);
       let results = rowsToObjects(rows);
 
@@ -335,7 +396,7 @@ function createTableHandler(tableName: string) {
 
     findUnique: async (options: FindUniqueOptions) => {
       const { sql: whereClause, params } = buildWhereClause(options.where);
-      const query = `SELECT * FROM ${tableName} ${whereClause} LIMIT 1`;
+      const query = `SELECT * FROM "${tableName}" ${whereClause} LIMIT 1`;
       const row = db.prepare(query).get(...params);
       if (!row) return null;
 
@@ -378,6 +439,9 @@ function createTableHandler(tableName: string) {
       }
 
       const keys = Object.keys(data);
+      // SECURITY: Validate all column names
+      keys.forEach(validateColumnName);
+
       const values = keys.map(k => {
         const v = data[k];
         if (typeof v === 'boolean') return v ? 1 : 0;
@@ -386,7 +450,8 @@ function createTableHandler(tableName: string) {
       });
 
       const placeholders = keys.map(() => '?').join(', ');
-      const query = `INSERT INTO ${tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
+      const quotedKeys = keys.map(k => `"${k}"`).join(', ');
+      const query = `INSERT INTO "${tableName}" (${quotedKeys}) VALUES (${placeholders})`;
 
       try {
         db.prepare(query).run(...values);
@@ -406,14 +471,18 @@ function createTableHandler(tableName: string) {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
       const data = { ...options.data, updatedAt: new Date().toISOString() };
 
-      const setParts = Object.keys(data).map(k => `${k} = ?`);
+      const keys = Object.keys(data);
+      // SECURITY: Validate all column names
+      keys.forEach(validateColumnName);
+
+      const setParts = keys.map(k => `"${k}" = ?`);
       const setValues = Object.values(data).map(v => {
         if (typeof v === 'boolean') return v ? 1 : 0;
         if (v instanceof Date) return v.toISOString();
         return v;
       });
 
-      const query = `UPDATE ${tableName} SET ${setParts.join(', ')} ${whereClause}`;
+      const query = `UPDATE "${tableName}" SET ${setParts.join(', ')} ${whereClause}`;
       try {
         db.prepare(query).run(...setValues, ...whereParams);
       } catch (error: any) {
@@ -431,14 +500,18 @@ function createTableHandler(tableName: string) {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
       const data = { ...options.data, updatedAt: new Date().toISOString() };
 
-      const setParts = Object.keys(data).map(k => `${k} = ?`);
+      const keys = Object.keys(data);
+      // SECURITY: Validate all column names
+      keys.forEach(validateColumnName);
+
+      const setParts = keys.map(k => `"${k}" = ?`);
       const setValues = Object.values(data).map(v => {
         if (typeof v === 'boolean') return v ? 1 : 0;
         if (v instanceof Date) return v.toISOString();
         return v;
       });
 
-      const query = `UPDATE ${tableName} SET ${setParts.join(', ')} ${whereClause}`;
+      const query = `UPDATE "${tableName}" SET ${setParts.join(', ')} ${whereClause}`;
       const result = db.prepare(query).run(...setValues, ...whereParams);
       return { count: result.changes };
     },
@@ -461,6 +534,9 @@ function createTableHandler(tableName: string) {
         }
 
         const keys = Object.keys(item);
+        // SECURITY: Validate all column names
+        keys.forEach(validateColumnName);
+
         const values = keys.map(k => {
           const v = item[k];
           if (typeof v === 'boolean') return v ? 1 : 0;
@@ -469,7 +545,8 @@ function createTableHandler(tableName: string) {
         });
 
         const placeholders = keys.map(() => '?').join(', ');
-        const query = `INSERT INTO ${tableName} (${keys.join(', ')}) VALUES (${placeholders})`;
+        const quotedKeys = keys.map(k => `"${k}"`).join(', ');
+        const query = `INSERT INTO "${tableName}" (${quotedKeys}) VALUES (${placeholders})`;
 
         try {
           db.prepare(query).run(...values);
@@ -486,21 +563,21 @@ function createTableHandler(tableName: string) {
     delete: async (options: { where: WhereClause }) => {
       const record = await createTableHandler(tableName).findUnique(options);
       const { sql: whereClause, params } = buildWhereClause(options.where);
-      const query = `DELETE FROM ${tableName} ${whereClause}`;
+      const query = `DELETE FROM "${tableName}" ${whereClause}`;
       db.prepare(query).run(...params);
       return record;
     },
 
     deleteMany: async (options: { where?: WhereClause } = {}) => {
       const { sql: whereClause, params } = buildWhereClause(options.where);
-      const query = `DELETE FROM ${tableName} ${whereClause}`;
+      const query = `DELETE FROM "${tableName}" ${whereClause}`;
       const result = db.prepare(query).run(...params);
       return { count: result.changes };
     },
 
     count: async (options: { where?: WhereClause } = {}) => {
       const { sql: whereClause, params } = buildWhereClause(options.where);
-      const query = `SELECT COUNT(*) as count FROM ${tableName} ${whereClause}`;
+      const query = `SELECT COUNT(*) as count FROM "${tableName}" ${whereClause}`;
       const result = db.prepare(query).get(...params) as { count: number };
       return result.count;
     },

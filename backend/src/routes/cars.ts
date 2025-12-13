@@ -23,6 +23,11 @@ router.use(authenticate);
 router.patch('/bulk', async (req: AuthRequest, res: Response) => {
   const { carIds, updates } = req.body;
 
+  // Validate input
+  if (!Array.isArray(carIds) || carIds.length === 0) {
+    return res.status(400).json({ message: 'carIds must be a non-empty array' });
+  }
+
   try {
     await prisma.car.updateMany({
       where: {
@@ -32,8 +37,12 @@ router.patch('/bulk', async (req: AuthRequest, res: Response) => {
       data: updates,
     });
 
+    // SECURITY: Always filter by companyId to prevent data leakage
     const updatedCars = await prisma.car.findMany({
-      where: { id: { in: carIds } },
+      where: {
+        id: { in: carIds },
+        companyId: req.user!.companyId,
+      },
     });
 
     res.json(updatedCars);

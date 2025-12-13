@@ -7,7 +7,7 @@
 
 import crypto from 'crypto';
 import { prisma } from './db';
-import logger from '../utils/logger';
+import logger, { safeJsonParse } from '../utils/logger';
 
 // =============================================================================
 // TYPES
@@ -83,7 +83,7 @@ export async function createApiKey(input: CreateApiKeyInput): Promise<{ apiKey: 
         id: apiKey.id,
         name: apiKey.name,
         keyPrefix: apiKey.keyPrefix,
-        permissions: JSON.parse(apiKey.permissions),
+        permissions: safeJsonParse<string[]>(apiKey.permissions, [], 'apiKey.permissions'),
         rateLimit: apiKey.rateLimit,
         rateLimitWindow: apiKey.rateLimitWindow,
         isActive: apiKey.isActive,
@@ -143,7 +143,7 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidationResul
         id: apiKey.id,
         name: apiKey.name,
         keyPrefix: apiKey.keyPrefix,
-        permissions: JSON.parse(apiKey.permissions),
+        permissions: safeJsonParse<string[]>(apiKey.permissions, [], 'apiKey.permissions'),
         rateLimit: apiKey.rateLimit,
         rateLimitWindow: apiKey.rateLimitWindow,
         isActive: apiKey.isActive,
@@ -202,7 +202,7 @@ export async function listApiKeys(companyId: string): Promise<ApiKeyData[]> {
       id: k.id,
       name: k.name,
       keyPrefix: k.keyPrefix,
-      permissions: JSON.parse(k.permissions),
+      permissions: safeJsonParse<string[]>(k.permissions, [], 'apiKey.permissions'),
       rateLimit: k.rateLimit,
       rateLimitWindow: k.rateLimitWindow,
       isActive: k.isActive,

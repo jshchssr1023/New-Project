@@ -136,19 +136,39 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       'collaboration:cursorMove',
     ];
 
+    // Create event handlers that we can remove later
+    const eventHandlers = new Map<WebSocketEvent, (payload: WebSocketPayload) => void>();
+
     events.forEach((event) => {
-      socket.on(event, (payload: WebSocketPayload) => {
+      const handler = (payload: WebSocketPayload) => {
         console.log(`Received ${event}:`, payload);
         const handlers = handlersRef.current.get(event);
         if (handlers) {
-          handlers.forEach((handler) => handler(payload));
+          handlers.forEach((h) => h(payload));
         }
-      });
+      };
+      eventHandlers.set(event, handler);
+      socket.on(event, handler);
     });
 
+    // Cleanup function - properly remove all event listeners
     return () => {
+      // Remove all event listeners before disconnecting
+      events.forEach((event) => {
+        const handler = eventHandlers.get(event);
+        if (handler) {
+          socket.off(event, handler);
+        }
+      });
+      // Remove connection event listeners
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('connect_error');
+      // Disconnect and cleanup
       socket.disconnect();
       socketRef.current = null;
+      // Clear handlers map to prevent memory leaks
+      handlersRef.current.clear();
     };
   }, [user]);
 

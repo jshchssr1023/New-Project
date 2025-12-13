@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
+import logger from '../utils/logger';
 
 const router = Router();
 
@@ -28,7 +29,7 @@ router.get('/', requireRole('admin'), async (req: AuthRequest, res: Response) =>
 
     res.json(users);
   } catch (error) {
-    console.error('Get users error:', error);
+    logger.error('Get users error', error as Error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -68,7 +69,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json(user);
   } catch (error) {
-    console.error('Get user error:', error);
+    logger.error('Get user error', error as Error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -114,7 +115,7 @@ router.post('/', requireRole('admin'), async (req: AuthRequest, res: Response) =
 
     res.status(201).json(user);
   } catch (error) {
-    console.error('Create user error:', error);
+    logger.error('Create user error', error as Error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -171,7 +172,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
     res.json(updatedUser);
   } catch (error) {
-    console.error('Update user error:', error);
+    logger.error('Update user error', error as Error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -218,7 +219,7 @@ router.put('/:id/password', async (req: AuthRequest, res: Response) => {
 
     res.json({ message: 'Password updated successfully' });
   } catch (error) {
-    console.error('Update password error:', error);
+    logger.error('Update password error', error as Error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -248,7 +249,7 @@ router.delete('/:id', requireRole('admin'), async (req: AuthRequest, res: Respon
 
     res.status(204).send();
   } catch (error) {
-    console.error('Delete user error:', error);
+    logger.error('Delete user error', error as Error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

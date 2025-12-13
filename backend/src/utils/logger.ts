@@ -56,3 +56,25 @@ export const logger = {
 };
 
 export default logger;
+
+/**
+ * Safe JSON parse utility
+ * Parses JSON with fallback value and error logging
+ */
+export function safeJsonParse<T>(
+  jsonString: string | null | undefined,
+  defaultValue: T,
+  context?: string
+): T {
+  if (!jsonString) {
+    return defaultValue;
+  }
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (error) {
+    logger.error(`Failed to parse JSON${context ? ` in ${context}` : ''}`, error as Error, {
+      jsonPreview: jsonString.substring(0, 100),
+    });
+    return defaultValue;
+  }
+}
