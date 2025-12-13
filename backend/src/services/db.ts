@@ -22,7 +22,7 @@ const ALLOWED_TABLES = new Set([
   'MasterPlanCommitment', 'Notification', 'WeeklyCapacity', 'CapacityAudit',
   'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
-  'InvalidatedToken',
+  'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -136,8 +136,13 @@ function buildWhereClause(where: WhereClause | undefined): { sql: string; params
         params.push(`%${value.contains}%`);
       }
       if ('in' in value && Array.isArray(value.in)) {
-        conditions.push(`"${key}" IN (${value.in.map(() => '?').join(', ')})`);
-        params.push(...value.in);
+        // SECURITY FIX: Handle empty array to prevent SQL syntax error
+        if (value.in.length === 0) {
+          conditions.push('1 = 0'); // Always false - no results
+        } else {
+          conditions.push(`"${key}" IN (${value.in.map(() => '?').join(', ')})`);
+          params.push(...value.in);
+        }
       }
       if ('not' in value) {
         if (value.not === null) {
@@ -651,12 +656,34 @@ export const prisma = {
   // Token blacklist table
   invalidatedToken: createTableHandler('InvalidatedToken'),
 
-  // Raw query support
+  // Car Flow Planning tables
+  carFlowPlan: createTableHandler('CarFlowPlan'),
+  sOPCommitment: createTableHandler('SOPCommitment'),
+
+  // Webhook configuration table
+  webhookConfig: createTableHandler('WebhookConfig'),
+
+  // Raw query support - SECURITY: Use parameterized queries only
+  // WARNING: These functions should be used sparingly and only with parameterized queries
   $queryRaw: async (query: string, ...params: any[]) => {
+    // SECURITY: Log raw query usage for audit
+    console.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', query.substring(0, 100));
+    if (query.includes('--') || query.includes(';') && params.length === 0) {
+      throw new Error('SECURITY: Potential SQL injection detected in raw query');
+    }
     return db.prepare(query).all(...params);
   },
 
+  // SECURITY: This function is intentionally restrictive
   $queryRawUnsafe: async (query: string, ...params: any[]) => {
+    // SECURITY: Block dangerous patterns
+    const dangerousPatterns = [/DROP\s+TABLE/i, /DELETE\s+FROM\s+\w+\s*$/i, /TRUNCATE/i, /ALTER\s+TABLE/i];
+    for (const pattern of dangerousPatterns) {
+      if (pattern.test(query)) {
+        throw new Error('SECURITY: Dangerous SQL pattern blocked in raw query');
+      }
+    }
+    console.warn('[DB SECURITY] Unsafe raw query executed:', query.substring(0, 100));
     return db.prepare(query).all(...params);
   },
 

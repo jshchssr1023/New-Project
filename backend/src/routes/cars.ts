@@ -16,6 +16,50 @@ const router = Router();
 router.use(authenticate);
 
 // =============================================================================
+// SECURITY: Allowlist of fields that can be bulk updated
+// This prevents prototype pollution and unauthorized field modifications
+// =============================================================================
+const ALLOWED_BULK_UPDATE_FIELDS = new Set([
+  'status',
+  'customer',
+  'commodity',
+  'notes',
+  'currentLocation',
+  'homeRegion',
+  'originRegion',
+  'reasonsShopped',
+  'projectNumber',
+  'carType',
+  'isTankCar',
+  'estimatedCost',
+  'projectedCost',
+  'daysInShop',
+  'lastServiceDate',
+  'nextServiceDue',
+]);
+
+/**
+ * Sanitize updates object to only include allowed fields
+ * Prevents prototype pollution and unauthorized field modifications
+ */
+function sanitizeUpdates(updates: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    // SECURITY: Skip dangerous properties
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+    // Only include allowed fields
+    if (ALLOWED_BULK_UPDATE_FIELDS.has(key)) {
+      sanitized[key] = value;
+    }
+  }
+
+  return sanitized;
+}
+
+// =============================================================================
 // BULK OPERATIONS - Must come before /:id routes to avoid conflicts
 // =============================================================================
 
@@ -28,13 +72,23 @@ router.patch('/bulk', async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ message: 'carIds must be a non-empty array' });
   }
 
+  // SECURITY: Sanitize updates to prevent prototype pollution
+  const sanitizedUpdates = sanitizeUpdates(updates || {});
+
+  if (Object.keys(sanitizedUpdates).length === 0) {
+    return res.status(400).json({
+      message: 'No valid update fields provided',
+      allowedFields: Array.from(ALLOWED_BULK_UPDATE_FIELDS),
+    });
+  }
+
   try {
     await prisma.car.updateMany({
       where: {
         id: { in: carIds },
         companyId: req.user!.companyId,
       },
-      data: updates,
+      data: sanitizedUpdates,
     });
 
     // SECURITY: Always filter by companyId to prevent data leakage
