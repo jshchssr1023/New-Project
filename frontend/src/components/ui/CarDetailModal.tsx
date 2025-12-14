@@ -65,79 +65,79 @@ export default function CarDetailModal({ isOpen, onClose, car }: CarDetailModalP
                   <Section title="Basic Information">
                     <InfoRow label="Car ID" value={car.railcarNumber} mono />
                     <InfoRow label="Type" value={car.carType || 'Unknown'} />
-                    <InfoRow label="DOT / Car Class" value={car.dotCarClass || '-'} />
-                    <InfoRow label="On Rent" value={car.onRent ? 'Yes' : 'No'} />
-                    <InfoRow label="Reason" value={car.reasonShopped || '-'} />
+                    <InfoRow label="On Rent" value={car.portfolio ? 'Yes' : 'No'} />
                     <InfoRow label="Customer" value={car.customer || '-'} />
-                  </Section>
-
-                  {/* Builder & Classification */}
-                  <Section title="Builder & Classification">
-                    <InfoRow label="Build Date" value={car.builtDate ? new Date(car.builtDate).toLocaleDateString() : '-'} />
-                    <InfoRow label="Builder" value={car.builder || '-'} />
+                    <InfoRow label="Year Built" value={car.buildYear ? String(car.buildYear) : '-'} />
                     <InfoRow label="Project #" value={car.projectNumber || '-'} />
                   </Section>
 
-                  {/* Capacity Details */}
-                  <Section title="Capacity Details">
-                    <InfoRow
-                      label="Capacity / Size"
-                      value={car.capacity ? `${car.capacity.toLocaleString()} gal` : '-'}
-                    />
+                  {/* Tank Car Configuration */}
+                  <Section title="Tank Car Configuration">
+                    <InfoRow label="Jacketed" value={car.isJacketed ? 'Yes' : 'No'} />
+                    <InfoRow label="Lined" value={car.isLined ? 'Yes' : 'No'} />
+                    <InfoRow label="Lining Type" value={car.liningType || '-'} />
                   </Section>
 
-                  {/* Basic Mechanical Info */}
-                  <Section title="Basic Mechanical Info">
-                    <InfoRow label="Cars Built" value={car.carsBuilt || '-'} />
-                    <InfoRow label="Brake Type" value={car.brakeType || '-'} />
-                    <InfoRow label="Wheel Config" value={car.wheelConfig || '-'} />
-                    <InfoRow label="Coupler Type" value={car.couplerType || '-'} />
-                  </Section>
-
-                  {/* Service & Qualifications */}
+                  {/* Service & Qualifications - CSV columns T-AE */}
                   <Section title="Service & Qualifications">
-                    <InfoRow label="Tank Qualification" value={car.tankQualification || '-'} />
                     <InfoRow
-                      label="Service Equipment"
-                      value={car.serviceEquipmentDate ? new Date(car.serviceEquipmentDate).toLocaleDateString() : '-'}
+                      label="Min (no lining)"
+                      value={formatQualDate(car.minNoLining)}
+                    />
+                    <InfoRow
+                      label="Min w/ lining"
+                      value={formatQualDate(car.minWLining)}
+                    />
+                    <InfoRow
+                      label="Interior Lining"
+                      value={formatQualDate(car.interiorLining)}
+                    />
+                    <InfoRow
+                      label="Rule 88B"
+                      value={formatQualDate(car.rule88B)}
                     />
                     <InfoRow
                       label="Safety Relief"
-                      value={car.safetyReliefDate ? new Date(car.safetyReliefDate).toLocaleDateString() : '-'}
+                      value={formatQualDate(car.safetyRelief)}
                     />
-                    <InfoRow label="Rule 88B" value={car.rule88B || '-'} />
+                    <InfoRow
+                      label="Service Equipment"
+                      value={formatQualDate(car.serviceEquipment)}
+                    />
+                    <InfoRow
+                      label="Stub Sill"
+                      value={formatQualDate(car.stubSill)}
+                    />
+                    <InfoRow
+                      label="Tank Thickness"
+                      value={formatQualDate(car.tankThickness)}
+                    />
+                    <InfoRow
+                      label="Tank Qualification"
+                      value={formatQualDate(car.tankQualification)}
+                    />
                   </Section>
 
                   {/* Shopping Status */}
                   <Section title="Shopping Status">
+                    <InfoRow label="Reason Shopped" value={car.reasonsShopped || '-'} />
                     <InfoRow
-                      label="Status"
-                      value={car.shoppingStatus || '-'}
+                      label="Current Status"
+                      value={car.status || '-'}
                       badge
-                      badgeColor={getStatusColor(car.shoppingStatus)}
+                      badgeColor={getStatusColor(car.status)}
                     />
                     <InfoRow
-                      label="Min w/o Lining"
-                      value={car.minNoLining ? new Date(car.minNoLining).toLocaleDateString() : '-'}
+                      label="Plan Status"
+                      value={car.planStatus || '-'}
                     />
                     <InfoRow
-                      label="Min w/ Lining"
-                      value={car.minWLining ? new Date(car.minWLining).toLocaleDateString() : '-'}
+                      label="Shopping Status"
+                      value={getShoppingStatusDisplay(car)}
+                      badge
+                      badgeColor={getStatusColor(getShoppingStatusDisplay(car))}
                     />
                   </Section>
-
-                  {/* Past Shopping History */}
-                  {car.lastShopDate && (
-                    <Section title="Past Shopping (Historical)">
-                      <InfoRow
-                        label={car.lastShopDate ? new Date(car.lastShopDate).toLocaleDateString() : '-'}
-                        value={car.lastShopCost ? `$${car.lastShopCost.toLocaleString()}` : '-'}
-                      />
-                      <div className="text-sm text-steel-500 mt-1">
-                        {car.lastShopName || 'Unknown Shop'}
-                      </div>
-                    </Section>
-                  )}
                 </div>
 
                 {/* Footer */}
@@ -216,13 +216,70 @@ function InfoRow({
   );
 }
 
+// Format qualification date - shows year or formatted date
+function formatQualDate(dateValue: string | null | undefined): string {
+  if (!dateValue) return '-';
+
+  const date = new Date(dateValue);
+  if (isNaN(date.getTime())) return '-';
+
+  // If it's Dec 31, just show the year (as dates are stored as end-of-year)
+  if (date.getMonth() === 11 && date.getDate() === 31) {
+    return String(date.getFullYear());
+  }
+
+  // Otherwise show the full date
+  return date.toLocaleDateString();
+}
+
+// Get shopping status display from car data
+function getShoppingStatusDisplay(car: Car): string {
+  // If there's a computed shoppingStatus, use it
+  if (car.shoppingStatus) {
+    return car.shoppingStatus;
+  }
+
+  // Calculate based on qualification dates
+  const currentYear = new Date().getFullYear();
+  const qualDates = [
+    car.minNoLining,
+    car.minWLining,
+    car.interiorLining,
+    car.rule88B,
+    car.safetyRelief,
+    car.serviceEquipment,
+    car.stubSill,
+    car.tankThickness,
+    car.tankQualification,
+  ].filter(Boolean);
+
+  if (qualDates.length === 0) return 'Unknown';
+
+  let earliestYear: number | null = null;
+  for (const dateStr of qualDates) {
+    if (!dateStr) continue;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) continue;
+    const year = date.getFullYear();
+    if (earliestYear === null || year < earliestYear) {
+      earliestYear = year;
+    }
+  }
+
+  if (earliestYear === null) return 'Unknown';
+  if (earliestYear < currentYear) return 'Urgent';
+  if (earliestYear === currentYear) return 'Must Shop';
+  if (earliestYear === currentYear + 1) return 'Upcoming';
+  return 'Compliant';
+}
+
 // Get status color helper
 function getStatusColor(status?: string): string {
   if (!status) return 'steel';
   const s = status.toLowerCase();
-  if (s.includes('urgent') || s.includes('prior')) return 'red';
-  if (s.includes('must') || s.includes('this year')) return 'amber';
-  if (s.includes('upcoming') || s.includes('next')) return 'blue';
-  if (s.includes('compliant') || s.includes('ok')) return 'green';
+  if (s.includes('urgent') || s.includes('prior') || s.includes('overdue')) return 'red';
+  if (s.includes('must') || s.includes('this year') || s.includes('arrived')) return 'amber';
+  if (s.includes('upcoming') || s.includes('next') || s.includes('planned') || s.includes('scheduled')) return 'blue';
+  if (s.includes('compliant') || s.includes('ok') || s.includes('complete')) return 'green';
   return 'steel';
 }

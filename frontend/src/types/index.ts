@@ -26,7 +26,7 @@ export interface Car {
   customer: string;
   projectNumber: string;
   reasonsShopped: string;
-  status: 'available' | 'in_service' | 'in_shop' | 'scheduled' | 'retired' | 'planned' | 'release' | 'assignment' | 'arrived';
+  status: string; // Current Status: Arrived, Complete, To Be Routed, Release, etc.
   currentLocation: string;
   assignedShopId: string | null;
   projectedCompletionMonth: string;
@@ -39,38 +39,57 @@ export interface Car {
   homeRegion: string;
   originRegion: string;
   notes: string;
-  // Qualification and contract fields
+
+  // =============================================================================
+  // CONTRACT AND QUALIFICATION FLAGS
+  // =============================================================================
   contractNumber: string;
-  contractExpiration: string | null; // Contract expiration date
-  tankQualified: boolean; // Tank qualification flag
-  tankQualDueDate: string | null; // Tank qualification due date
-  qualificationType: string; // Full/Partial qualification
+  contractExpiration: string | null;
+  tankQualified: boolean;
+  tankQualDueDate: string | null;
+  qualificationType: string; // Full/Partial Qual
+  fullPartialQual: string; // Alias for qualificationType (legacy support)
 
   // =============================================================================
-  // NEW QUALIFICATION FIELDS - For regulatory shopping decision support
+  // TANK CAR CONFIGURATION (from CSV columns L-N)
   // =============================================================================
+  isJacketed: boolean; // Jacketed column
+  isLined: boolean; // Lined column (Yes/No, Lined/Unlined)
+  lined: boolean; // Alias for isLined (legacy support)
+  liningType: string; // Lining Type column
 
-  // Lining Information
-  lined: boolean; // Whether car is lined (Yes/No)
-  liningType: string; // Type of lining (Rubber, Epoxy, Stainless, Glass, None, etc.)
+  // =============================================================================
+  // CAR BUILD INFO
+  // =============================================================================
+  buildYear: number | null; // Car Age / Year Built
 
-  // Qualification Due Dates - All dates used to determine shopping requirements
-  minNoLining: string | null; // Min (no lining) qualification date
-  minWLining: string | null; // Min w lining qualification date
-  interiorLining: string | null; // Interior Lining qualification date
-  rule88B: string | null; // Rule 88B qualification date
-  safetyRelief: string | null; // Safety Relief qualification date
-  serviceEquipment: string | null; // Service Equipment qualification date
-  stubSill: string | null; // Stub Sill qualification date
-  tankThickness: string | null; // Tank Thickness qualification date
-  tankQualification: string | null; // Tank Qualification date (different from tankQualDueDate)
+  // =============================================================================
+  // QUALIFICATION DUE DATES (from CSV columns T-AB)
+  // These drive shopping urgency - earliest due date determines shopping_status
+  // =============================================================================
+  minNoLining: string | null; // Min (no lining) - Column T
+  minWLining: string | null; // Min w lining - Column U
+  interiorLining: string | null; // Interior Lining - Column V
+  rule88B: string | null; // Rule 88B - Column W
+  safetyRelief: string | null; // Safety Relief - Column X
+  serviceEquipment: string | null; // Service Equipment - Column Y
+  stubSill: string | null; // Stub Sill - Column Z
+  tankThickness: string | null; // Tank Thickness - Column AA
+  tankQualification: string | null; // Tank Qualification - Column AB
 
-  // Additional Qualification Info
-  portfolio: string; // Shows if car is on lease or not
-  fullPartialQual: string; // "Full" or "Partial" qualification type
-  performTankQual: boolean; // Yes/No - indicates car needs qual if it goes to shop
-  scheduled: string | null; // Scheduled date for work
+  // =============================================================================
+  // PORTFOLIO AND STATUS FIELDS
+  // =============================================================================
+  portfolio: boolean; // On Lease / Active (from Portfolio column)
+  shoppingStatus: string; // Computed: Urgent, Must Shop, Upcoming, Compliant, In Shop, Planned, Unknown
+  planStatus: string; // Plan Status: Committed, Not Confirmed, Not Committed, year
+  performTankQual: boolean; // Perform Tank Qual flag
+  performScheduled: boolean; // Scheduled flag
+
+  // Legacy aliases for backwards compatibility
+  scheduled: string | null; // Alias for performScheduled
   currentStatusNote: string; // Additional status notes
+  reasonShopped: string; // Alias for reasonsShopped
 
   companyId: string;
   createdAt: string;
@@ -78,10 +97,15 @@ export interface Car {
 }
 
 // Shopping status for regulatory qualification
-export type ShoppingStatus = 'urgent' | 'must_shop' | 'upcoming' | 'compliant' | 'unknown';
+export type ShoppingStatus = 'Urgent' | 'Must Shop' | 'Upcoming' | 'Compliant' | 'In Shop' | 'Planned' | 'Unknown';
 
 // Helper function to calculate shopping status from car qualification dates
 export function calculateShoppingStatus(car: Car): ShoppingStatus {
+  // If shoppingStatus is already set, return it
+  if (car.shoppingStatus) {
+    return car.shoppingStatus as ShoppingStatus;
+  }
+
   const currentYear = new Date().getFullYear();
   const qualDates = [
     car.minNoLining,
@@ -96,12 +120,10 @@ export function calculateShoppingStatus(car: Car): ShoppingStatus {
   ].filter(Boolean);
 
   if (qualDates.length === 0) {
-    return 'unknown';
+    return 'Unknown';
   }
 
-  let hasUrgent = false;
-  let hasMustShop = false;
-  let hasUpcoming = false;
+  let earliestYear: number | null = null;
 
   for (const dateStr of qualDates) {
     if (!dateStr) continue;
@@ -109,20 +131,16 @@ export function calculateShoppingStatus(car: Car): ShoppingStatus {
     if (isNaN(date.getTime())) continue;
     const year = date.getFullYear();
 
-    if (year < currentYear) {
-      hasUrgent = true;
-    } else if (year === currentYear) {
-      hasMustShop = true;
-    } else if (year === currentYear + 1) {
-      hasUpcoming = true;
+    if (earliestYear === null || year < earliestYear) {
+      earliestYear = year;
     }
   }
 
-  // Priority: urgent > must_shop > upcoming > compliant
-  if (hasUrgent) return 'urgent';
-  if (hasMustShop) return 'must_shop';
-  if (hasUpcoming) return 'upcoming';
-  return 'compliant';
+  if (earliestYear === null) return 'Unknown';
+  if (earliestYear < currentYear) return 'Urgent';
+  if (earliestYear === currentYear) return 'Must Shop';
+  if (earliestYear === currentYear + 1) return 'Upcoming';
+  return 'Compliant';
 }
 
 export interface Shop {
