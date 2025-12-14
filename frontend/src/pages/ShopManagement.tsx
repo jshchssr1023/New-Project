@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon, Squares2X2Icon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon, Squares2X2Icon, MagnifyingGlassIcon, TruckIcon, CalendarDaysIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
 import { shopsApi } from '../services/api';
-import { capacityApi } from '../services/carFlowApi';
+import { capacityApi, carFlowPlanApi } from '../services/carFlowApi';
 import { Slicer, SlicerBar, ShopCard, ShopCardGrid } from '../components/ui';
+import { useAuth } from '../contexts/AuthContext';
 import type { Shop } from '../types';
+import type { CarFlowPlan } from '../types/carFlow';
 
 type ViewMode = 'cards' | 'list' | 'network';
-
-const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Canada', 'Mexico'];
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
 
@@ -40,6 +40,9 @@ interface ImportResults {
 }
 
 export default function ShopManagement() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+
   const [shops, setShops] = useState<Shop[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -51,21 +54,71 @@ export default function ShopManagement() {
   const [isExporting, setIsExporting] = useState(false);
   const [editingShop, setEditingShop] = useState<Shop | null>(null);
   const [viewingShop, setViewingShop] = useState<Shop | null>(null);
-  const [regionFilter, setRegionFilter] = useState<string>('');
   const [activeFilter, setActiveFilter] = useState<string>('');
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
-  const [networkFilter, setNetworkFilter] = useState<string>('');
-  const [ownershipFilter, setOwnershipFilter] = useState<string>(''); // 'aitx', '3p', or ''
+  const [viewMode, setViewMode] = useState<ViewMode>('network'); // Default to network view
+  const [networkFilter, setNetworkFilter] = useState<string>(''); // Filter by parent network
+  const [locationFilter, setLocationFilter] = useState<string>(''); // Filter by specific shop location
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [capacityData, setCapacityData] = useState<Record<string, any[]>>({});
+  const [carFlowPlans, setCarFlowPlans] = useState<CarFlowPlan[]>([]);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Get unique networks from shops
+  // Get unique parent networks (parent shops)
   const uniqueNetworks = useMemo(() => {
-    const networks = [...new Set(shops.map(s => s.network).filter(Boolean))].sort();
-    return networks;
+    const parentShops = shops.filter(s => s.isParent);
+    return parentShops.map(s => ({ value: s.id, label: s.name }));
   }, [shops]);
+
+  // Get location options for drill-down (child shops within selected network)
+  const locationOptions = useMemo(() => {
+    if (!networkFilter) {
+      // Show all non-parent shops as locations
+      return shops
+        .filter(s => !s.isParent)
+        .map(s => ({ value: s.id, label: `${s.name} (${s.code})` }));
+    }
+    // Show child shops of selected parent network
+    return shops
+      .filter(s => s.parentShopId === networkFilter && !s.isParent)
+      .map(s => ({ value: s.id, label: `${s.name} (${s.code})` }));
+  }, [shops, networkFilter]);
+
+  // Calculate cars planned summary stats
+  const carsPlannedSummary = useMemo(() => {
+    const summary = {
+      totalCarsPlanned: 0,
+      byShop: new Map<string, number>(),
+      byNetwork: new Map<string, number>(),
+      byMonth: new Map<string, number>(),
+    };
+
+    carFlowPlans.forEach(plan => {
+      if (plan.status !== 'Cancelled') {
+        summary.totalCarsPlanned++;
+
+        // Count by shop
+        const shopCount = summary.byShop.get(plan.shopId) || 0;
+        summary.byShop.set(plan.shopId, shopCount + 1);
+
+        // Find shop and count by network
+        const shop = shops.find(s => s.id === plan.shopId);
+        if (shop) {
+          const networkId = shop.parentShopId || shop.id;
+          const networkCount = summary.byNetwork.get(networkId) || 0;
+          summary.byNetwork.set(networkId, networkCount + 1);
+        }
+
+        // Count by month
+        const monthKey = `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`;
+        const monthCount = summary.byMonth.get(monthKey) || 0;
+        summary.byMonth.set(monthKey, monthCount + 1);
+      }
+    });
+
+    return summary;
+  }, [carFlowPlans, shops]);
 
   // Group shops by network
   const networkGroups = useMemo((): NetworkGroup[] => {
@@ -182,19 +235,22 @@ export default function ShopManagement() {
     });
   }, [shops, parentShops]);
 
-  // Filtered parent shop groups
+  // Filtered parent shop groups - filter by parent network ID
   const filteredParentShopGroups = useMemo(() => {
     let filtered = parentShopGroups;
-    if (ownershipFilter === 'aitx') {
-      filtered = filtered.filter(g => g.parentShop.isAitxInternal);
-    } else if (ownershipFilter === '3p') {
-      filtered = filtered.filter(g => !g.parentShop.isAitxInternal);
-    }
+    // Filter by selected parent network
     if (networkFilter) {
-      filtered = filtered.filter(g => g.parentShop.network === networkFilter);
+      filtered = filtered.filter(g => g.parentShop.id === networkFilter);
+    }
+    // Filter by specific location (shop)
+    if (locationFilter) {
+      filtered = filtered.map(group => ({
+        ...group,
+        childShops: group.childShops.filter(s => s.id === locationFilter),
+      })).filter(g => g.childShops.length > 0);
     }
     return filtered;
-  }, [parentShopGroups, ownershipFilter, networkFilter]);
+  }, [parentShopGroups, networkFilter, locationFilter]);
 
   const toggleNetworkExpanded = (network: string) => {
     setExpandedNetworks(prev => {
@@ -251,35 +307,30 @@ export default function ShopManagement() {
         s.state?.toLowerCase().includes(query)
       );
     }
-    if (regionFilter) {
-      filtered = filtered.filter(s => s.region === regionFilter);
-    }
     if (activeFilter) {
       filtered = filtered.filter(s => s.isActive === (activeFilter === 'active'));
     }
+    // Filter by parent network
     if (networkFilter) {
-      filtered = filtered.filter(s => s.network === networkFilter);
+      filtered = filtered.filter(s => s.parentShopId === networkFilter || s.id === networkFilter);
     }
-    if (ownershipFilter === 'aitx') {
-      filtered = filtered.filter(s => s.isAitxInternal);
-    } else if (ownershipFilter === '3p') {
-      filtered = filtered.filter(s => !s.isAitxInternal);
+    // Filter by specific location
+    if (locationFilter) {
+      filtered = filtered.filter(s => s.id === locationFilter);
     }
     return filtered;
-  }, [shops, searchQuery, regionFilter, activeFilter, networkFilter, ownershipFilter]);
+  }, [shops, searchQuery, activeFilter, networkFilter, locationFilter]);
 
   useEffect(() => {
     loadShops();
     loadCapacity();
-  }, [regionFilter, activeFilter]);
+    loadCarFlowPlans();
+  }, [activeFilter]);
 
   const loadShops = async () => {
     try {
       const data = await shopsApi.getAll();
       let filtered = data;
-      if (regionFilter) {
-        filtered = filtered.filter((s: any) => s.region === regionFilter);
-      }
       if (activeFilter) {
         filtered = filtered.filter((s: any) => s.isActive === (activeFilter === 'active'));
       }
@@ -288,6 +339,16 @@ export default function ShopManagement() {
       console.error('Failed to load shops:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadCarFlowPlans = async () => {
+    try {
+      const currentYear = new Date().getFullYear();
+      const plans = await carFlowPlanApi.list({ year: currentYear });
+      setCarFlowPlans(plans);
+    } catch (error) {
+      console.error('Failed to load car flow plans:', error);
     }
   };
 
@@ -615,25 +676,71 @@ export default function ShopManagement() {
           </p>
         </div>
         <div className="flex space-x-3">
-          <button
-            onClick={handleExport}
-            disabled={isExporting}
-            className="btn-secondary flex items-center"
-          >
-            <ArrowDownTrayIcon className="mr-2 h-5 w-5" />
-            {isExporting ? 'Exporting...' : 'Export'}
-          </button>
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="btn-secondary flex items-center"
-          >
-            <ArrowUpTrayIcon className="mr-2 h-5 w-5" />
-            Import Shops
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="btn-secondary flex items-center"
+              title="Admin Settings - Import/Export"
+            >
+              <Cog6ToothIcon className="mr-2 h-5 w-5" />
+              Settings
+            </button>
+          )}
           <button onClick={() => handleOpenModal()} className="btn-primary flex items-center">
             <PlusIcon className="mr-2 h-5 w-5" />
             Add Shop
           </button>
+        </div>
+      </div>
+
+      {/* Cars Planned Summary - Shows all cars planned into all shops */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="card p-4 border-l-4 border-l-rail-500">
+          <div className="flex items-center gap-3">
+            <div className="bg-rail-100 rounded-lg p-2">
+              <TruckIcon className="h-5 w-5 text-rail-600" />
+            </div>
+            <div>
+              <p className="text-xs text-steel-500 uppercase">Total Cars Planned</p>
+              <p className="text-xl font-bold text-steel-900">{carsPlannedSummary.totalCarsPlanned.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-4 border-l-4 border-l-blue-500">
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-100 rounded-lg p-2">
+              <BuildingOffice2Icon className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-xs text-steel-500 uppercase">Networks with Plans</p>
+              <p className="text-xl font-bold text-steel-900">{carsPlannedSummary.byNetwork.size}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-4 border-l-4 border-l-emerald-500">
+          <div className="flex items-center gap-3">
+            <div className="bg-emerald-100 rounded-lg p-2">
+              <ListBulletIcon className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-xs text-steel-500 uppercase">Locations with Plans</p>
+              <p className="text-xl font-bold text-steel-900">{carsPlannedSummary.byShop.size}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card p-4 border-l-4 border-l-amber-500">
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-100 rounded-lg p-2">
+              <CalendarDaysIcon className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-xs text-steel-500 uppercase">Active Months</p>
+              <p className="text-xl font-bold text-steel-900">{carsPlannedSummary.byMonth.size}</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -691,11 +798,22 @@ export default function ShopManagement() {
 
           <SlicerBar>
             <Slicer
-              label="Region"
-              options={regions.map(r => ({ value: r, label: r }))}
-              value={regionFilter}
-              onChange={(v) => setRegionFilter(v as string)}
-              placeholder="All"
+              label="Network"
+              options={uniqueNetworks}
+              value={networkFilter}
+              onChange={(v) => {
+                setNetworkFilter(v as string);
+                setLocationFilter(''); // Reset location when network changes
+              }}
+              placeholder="All Networks"
+              size="sm"
+            />
+            <Slicer
+              label="Location"
+              options={locationOptions}
+              value={locationFilter}
+              onChange={(v) => setLocationFilter(v as string)}
+              placeholder="All Locations"
               size="sm"
             />
             <Slicer
@@ -709,36 +827,16 @@ export default function ShopManagement() {
               placeholder="All"
               size="sm"
             />
-            <Slicer
-              label="Ownership"
-              options={[
-                { value: 'aitx', label: 'AITX Owned' },
-                { value: '3p', label: '3rd Party' },
-              ]}
-              value={ownershipFilter}
-              onChange={(v) => setOwnershipFilter(v as string)}
-              placeholder="All"
-              size="sm"
-            />
-            <Slicer
-              label="Network"
-              options={uniqueNetworks.map(n => ({ value: n, label: n }))}
-              value={networkFilter}
-              onChange={(v) => setNetworkFilter(v as string)}
-              placeholder="All"
-              size="sm"
-            />
           </SlicerBar>
 
           {/* Clear filters */}
-          {(searchQuery || regionFilter || activeFilter || ownershipFilter || networkFilter) && (
+          {(searchQuery || networkFilter || locationFilter || activeFilter) && (
             <button
               onClick={() => {
                 setSearchQuery('');
-                setRegionFilter('');
-                setActiveFilter('');
-                setOwnershipFilter('');
                 setNetworkFilter('');
+                setLocationFilter('');
+                setActiveFilter('');
               }}
               className="text-sm text-crimson-600 hover:text-crimson-700 font-medium"
             >
@@ -779,10 +877,9 @@ export default function ShopManagement() {
             <button
               onClick={() => {
                 setSearchQuery('');
-                setRegionFilter('');
-                setActiveFilter('');
-                setOwnershipFilter('');
                 setNetworkFilter('');
+                setLocationFilter('');
+                setActiveFilter('');
               }}
               className="mt-2 text-crimson-600 hover:text-crimson-800 font-medium"
             >
@@ -1329,6 +1426,76 @@ export default function ShopManagement() {
                 <button onClick={() => setIsViewModalOpen(false)} className="btn-secondary">
                   Close
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Settings Modal - Import/Export */}
+      {showSettingsModal && isAdmin && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setShowSettingsModal(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-steel-900">Admin Settings</h2>
+                <button
+                  onClick={() => setShowSettingsModal(false)}
+                  className="text-steel-400 hover:text-steel-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="border-b border-steel-200 pb-4">
+                  <h3 className="text-sm font-medium text-steel-700 mb-3">Data Management</h3>
+                  <p className="text-sm text-steel-500 mb-4">
+                    Import and export shop network data. These features are restricted to administrators only.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      setIsImportModalOpen(true);
+                    }}
+                    className="btn-secondary flex flex-col items-center justify-center py-6 hover:bg-steel-100"
+                  >
+                    <ArrowUpTrayIcon className="h-8 w-8 text-steel-600 mb-2" />
+                    <span className="text-sm font-medium">Import Shops</span>
+                    <span className="text-xs text-steel-500 mt-1">Upload CSV file</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setShowSettingsModal(false);
+                      handleExport();
+                    }}
+                    disabled={isExporting}
+                    className="btn-secondary flex flex-col items-center justify-center py-6 hover:bg-steel-100"
+                  >
+                    <ArrowDownTrayIcon className="h-8 w-8 text-steel-600 mb-2" />
+                    <span className="text-sm font-medium">
+                      {isExporting ? 'Exporting...' : 'Export Shops'}
+                    </span>
+                    <span className="text-xs text-steel-500 mt-1">Download CSV file</span>
+                  </button>
+                </div>
+
+                <div className="bg-amber-50 rounded-lg p-4 mt-4">
+                  <div className="flex items-start gap-2">
+                    <ExclamationTriangleIcon className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">Administrator Access</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        Import operations may modify existing shop data. Always verify the CSV format before importing.
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
