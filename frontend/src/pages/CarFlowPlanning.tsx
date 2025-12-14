@@ -22,6 +22,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { carsApi, shopsApi, reportsApi, sopApi } from '../services/api';
+import { carFlowPlanApi, BulkPlanAssignment, BulkPlanResponse } from '../services/carFlowApi';
 import type { Car, Shop } from '../types';
 import { useCarSelection } from '../contexts/CarSelectionContext';
 import type {
@@ -753,6 +754,9 @@ export default function CarFlowPlanning() {
           targetVsActuals={targetVsActuals}
           qualificationDeadlines={qualificationDeadlines}
           use120DayFilter={use120DayFilter}
+          monthlyAllocations={monthlyAllocations}
+          aitxShops={aitxShops}
+          thirdPartyNetworks={thirdPartyNetworks}
         />
       )}
 
@@ -766,6 +770,31 @@ export default function CarFlowPlanning() {
           setSelectedWorkType={setSelectedWorkType}
           selectedPlanningState={selectedPlanningState}
           setSelectedPlanningState={setSelectedPlanningState}
+          shops={shops}
+          onPlanComplete={() => {
+            // Refresh car data after planning to update demand register
+            const refreshData = async () => {
+              try {
+                const [carsResponse, shopsResponse] = await Promise.all([
+                  carsApi.getAll({ pageSize: 1000 }),
+                  shopsApi.getAll(),
+                ]);
+                setCars(carsResponse.data);
+                setShops(shopsResponse);
+
+                const { demandTypes: calculatedDemand, demandRegister: register } = calculateDemandFromCars(
+                  carsResponse.data,
+                  shopsResponse,
+                  filterYear
+                );
+                setDemandTypes(calculatedDemand);
+                setDemandRegister(register);
+              } catch (err) {
+                console.error('Failed to refresh data:', err);
+              }
+            };
+            refreshData();
+          }}
         />
       )}
 
@@ -834,6 +863,9 @@ function ExecutiveDashboard({
   targetVsActuals,
   qualificationDeadlines,
   use120DayFilter,
+  monthlyAllocations,
+  aitxShops,
+  thirdPartyNetworks,
 }: {
   metrics: SystemMetrics;
   demandTypes: DemandType[];
@@ -844,7 +876,64 @@ function ExecutiveDashboard({
   targetVsActuals: TargetVsActual[];
   qualificationDeadlines: QualificationDeadline[];
   use120DayFilter: boolean;
+  monthlyAllocations: MonthlyAllocation[];
+  aitxShops: AITXShop[];
+  thirdPartyNetworks: ThirdPartyNetwork[];
 }) {
+  // Calculate shop allocation summary for KPI visualizations
+  const shopAllocationSummary = useMemo(() => {
+    const byShop: Record<string, { name: string; total: number; capacity: number; isAitx: boolean }> = {};
+    const byNetwork: Record<string, { name: string; total: number; capacity: number }> = {};
+    const byMonth: Record<string, { allocated: number; capacity: number }> = {};
+
+    // Initialize AITX shops
+    aitxShops.forEach(shop => {
+      byShop[shop.id] = { name: shop.location, total: 0, capacity: shop.monthlyCapacity * 12, isAitx: true };
+      if (!byNetwork['AITX']) {
+        byNetwork['AITX'] = { name: 'AITX Internal', total: 0, capacity: 0 };
+      }
+      byNetwork['AITX'].capacity += shop.monthlyCapacity * 12;
+    });
+
+    // Initialize 3P networks
+    thirdPartyNetworks.forEach(network => {
+      byNetwork[network.id] = { name: network.name, total: 0, capacity: network.monthlyCapacity * 12 };
+    });
+
+    // Calculate allocations
+    monthlyAllocations.forEach(monthAlloc => {
+      const monthKey = monthAlloc.month;
+      if (!byMonth[monthKey]) {
+        byMonth[monthKey] = { allocated: 0, capacity: 0 };
+      }
+
+      monthAlloc.shopAllocations.forEach(shopAlloc => {
+        // Track by month
+        byMonth[monthKey].allocated += shopAlloc.cars;
+
+        // Track by shop (AITX)
+        const aitxShop = aitxShops.find(s => s.id === shopAlloc.shopId);
+        if (aitxShop) {
+          if (byShop[aitxShop.id]) {
+            byShop[aitxShop.id].total += shopAlloc.cars;
+          }
+          byNetwork['AITX'].total += shopAlloc.cars;
+          byMonth[monthKey].capacity += aitxShop.monthlyCapacity;
+        }
+
+        // Track by network (3P)
+        const network = thirdPartyNetworks.find(n => n.id === shopAlloc.shopId);
+        if (network) {
+          if (byNetwork[network.id]) {
+            byNetwork[network.id].total += shopAlloc.cars;
+          }
+          byMonth[monthKey].capacity += network.monthlyCapacity;
+        }
+      });
+    });
+
+    return { byShop, byNetwork, byMonth };
+  }, [monthlyAllocations, aitxShops, thirdPartyNetworks]);
   const StatusBadge = ({ status, type: _type }: { status: string; type: 'capacity' | 'surplus' | 'utilization' }) => {
     const colors = {
       'Sufficient': 'bg-green-100 text-green-800',
@@ -1175,6 +1264,131 @@ function ExecutiveDashboard({
           </div>
         </div>
       )}
+
+      {/* Allocation by Network - Visual KPI */}
+      <div className="card">
+        <h3 className="mb-4 text-lg font-semibold text-steel-900">Allocation by Network</h3>
+        <div className="space-y-4">
+          {Object.entries(shopAllocationSummary.byNetwork).map(([networkId, data]) => {
+            const utilization = data.capacity > 0 ? (data.total / data.capacity) * 100 : 0;
+            return (
+              <div key={networkId} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-steel-900">{data.name}</span>
+                  <span className="text-sm text-steel-600">
+                    {formatNumber(data.total)} / {formatNumber(data.capacity)} cars
+                    <span className={`ml-2 font-medium ${
+                      utilization > 100 ? 'text-red-600' :
+                      utilization > 85 ? 'text-yellow-600' : 'text-green-600'
+                    }`}>
+                      ({utilization.toFixed(1)}%)
+                    </span>
+                  </span>
+                </div>
+                <div className="h-6 overflow-hidden rounded-full bg-steel-200">
+                  <div
+                    className={`h-full transition-all duration-500 ${
+                      utilization > 100 ? 'bg-red-500' :
+                      utilization > 85 ? 'bg-yellow-500' :
+                      networkId === 'AITX' ? 'bg-rail-600' : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${Math.min(utilization, 100)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Allocation by AITX Shop - Visual KPI */}
+      <div className="card">
+        <h3 className="mb-4 text-lg font-semibold text-steel-900">AITX Shop Allocations</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Object.entries(shopAllocationSummary.byShop).filter(([_, d]) => d.isAitx).map(([shopId, data]) => {
+            const utilization = data.capacity > 0 ? (data.total / data.capacity) * 100 : 0;
+            return (
+              <div key={shopId} className={`rounded-lg border-2 p-4 ${
+                utilization > 100 ? 'border-red-300 bg-red-50' :
+                utilization > 85 ? 'border-yellow-300 bg-yellow-50' :
+                'border-green-300 bg-green-50'
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-steel-900">{data.name}</span>
+                  <span className={`text-lg font-bold ${
+                    utilization > 100 ? 'text-red-700' :
+                    utilization > 85 ? 'text-yellow-700' : 'text-green-700'
+                  }`}>
+                    {utilization.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <div className="h-3 overflow-hidden rounded-full bg-steel-200">
+                    <div
+                      className={`h-full transition-all duration-500 ${
+                        utilization > 100 ? 'bg-red-500' :
+                        utilization > 85 ? 'bg-yellow-500' : 'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(utilization, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-steel-600">
+                    <span>Allocated: {formatNumber(data.total)}</span>
+                    <span>Capacity: {formatNumber(data.capacity)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Monthly Allocation Trend - Visual KPI */}
+      <div className="card">
+        <h3 className="mb-4 text-lg font-semibold text-steel-900">Monthly Allocation Trend</h3>
+        <div className="overflow-x-auto">
+          <div className="flex items-end gap-2 min-w-max pb-2" style={{ minHeight: '200px' }}>
+            {Object.entries(shopAllocationSummary.byMonth).slice(0, 12).map(([month, data]) => {
+              const utilization = data.capacity > 0 ? (data.allocated / data.capacity) * 100 : 0;
+              const barHeight = Math.min(utilization, 150); // Cap at 150% for display
+              return (
+                <div key={month} className="flex flex-col items-center gap-1 w-16">
+                  <div
+                    className={`w-10 rounded-t transition-all duration-500 ${
+                      utilization > 100 ? 'bg-red-500' :
+                      utilization > 85 ? 'bg-yellow-500' : 'bg-rail-500'
+                    }`}
+                    style={{ height: `${barHeight * 1.3}px` }}
+                    title={`${data.allocated} cars allocated (${utilization.toFixed(1)}%)`}
+                  />
+                  <div className="text-xs font-medium text-steel-700">{data.allocated}</div>
+                  <div className="text-xs text-steel-500">{month.slice(5)}</div>
+                  <div className={`text-xs font-medium ${
+                    utilization > 100 ? 'text-red-600' :
+                    utilization > 85 ? 'text-yellow-600' : 'text-green-600'
+                  }`}>
+                    {utilization.toFixed(0)}%
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="mt-4 flex items-center gap-6 text-sm text-steel-600">
+          <span className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded bg-rail-500"></span>
+            Normal (&lt;85%)
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded bg-yellow-500"></span>
+            High (85-100%)
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded bg-red-500"></span>
+            Over (&gt;100%)
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1189,6 +1403,8 @@ function DemandRegister({
   setSelectedWorkType,
   selectedPlanningState,
   setSelectedPlanningState,
+  shops,
+  onPlanComplete,
 }: {
   monthlyForecasts: MonthlyDemandForecast[];
   demandRegister: DemandRegisterType | null;
@@ -1198,9 +1414,119 @@ function DemandRegister({
   setSelectedWorkType: (type: WorkType | 'all') => void;
   selectedPlanningState: PlanningState | 'all';
   setSelectedPlanningState: (state: PlanningState | 'all') => void;
+  shops: Shop[];
+  onPlanComplete?: () => void;
 }) {
   const currentYear = new Date().getFullYear();
   const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
+
+  // State for planning modal
+  const [showPlanningModal, setShowPlanningModal] = useState(false);
+  const [selectedCarsForPlanning, setSelectedCarsForPlanning] = useState<Set<string>>(new Set());
+  const [isPlanningInProgress, setIsPlanningInProgress] = useState(false);
+  const [planningError, setPlanningError] = useState<string | null>(null);
+  const [planningSuccess, setPlanningSuccess] = useState<string | null>(null);
+
+  // Bulk assignment state for planning modal
+  const [bulkShopId, setBulkShopId] = useState<string>('');
+  const [bulkMonth, setBulkMonth] = useState<number>(new Date().getMonth() + 1);
+  const [bulkYear, setBulkYear] = useState<number>(currentYear);
+
+  // Get urgent (not planned) cars for the planning modal
+  const urgentCars = useMemo(() => {
+    if (!demandRegister) return [];
+    return demandRegister.items.filter(item =>
+      item.planningState === 'not_planned'
+    ).sort((a, b) => {
+      // Sort by overdue first, then by days until due
+      if (a.isOverdue && !b.isOverdue) return -1;
+      if (!a.isOverdue && b.isOverdue) return 1;
+      return a.daysUntilDue - b.daysUntilDue;
+    });
+  }, [demandRegister]);
+
+  // Handle opening the planning modal
+  const handleViewAndPlan = useCallback(() => {
+    // Auto-select all urgent cars
+    const urgentCarIds = new Set(urgentCars.map(item => item.carId));
+    setSelectedCarsForPlanning(urgentCarIds);
+    setShowPlanningModal(true);
+    setPlanningError(null);
+    setPlanningSuccess(null);
+  }, [urgentCars]);
+
+  // Toggle selection of a car
+  const toggleCarSelection = useCallback((carId: string) => {
+    setSelectedCarsForPlanning(prev => {
+      const next = new Set(prev);
+      if (next.has(carId)) {
+        next.delete(carId);
+      } else {
+        next.add(carId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Select/deselect all visible cars
+  const handleSelectAll = useCallback((selectAll: boolean) => {
+    if (selectAll) {
+      setSelectedCarsForPlanning(new Set(urgentCars.map(item => item.carId)));
+    } else {
+      setSelectedCarsForPlanning(new Set());
+    }
+  }, [urgentCars]);
+
+  // Handle confirming the plan
+  const handleConfirmPlan = useCallback(async () => {
+    if (selectedCarsForPlanning.size === 0) {
+      setPlanningError('Please select at least one car to plan');
+      return;
+    }
+    if (!bulkShopId) {
+      setPlanningError('Please select a shop');
+      return;
+    }
+
+    setIsPlanningInProgress(true);
+    setPlanningError(null);
+
+    try {
+      // Build bulk plan assignments
+      const assignments: BulkPlanAssignment[] = Array.from(selectedCarsForPlanning).map(carId => ({
+        carId,
+        shopId: bulkShopId,
+        plannedMonth: bulkMonth,
+        plannedYear: bulkYear,
+        shopReason: 'Urgent planning from demand register',
+      }));
+
+      // Call the bulk create API
+      const response: BulkPlanResponse = await carFlowPlanApi.bulkCreate(assignments, false);
+
+      if (response.success) {
+        setPlanningSuccess(`Successfully created ${response.plansCreated} car flow plans!`);
+        setSelectedCarsForPlanning(new Set());
+
+        // Close modal after brief delay to show success message
+        setTimeout(() => {
+          setShowPlanningModal(false);
+          setPlanningSuccess(null);
+          // Trigger refresh of demand register data
+          onPlanComplete?.();
+        }, 2000);
+      } else if (response.conflicts && response.conflicts.length > 0) {
+        setPlanningError(`${response.conflicts.length} cars already have plans. Please resolve conflicts.`);
+      } else {
+        setPlanningError(response.message || 'Failed to create plans');
+      }
+    } catch (error: any) {
+      console.error('Failed to create plans:', error);
+      setPlanningError(error.response?.data?.message || error.message || 'Failed to create plans');
+    } finally {
+      setIsPlanningInProgress(false);
+    }
+  }, [selectedCarsForPlanning, bulkShopId, bulkMonth, bulkYear, onPlanComplete]);
 
   // Planning state labels and colors
   const planningStateConfig: Record<PlanningState, { label: string; color: string; bgColor: string }> = {
@@ -1257,7 +1583,7 @@ function DemandRegister({
               </div>
             </div>
             <button
-              onClick={() => setSelectedPlanningState('not_planned')}
+              onClick={handleViewAndPlan}
               className="rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
             >
               View & Plan
@@ -1528,6 +1854,221 @@ function DemandRegister({
           </table>
         </div>
       </div>
+
+      {/* Urgent Cars Planning Modal */}
+      {showPlanningModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => !isPlanningInProgress && setShowPlanningModal(false)} />
+            <div className="relative w-full max-w-4xl rounded-xl bg-white shadow-xl max-h-[90vh] flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-steel-200">
+                <div>
+                  <h2 className="text-xl font-semibold text-steel-900">Plan Urgent Cars</h2>
+                  <p className="text-sm text-steel-500 mt-1">
+                    {urgentCars.length} cars need planning • {selectedCarsForPlanning.size} selected
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowPlanningModal(false)}
+                  disabled={isPlanningInProgress}
+                  className="text-steel-400 hover:text-steel-600"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+
+              {/* Planning Controls */}
+              <div className="px-6 py-4 bg-steel-50 border-b border-steel-200">
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-steel-700 mb-1">Shop *</label>
+                    <select
+                      value={bulkShopId}
+                      onChange={(e) => setBulkShopId(e.target.value)}
+                      className="rounded-lg border border-steel-300 bg-white px-3 py-2 text-sm focus:border-rail-500 focus:ring-rail-500 min-w-[200px]"
+                    >
+                      <option value="">Select a shop...</option>
+                      {shops.filter(s => s.isActive).map(shop => (
+                        <option key={shop.id} value={shop.id}>
+                          {shop.name} ({shop.code}) {shop.tankQualified ? '★' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-steel-700 mb-1">Month</label>
+                    <select
+                      value={bulkMonth}
+                      onChange={(e) => setBulkMonth(parseInt(e.target.value))}
+                      className="rounded-lg border border-steel-300 bg-white px-3 py-2 text-sm focus:border-rail-500 focus:ring-rail-500"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
+                        <option key={m} value={m}>
+                          {new Date(2024, m - 1, 1).toLocaleString('default', { month: 'long' })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-steel-700 mb-1">Year</label>
+                    <select
+                      value={bulkYear}
+                      onChange={(e) => setBulkYear(parseInt(e.target.value))}
+                      className="rounded-lg border border-steel-300 bg-white px-3 py-2 text-sm focus:border-rail-500 focus:ring-rail-500"
+                    >
+                      {yearOptions.map(y => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-auto">
+                    <button
+                      onClick={() => handleSelectAll(selectedCarsForPlanning.size !== urgentCars.length)}
+                      className="btn-secondary text-sm py-2"
+                    >
+                      {selectedCarsForPlanning.size === urgentCars.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Error/Success Messages */}
+              {planningError && (
+                <div className="mx-6 mt-4 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700 flex items-center gap-2">
+                  <XCircleIcon className="h-5 w-5 flex-shrink-0" />
+                  {planningError}
+                </div>
+              )}
+              {planningSuccess && (
+                <div className="mx-6 mt-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-700 flex items-center gap-2">
+                  <CheckCircleIcon className="h-5 w-5 flex-shrink-0" />
+                  {planningSuccess}
+                </div>
+              )}
+
+              {/* Car List */}
+              <div className="flex-1 overflow-auto px-6 py-4">
+                <table className="min-w-full divide-y divide-steel-200">
+                  <thead className="bg-steel-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500 w-10">
+                        <input
+                          type="checkbox"
+                          checked={selectedCarsForPlanning.size === urgentCars.length && urgentCars.length > 0}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          className="rounded border-steel-300 text-rail-600 focus:ring-rail-500"
+                        />
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Car #</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Work Type</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Due Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Days</th>
+                      <th className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500">Customer</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-steel-200 bg-white">
+                    {urgentCars.map((item) => (
+                      <tr
+                        key={item.carId}
+                        className={`cursor-pointer hover:bg-steel-50 ${
+                          selectedCarsForPlanning.has(item.carId) ? 'bg-rail-50' : ''
+                        } ${item.isOverdue ? 'bg-red-50' : ''}`}
+                        onClick={() => toggleCarSelection(item.carId)}
+                      >
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedCarsForPlanning.has(item.carId)}
+                            onChange={() => toggleCarSelection(item.carId)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded border-steel-300 text-rail-600 focus:ring-rail-500"
+                          />
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm font-medium text-steel-900">
+                          {item.railcarNumber}
+                          {item.isPriorityCustomer && (
+                            <span className="ml-1 text-yellow-500" title="Priority Customer">★</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                            item.workType === 'qualification' ? 'bg-blue-100 text-blue-700' :
+                            item.workType === 'assignment' ? 'bg-green-100 text-green-700' :
+                            item.workType === 'return' ? 'bg-purple-100 text-purple-700' :
+                            'bg-steel-100 text-steel-700'
+                          }`}>
+                            {item.workType === 'qualification' ? 'QUAL' :
+                             item.workType === 'assignment' ? 'ASSIGN' :
+                             item.workType === 'return' ? 'RETURN' : item.workType.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
+                          {item.dueDate ? new Date(item.dueDate).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm">
+                          <span className={`font-semibold ${
+                            item.isOverdue ? 'text-red-700' :
+                            item.daysUntilDue <= 30 ? 'text-orange-600' :
+                            item.daysUntilDue <= 60 ? 'text-yellow-600' :
+                            'text-steel-600'
+                          }`}>
+                            {item.isOverdue ? `${Math.abs(item.daysUntilDue)}d overdue` :
+                             item.daysUntilDue === 999 ? '-' : `${item.daysUntilDue}d`}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
+                          {item.customer || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                    {urgentCars.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-steel-500">
+                          No urgent cars to plan
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-6 py-4 border-t border-steel-200 bg-steel-50">
+                <div className="text-sm text-steel-600">
+                  {selectedCarsForPlanning.size} of {urgentCars.length} cars selected
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowPlanningModal(false)}
+                    disabled={isPlanningInProgress}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmPlan}
+                    disabled={isPlanningInProgress || selectedCarsForPlanning.size === 0 || !bulkShopId}
+                    className="btn-primary"
+                  >
+                    {isPlanningInProgress ? (
+                      <>
+                        <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                        Creating Plans...
+                      </>
+                    ) : (
+                      <>Confirm & Create Plans ({selectedCarsForPlanning.size})</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

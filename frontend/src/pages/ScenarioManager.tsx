@@ -615,6 +615,84 @@ export default function ScenarioManager() {
     return months;
   }, [shops, wizardSelectedShopIds, wizardSelectedCarIds, wizardCapacityMonthRange]);
 
+  // Calculate space hold allocations - distribute cars across shops and months based on capacity
+  const spaceHoldAllocations = useMemo(() => {
+    const selectedShopsList = shops.filter(s => wizardSelectedShopIds.includes(s.id));
+    const totalCars = wizardSelectedCarIds.length;
+    const numShops = selectedShopsList.length;
+    const numMonths = wizardCapacityMonthRange[1] - wizardCapacityMonthRange[0] + 1;
+
+    if (numShops === 0 || numMonths === 0 || totalCars === 0) {
+      return { allocations: [], totalAllocated: 0, months: [] };
+    }
+
+    // Calculate total capacity across all shops
+    const totalCapacity = selectedShopsList.reduce((sum, s) => sum + (s.capacity || 0), 0);
+
+    // Generate months
+    const now = new Date();
+    const months: { key: string; label: string; year: number; month: number }[] = [];
+    for (let i = wizardCapacityMonthRange[0]; i <= wizardCapacityMonthRange[1]; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      months.push({
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        label: date.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+      });
+    }
+
+    // Distribute cars proportionally by shop capacity, evenly across months
+    const allocations: { shopId: string; shopName: string; shopCode: string; monthKey: string; monthLabel: string; carsAllocated: number; capacity: number; utilization: number }[] = [];
+    let totalAllocated = 0;
+    let remainingCars = totalCars;
+
+    // Calculate per-shop allocations based on capacity ratio
+    const shopAllocations: Map<string, number> = new Map();
+    selectedShopsList.forEach((shop, idx) => {
+      const shopCapacityRatio = totalCapacity > 0 ? (shop.capacity || 0) / totalCapacity : 1 / numShops;
+      const shopTotalCars = Math.floor(totalCars * shopCapacityRatio);
+      shopAllocations.set(shop.id, shopTotalCars);
+      remainingCars -= shopTotalCars;
+
+      // Distribute leftover cars to first few shops
+      if (idx < remainingCars) {
+        shopAllocations.set(shop.id, (shopAllocations.get(shop.id) || 0) + 1);
+      }
+    });
+
+    // Now distribute each shop's cars across months
+    selectedShopsList.forEach(shop => {
+      const shopCars = shopAllocations.get(shop.id) || 0;
+      const carsPerMonth = Math.floor(shopCars / numMonths);
+      let shopRemainder = shopCars - (carsPerMonth * numMonths);
+
+      months.forEach((monthData, monthIdx) => {
+        let monthCars = carsPerMonth;
+        if (monthIdx < shopRemainder) {
+          monthCars += 1;
+        }
+
+        const utilization = (shop.capacity || 1) > 0 ? monthCars / (shop.capacity || 1) : 0;
+
+        allocations.push({
+          shopId: shop.id,
+          shopName: shop.name,
+          shopCode: shop.code,
+          monthKey: monthData.key,
+          monthLabel: monthData.label,
+          carsAllocated: monthCars,
+          capacity: shop.capacity || 0,
+          utilization,
+        });
+
+        totalAllocated += monthCars;
+      });
+    });
+
+    return { allocations, totalAllocated, months };
+  }, [shops, wizardSelectedShopIds, wizardSelectedCarIds, wizardCapacityMonthRange]);
+
   // Check if wizard can proceed to next step
   const canProceedToStep = (step: WizardStep): boolean => {
     switch (step) {
@@ -1493,6 +1571,112 @@ export default function ScenarioManager() {
                         </p>
                       </div>
                     </div>
+
+                    {/* Space Hold Allocation Preview */}
+                    {spaceHoldAllocations.allocations.length > 0 && (
+                      <div className="border border-steel-200 rounded-lg">
+                        <div className="px-4 py-3 bg-amber-50 border-b border-steel-200 rounded-t-lg">
+                          <h4 className="font-medium text-amber-800 flex items-center gap-2">
+                            <AdjustmentsHorizontalIcon className="h-5 w-5" />
+                            Space Hold Preview - Per Shop Per Month
+                          </h4>
+                          <p className="text-sm text-amber-700 mt-1">
+                            This scenario will temporarily hold capacity at the selected shops until confirmed into the car flow plan.
+                          </p>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-steel-200">
+                            <thead className="bg-steel-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-steel-500 sticky left-0 bg-steel-50">
+                                  Shop
+                                </th>
+                                {spaceHoldAllocations.months.map(m => (
+                                  <th key={m.key} className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-steel-500">
+                                    {m.label}
+                                  </th>
+                                ))}
+                                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-steel-500">
+                                  Total
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-steel-200">
+                              {shops.filter(s => wizardSelectedShopIds.includes(s.id)).map(shop => {
+                                const shopAllocations = spaceHoldAllocations.allocations.filter(a => a.shopId === shop.id);
+                                const shopTotal = shopAllocations.reduce((sum, a) => sum + a.carsAllocated, 0);
+                                return (
+                                  <tr key={shop.id} className="hover:bg-steel-50">
+                                    <td className="px-4 py-3 text-sm font-medium text-steel-900 sticky left-0 bg-white whitespace-nowrap">
+                                      {shop.name}
+                                      <span className="text-steel-500 text-xs ml-1">({shop.code})</span>
+                                      <span className="text-steel-400 text-xs block">Cap: {shop.capacity}/mo</span>
+                                    </td>
+                                    {spaceHoldAllocations.months.map(m => {
+                                      const alloc = shopAllocations.find(a => a.monthKey === m.key);
+                                      const cars = alloc?.carsAllocated || 0;
+                                      const util = alloc?.utilization || 0;
+                                      return (
+                                        <td key={m.key} className="px-4 py-3 text-center">
+                                          <div className={`inline-flex flex-col items-center px-2 py-1 rounded ${
+                                            util > 1 ? 'bg-red-100 text-red-800' :
+                                            util > 0.85 ? 'bg-yellow-100 text-yellow-800' :
+                                            cars > 0 ? 'bg-green-100 text-green-800' : 'text-steel-400'
+                                          }`}>
+                                            <span className="font-semibold">{cars}</span>
+                                            <span className="text-xs">{(util * 100).toFixed(0)}%</span>
+                                          </div>
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="px-4 py-3 text-center font-semibold text-steel-900">
+                                      {shopTotal}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              {/* Total row */}
+                              <tr className="bg-steel-50 font-semibold">
+                                <td className="px-4 py-3 text-sm text-steel-900 sticky left-0 bg-steel-50">
+                                  Total
+                                </td>
+                                {spaceHoldAllocations.months.map(m => {
+                                  const monthTotal = spaceHoldAllocations.allocations
+                                    .filter(a => a.monthKey === m.key)
+                                    .reduce((sum, a) => sum + a.carsAllocated, 0);
+                                  return (
+                                    <td key={m.key} className="px-4 py-3 text-center text-steel-900">
+                                      {monthTotal}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-4 py-3 text-center text-rail-700">
+                                  {spaceHoldAllocations.totalAllocated}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+
+                        <div className="px-4 py-3 bg-steel-50 border-t border-steel-200 rounded-b-lg text-sm text-steel-600">
+                          <div className="flex items-center gap-4">
+                            <span className="flex items-center gap-1">
+                              <span className="w-3 h-3 rounded bg-green-200 border border-green-400"></span>
+                              Normal (&lt;85%)
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="w-3 h-3 rounded bg-yellow-200 border border-yellow-400"></span>
+                              High (85-100%)
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <span className="w-3 h-3 rounded bg-red-200 border border-red-400"></span>
+                              Over (&gt;100%)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div>
                       <label className="label">Scenario Name <span className="text-red-500">*</span></label>

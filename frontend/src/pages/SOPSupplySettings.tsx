@@ -27,6 +27,9 @@ import {
   CubeIcon,
   BuildingOffice2Icon,
   ArrowsPointingOutIcon,
+  ClipboardDocumentListIcon,
+  Cog6ToothIcon,
+  TruckIcon,
 } from '@heroicons/react/24/outline';
 import { sopCommitmentApi } from '../services/carFlowApi';
 import { shopsApi } from '../services/api';
@@ -44,9 +47,24 @@ const MONTH_ABBREV = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 type ViewMode = 'network' | 'flat';
 type FilterMode = 'all' | 'aitx' | 'thirdParty';
+type TabType = 'supply' | 'rules';
+
+// Shop Rule Types
+interface ShopRule {
+  id: string;
+  shopId: string;
+  shopName: string;
+  shopCode: string;
+  ruleType: 'car_type' | 'customer' | 'capacity' | 'qualification';
+  condition: string;
+  action: 'allow' | 'exclude' | 'prefer';
+  priority: number;
+  isActive: boolean;
+}
 
 export default function SOPSupplySettings() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<TabType>('supply');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [editingCell, setEditingCell] = useState<{ shopId: string; month: number } | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -266,16 +284,110 @@ export default function SOPSupplySettings() {
   // Capacity stats
   const capacityStats = getSystemTotalCapacity();
 
+  // Mock shop rules data - in production this would come from API
+  const shopRules = useMemo<ShopRule[]>(() => {
+    return shopsWithCommitments.flatMap((shop: Shop) => {
+      const rules: ShopRule[] = [];
+
+      // Tank car rule
+      if (shop.tankQualified) {
+        rules.push({
+          id: `${shop.id}-tank`,
+          shopId: shop.id,
+          shopName: shop.name,
+          shopCode: shop.code,
+          ruleType: 'qualification',
+          condition: 'Tank Cars',
+          action: 'allow',
+          priority: 1,
+          isActive: true,
+        });
+      } else {
+        rules.push({
+          id: `${shop.id}-tank`,
+          shopId: shop.id,
+          shopName: shop.name,
+          shopCode: shop.code,
+          ruleType: 'qualification',
+          condition: 'Tank Cars',
+          action: 'exclude',
+          priority: 1,
+          isActive: true,
+        });
+      }
+
+      // Capacity rule
+      if (shop.capacity && shop.capacity > 0) {
+        rules.push({
+          id: `${shop.id}-capacity`,
+          shopId: shop.id,
+          shopName: shop.name,
+          shopCode: shop.code,
+          ruleType: 'capacity',
+          condition: `Monthly Capacity: ${shop.capacity} cars`,
+          action: 'allow',
+          priority: 2,
+          isActive: true,
+        });
+      }
+
+      return rules;
+    });
+  }, [shopsWithCommitments]);
+
+  // Group rules by shop
+  const rulesByShop = useMemo(() => {
+    const grouped: Record<string, ShopRule[]> = {};
+    shopRules.forEach(rule => {
+      if (!grouped[rule.shopId]) {
+        grouped[rule.shopId] = [];
+      }
+      grouped[rule.shopId].push(rule);
+    });
+    return grouped;
+  }, [shopRules]);
+
   return (
     <div className="p-6 max-w-full mx-auto">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-steel-900">S&OP Supply Commitments</h1>
+        <h1 className="text-2xl font-bold text-steel-900">S&OP Supply Management</h1>
         <p className="text-steel-500 mt-1">
-          Configure monthly shop capacity commitments by network for car flow planning
+          Configure shop capacity commitments and rules for car flow planning. This is the source of truth for shops included in S&OP Supply Capacity calculations.
         </p>
       </div>
 
+      {/* Tab Navigation */}
+      <div className="border-b border-steel-200 mb-6">
+        <nav className="-mb-px flex gap-6">
+          <button
+            onClick={() => setActiveTab('supply')}
+            className={`flex items-center gap-2 px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'supply'
+                ? 'border-rail-500 text-rail-600'
+                : 'border-transparent text-steel-500 hover:text-steel-700 hover:border-steel-300'
+            }`}
+          >
+            <BuildingStorefrontIcon className="h-5 w-5" />
+            Supply Capacity
+          </button>
+          <button
+            onClick={() => setActiveTab('rules')}
+            className={`flex items-center gap-2 px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'rules'
+                ? 'border-rail-500 text-rail-600'
+                : 'border-transparent text-steel-500 hover:text-steel-700 hover:border-steel-300'
+            }`}
+          >
+            <ClipboardDocumentListIcon className="h-5 w-5" />
+            Shop Rules
+          </button>
+        </nav>
+      </div>
+
+      {/* Supply Capacity Tab */}
+      {activeTab === 'supply' && (
+        <>
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="card p-4 border-l-4 border-l-rail-500">
@@ -894,6 +1006,163 @@ export default function SOPSupplySettings() {
             <div className="flex justify-between text-sm">
               <span className="text-rail-600">Monthly Avg:</span>
               <span className="font-semibold text-rail-900">{Math.round(grandTotals.annual / 12).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      )}
+        </>
+      )}
+
+      {/* Shop Rules Tab */}
+      {activeTab === 'rules' && (
+        <div className="space-y-6">
+          {/* Rules Overview Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="card p-4 border-l-4 border-l-green-500">
+              <div className="flex items-center gap-3">
+                <div className="bg-green-100 rounded-lg p-2">
+                  <CheckIcon className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-steel-500 uppercase">Allow Rules</p>
+                  <p className="text-xl font-bold text-steel-900">
+                    {shopRules.filter(r => r.action === 'allow').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="card p-4 border-l-4 border-l-red-500">
+              <div className="flex items-center gap-3">
+                <div className="bg-red-100 rounded-lg p-2">
+                  <XMarkIcon className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-steel-500 uppercase">Exclude Rules</p>
+                  <p className="text-xl font-bold text-steel-900">
+                    {shopRules.filter(r => r.action === 'exclude').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="card p-4 border-l-4 border-l-blue-500">
+              <div className="flex items-center gap-3">
+                <div className="bg-blue-100 rounded-lg p-2">
+                  <TruckIcon className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-steel-500 uppercase">Tank Car Certified</p>
+                  <p className="text-xl font-bold text-steel-900">
+                    {shopRules.filter(r => r.ruleType === 'qualification' && r.action === 'allow').length}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="card p-4 border-l-4 border-l-amber-500">
+              <div className="flex items-center gap-3">
+                <div className="bg-amber-100 rounded-lg p-2">
+                  <BuildingStorefrontIcon className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-steel-500 uppercase">Shops with Rules</p>
+                  <p className="text-xl font-bold text-steel-900">
+                    {Object.keys(rulesByShop).length}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Rules Explanation */}
+          <div className="card p-4 bg-blue-50 border border-blue-200">
+            <div className="flex items-start gap-3">
+              <AdjustmentsHorizontalIcon className="h-6 w-6 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-blue-900">Shop Rules Control Car Assignments</h3>
+                <p className="text-sm text-blue-800 mt-1">
+                  Shop rules determine which cars can be sent to specific shops. These rules are used in the S&OP Supply Capacity calculations
+                  and affect car flow planning. Rules include tank car qualifications, capacity limits, and customer preferences.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Shop Rules Table */}
+          <div className="card">
+            <div className="px-4 py-3 border-b border-steel-200 flex items-center justify-between">
+              <h3 className="font-semibold text-steel-900">Shop Rules by Location</h3>
+            </div>
+            <div className="divide-y divide-steel-200">
+              {shopsWithCommitments.map((shop: Shop) => {
+                const rules = rulesByShop[shop.id] || [];
+                return (
+                  <div key={shop.id} className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2 rounded-lg ${shop.isAitxInternal ? 'bg-rail-100' : 'bg-emerald-100'}`}>
+                          <BuildingStorefrontIcon className={`h-5 w-5 ${shop.isAitxInternal ? 'text-rail-600' : 'text-emerald-600'}`} />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-steel-900">{shop.name}</h4>
+                          <p className="text-xs text-steel-500">
+                            {shop.code} • {shop.isAitxInternal ? 'AITX Internal' : '3rd Party'} • Cap: {shop.capacity || 0}/mo
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${shop.tankQualified ? 'bg-green-100 text-green-800' : 'bg-steel-100 text-steel-600'}`}>
+                          {shop.tankQualified ? 'Tank Certified' : 'No Tank Cert'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Rules List */}
+                    <div className="space-y-2 ml-11">
+                      {rules.map(rule => (
+                        <div
+                          key={rule.id}
+                          className={`flex items-center justify-between p-2 rounded-lg text-sm ${
+                            rule.action === 'allow' ? 'bg-green-50 border border-green-200' :
+                            rule.action === 'exclude' ? 'bg-red-50 border border-red-200' :
+                            'bg-blue-50 border border-blue-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              rule.ruleType === 'qualification' ? 'bg-purple-100 text-purple-800' :
+                              rule.ruleType === 'capacity' ? 'bg-blue-100 text-blue-800' :
+                              rule.ruleType === 'customer' ? 'bg-amber-100 text-amber-800' :
+                              'bg-steel-100 text-steel-800'
+                            }`}>
+                              {rule.ruleType.replace('_', ' ').toUpperCase()}
+                            </span>
+                            <span className="text-steel-700">{rule.condition}</span>
+                          </div>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            rule.action === 'allow' ? 'bg-green-200 text-green-800' :
+                            rule.action === 'exclude' ? 'bg-red-200 text-red-800' :
+                            'bg-blue-200 text-blue-800'
+                          }`}>
+                            {rule.action.toUpperCase()}
+                          </span>
+                        </div>
+                      ))}
+                      {rules.length === 0 && (
+                        <p className="text-sm text-steel-500 italic">No rules configured for this shop</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {shopsWithCommitments.length === 0 && (
+                <div className="p-8 text-center text-steel-500">
+                  <ClipboardDocumentListIcon className="h-12 w-12 mx-auto text-steel-300 mb-3" />
+                  <p>No shops with S&OP commitments found.</p>
+                  <p className="text-sm mt-1">Add shops in the Supply Capacity tab first.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
