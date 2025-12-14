@@ -5,6 +5,16 @@
  * to handle various input formats and header naming conventions.
  */
 
+import {
+  CSV_SHOP_COLUMN_MAPPING,
+  resolveShopCodeFromCSVColumn,
+  getNetworkForShopCode,
+  getTeamAssignment,
+} from '../constants/shopNetworks';
+
+// Re-export shop network utilities for convenience
+export { CSV_SHOP_COLUMN_MAPPING, resolveShopCodeFromCSVColumn, getNetworkForShopCode, getTeamAssignment };
+
 // ============================================================================
 // HEADER SYNONYM MAPPING DICTIONARY
 // ============================================================================
@@ -1032,12 +1042,12 @@ function formatFieldName(field: string): string {
 }
 
 // ============================================================================
-// SHOP COLUMN DETECTION
+// SHOP COLUMN DETECTION (Columns AN-DH in Qual Planner Master CSV)
 // ============================================================================
 
 /**
  * Known shop name patterns from the Qual Planner Master CSV.
- * These are the column headers that represent shop assignments with dates.
+ * These are the column headers that represent shop assignments with dates (Columns AN-DH).
  */
 export const KNOWN_SHOP_PATTERNS = [
   /^AITX\s/i,
@@ -1069,6 +1079,7 @@ export const KNOWN_SHOP_PATTERNS = [
   /Red\s*River\s*Coatings/i,
   /Texana\s*Midway/i,
   /Apache\s*Railway/i,
+  /H\.?C\.?\s*Chandler/i,
 ];
 
 /**
@@ -1092,14 +1103,19 @@ export function isShopColumn(header: string): boolean {
 }
 
 /**
- * Extracts shop assignments from a record's shop columns.
- * Returns array of { shopName, scheduledDate } pairs.
+ * Extracts shop assignments from a record's shop columns (AN-DH).
+ * Returns array of shop assignment objects with resolved shop codes and network info.
  */
 export interface ShopAssignment {
   shopName: string;
   shopLocation: string;
+  shopCode: string | null;      // Resolved shop code from CSV_SHOP_COLUMN_MAPPING
+  networkId: string | null;     // Network identifier (e.g., 'aitx', 'trinity')
+  networkName: string | null;   // Network display name
+  isAitxInternal: boolean;      // True if AITX owned shop
   scheduledDate: Date;
-  scheduledMonth: string; // YYYY-MM format
+  scheduledMonth: string;       // YYYY-MM format
+  csvColumnHeader: string;      // Original CSV column header for reference
 }
 
 export function extractShopAssignments(
@@ -1124,11 +1140,20 @@ export function extractShopAssignments(
       const location = locationMatch ? locationMatch[1].trim() : '';
       const shopName = header.replace(/\s*\([^)]+\)\s*$/, '').trim();
 
+      // Resolve shop code from CSV column header
+      const shopCode = resolveShopCodeFromCSVColumn(header);
+      const networkInfo = shopCode ? getNetworkForShopCode(shopCode) : null;
+
       assignments.push({
         shopName: shopName,
         shopLocation: location,
+        shopCode: shopCode,
+        networkId: networkInfo?.networkId || null,
+        networkName: networkInfo?.networkName || null,
+        isAitxInternal: networkInfo?.isAitxInternal ?? false,
         scheduledDate: date,
         scheduledMonth: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        csvColumnHeader: header,
       });
     }
   }
