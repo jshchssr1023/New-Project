@@ -199,7 +199,7 @@ async function main() {
     const yearStr = getValue('Year');
     const buildYear = yearStr ? parseInt(yearStr) : null;
     const qualType = getValue('Full/Partial Qual');
-    const reasonShopped = getValue('Reason Shopped');
+    const reasonsShopped = getValue('Reason Shopped');
     const performTankQual = getValue('Perform Tank Qual').toLowerCase() === 'yes';
     const scheduled = getValue('Scheduled');
     const currentStatus = getValue('Current Status');
@@ -233,7 +233,7 @@ async function main() {
         commodity: commodity,
         customer: lesseeName,
         projectNumber: '',
-        reasonShopped: reasonShopped,
+        reasonsShopped: reasonsShopped,
         status: status,
         currentLocation: '',
         contractNumber: contractNumber,

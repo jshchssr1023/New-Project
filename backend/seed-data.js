@@ -295,7 +295,7 @@ if (existingCars.count === 0) {
 
     for (let i = 1; i <= 500; i++) {
       const carNum = 'AITX' + String(100000 + i).padStart(6, '0');
-      db.prepare('INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, status, reasonShopped, companyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+      db.prepare('INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, status, reasonsShopped, companyId) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
         uuid(),
         carNum,
         carTypes[i % carTypes.length],
@@ -333,7 +333,7 @@ if (existingCars.count === 0) {
     console.log('Found columns:', { lesseeIdx, carMarkIdx, contractIdx, commodityIdx, statusIdx, reasonIdx });
 
     const insertCar = db.prepare(`
-      INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, commodity, status, reasonShopped,
+      INSERT INTO Car (id, railcarNumber, carType, isTankCar, customer, commodity, status, reasonsShopped,
         contractNumber, contractExpiration, isJacketed, isLined, buildYear, tankQualified, performScheduled, planStatus, companyId)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);

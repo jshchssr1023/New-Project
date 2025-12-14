@@ -20,14 +20,12 @@ export interface Company {
 export interface Car {
   id: string;
   railcarNumber: string;
-  vehicleNumber?: string; // Legacy alias for railcarNumber
   carType: string;
   isTankCar: boolean;
   commodity: string;
   customer: string;
   projectNumber: string;
   reasonsShopped: string;
-  reasonShopped?: string; // Legacy alias
   status: 'available' | 'in_service' | 'in_shop' | 'scheduled' | 'retired' | 'planned' | 'release' | 'assignment' | 'arrived';
   currentLocation: string;
   assignedShopId: string | null;

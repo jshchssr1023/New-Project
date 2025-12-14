@@ -9,7 +9,7 @@ interface CarsFilters {
   status?: string;
   carType?: string;
   customer?: string;
-  reasonShopped?: string;
+  reasonsShopped?: string;
   shoppingStatus?: ShoppingStatus;
   search?: string;
 }
@@ -45,7 +45,7 @@ export function useCars(options: UseCarsOptions = {}) {
       status: filters.status,
       carType: filters.carType,
       customer: filters.customer,
-      reasonShopped: filters.reasonShopped,
+      reasonsShopped: filters.reasonsShopped,
     }),
     staleTime: 30000, // 30 seconds
   });
@@ -285,7 +285,7 @@ export function useCars(options: UseCarsOptions = {}) {
     return {
       customers: [...new Set(allCars.map(c => c.customer).filter(Boolean))].sort(),
       carTypes: [...new Set(allCars.map(c => c.carType).filter(Boolean))].sort(),
-      reasons: [...new Set(allCars.map(c => c.reasonsShopped || c.reasonShopped).filter(Boolean))].sort(),
+      reasons: [...new Set(allCars.map(c => c.reasonsShopped).filter(Boolean))].sort(),
     };
   }, [carsResponse?.data]);
 

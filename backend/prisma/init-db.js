@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS Car (
   commodity TEXT DEFAULT '',
   customer TEXT DEFAULT '',
   projectNumber TEXT DEFAULT '',
-  reasonShopped TEXT DEFAULT '',
+  reasonsShopped TEXT DEFAULT '',
   status TEXT DEFAULT 'available',
   currentLocation TEXT DEFAULT '',
   assignedShopId TEXT,
