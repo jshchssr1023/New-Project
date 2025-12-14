@@ -863,6 +863,10 @@ async function generateRandomCars(
 
 const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
 
+// Dynamic year calculation at module scope for use in generateRandomCars
+const CURRENT_YEAR = new Date().getFullYear();
+const NEXT_YEAR = CURRENT_YEAR + 1;
+
 // Shop locations - actual shop data
 const shopData = [
   // Midwest Region
@@ -907,12 +911,10 @@ async function main() {
   // ==========================================================================
   // DYNAMIC YEAR CALCULATION
   // ==========================================================================
-  // Uses current date to generate relevant planning years dynamically
+  // Uses module-scope CURRENT_YEAR and NEXT_YEAR constants
   // This ensures seed data is always current and useful for demos/testing
   // ==========================================================================
   const now = new Date();
-  const CURRENT_YEAR = now.getFullYear();
-  const NEXT_YEAR = CURRENT_YEAR + 1;
 
   // Generate month arrays for both years dynamically
   const generateMonths = (year: number): string[] =>

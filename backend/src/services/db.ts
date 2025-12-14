@@ -14,9 +14,9 @@ db.pragma('journal_mode = WAL'); // Better concurrent access
 // =============================================================================
 const ALLOWED_TABLES = new Set([
   'User', 'Company', 'Car', 'Shop', 'Plan', 'PlanAssignment', 'Scenario',
-  'ScenarioCar', 'ScenarioModification', 'Customer', 'ShopRule', 'CarShopEligibility',
+  'ScenarioCar', 'ScenarioModification', 'ScenarioCustomer', 'Customer', 'ShopRule', 'CarShopEligibility',
   'AuditLog', 'RolePermission', 'FieldSecurity', 'ShopPerformance', 'ReportTemplate',
-  'ScheduledReport', 'ShopCapacitySlot', 'SOPAssignment', 'LeaseContract',
+  'ScheduledReport', 'ShopCapacitySlot', 'FilterPreset', 'LeaseContract',
   'LeaseQualificationEntry', 'QualificationPlanEvent', 'QualificationScenario',
   'QualificationPlanAssignment', 'QualificationPlanDocument', 'MasterPlan',
   'MasterPlanCommitment', 'Notification', 'WeeklyCapacity', 'CapacityAudit',
@@ -196,13 +196,13 @@ interface RelationshipDef {
 const relationships: Record<string, Record<string, RelationshipDef>> = {
   Scenario: {
     cars: { table: 'ScenarioCar', foreignKey: 'scenarioId', localKey: 'id', type: 'hasMany' },
-    sopAssignments: { table: 'SOPAssignment', foreignKey: 'scenarioId', localKey: 'id', type: 'hasMany' },
+    customers: { table: 'ScenarioCustomer', foreignKey: 'scenarioId', localKey: 'id', type: 'hasMany' },
     basePlan: { table: 'Plan', foreignKey: 'id', localKey: 'basePlanId', type: 'belongsTo' },
     creator: { table: 'User', foreignKey: 'id', localKey: 'createdBy', type: 'belongsTo' },
     company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
     parent: { table: 'Scenario', foreignKey: 'id', localKey: 'parentId', type: 'belongsTo' },
     clones: { table: 'Scenario', foreignKey: 'parentId', localKey: 'id', type: 'hasMany' },
-    masterPlans: { table: 'MasterPlan', foreignKey: 'baseScenarioId', localKey: 'id', type: 'hasMany' },
+    carFlowPlans: { table: 'CarFlowPlan', foreignKey: 'sourceScenarioId', localKey: 'id', type: 'hasMany' },
   },
   ScenarioCar: {
     car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
@@ -215,7 +215,7 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     customerRef: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
     assignments: { table: 'PlanAssignment', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
     scenarioCars: { table: 'ScenarioCar', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
-    sopAssignments: { table: 'SOPAssignment', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
+    carFlowPlan: { table: 'CarFlowPlan', foreignKey: 'carId', localKey: 'id', type: 'hasOne' },
     shopEligibilities: { table: 'CarShopEligibility', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
     masterCommitments: { table: 'MasterPlanCommitment', foreignKey: 'carId', localKey: 'id', type: 'hasMany' },
   },
@@ -223,14 +223,26 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
     assignments: { table: 'PlanAssignment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
     carEligibilities: { table: 'CarShopEligibility', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
-    sopAssignments: { table: 'SOPAssignment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+    sopCommitments: { table: 'SOPCommitment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
     masterCommitments: { table: 'MasterPlanCommitment', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
     capacitySlots: { table: 'ShopCapacitySlot', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
+    carFlowPlans: { table: 'CarFlowPlan', foreignKey: 'shopId', localKey: 'id', type: 'hasMany' },
   },
-  SOPAssignment: {
+  SOPCommitment: {
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+    createdBy: { table: 'User', foreignKey: 'id', localKey: 'createdById', type: 'belongsTo' },
+    updatedBy: { table: 'User', foreignKey: 'id', localKey: 'updatedById', type: 'belongsTo' },
+  },
+  ScenarioCustomer: {
     scenario: { table: 'Scenario', foreignKey: 'id', localKey: 'scenarioId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+  },
+  CarFlowPlan: {
     car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
     shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+    sourceScenario: { table: 'Scenario', foreignKey: 'id', localKey: 'sourceScenarioId', type: 'belongsTo' },
+    committedBy: { table: 'User', foreignKey: 'id', localKey: 'committedById', type: 'belongsTo' },
   },
   Plan: {
     company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
@@ -609,7 +621,9 @@ export const prisma = {
   scenario: createTableHandler('Scenario'),
   scenarioCar: createTableHandler('ScenarioCar'),
   scenarioModification: createTableHandler('ScenarioModification'),
+  scenarioCustomer: createTableHandler('ScenarioCustomer'),
   customer: createTableHandler('Customer'),
+  filterPreset: createTableHandler('FilterPreset'),
   shopRule: createTableHandler('ShopRule'),
   carShopEligibility: createTableHandler('CarShopEligibility'),
   auditLog: createTableHandler('AuditLog'),
@@ -619,7 +633,6 @@ export const prisma = {
   reportTemplate: createTableHandler('ReportTemplate'),
   scheduledReport: createTableHandler('ScheduledReport'),
   shopCapacitySlot: createTableHandler('ShopCapacitySlot'),
-  sOPAssignment: createTableHandler('SOPAssignment'),
   leaseContract: createTableHandler('LeaseContract'),
   leaseQualificationEntry: createTableHandler('LeaseQualificationEntry'),
   qualificationPlanEvent: createTableHandler('QualificationPlanEvent'),
@@ -687,22 +700,31 @@ export const prisma = {
     return db.prepare(query).all(...params);
   },
 
-  // Transaction support - REAL SQLite transaction
+  // Transaction support - SQLite transaction with proper async handling
+  // Note: better-sqlite3 transactions are synchronous, but we wrap them
+  // to provide a consistent async interface with Prisma
   $transaction: async <T>(
     fnOrOperations: ((tx: typeof prisma) => Promise<T>) | Promise<any>[]
   ): Promise<T | any[]> => {
     if (Array.isArray(fnOrOperations)) {
-      // Array of promises - wrap in transaction
-      const transaction = db.transaction(() => {
-        return Promise.all(fnOrOperations);
-      });
-      return transaction();
+      // Array of promises - resolve them first, then run in transaction
+      // Note: The promises have already started executing, so this is
+      // more of a "batch commit" pattern than a true transaction
+      const results = await Promise.all(fnOrOperations);
+      return results;
     } else {
-      // Function-based transaction
-      const transaction = db.transaction(async () => {
-        return await fnOrOperations(prisma);
-      });
-      return transaction();
+      // Function-based transaction - execute the async function
+      // The operations inside will each be atomic, but the whole
+      // sequence uses SQLite's implicit transaction handling
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        const result = await fnOrOperations(prisma);
+        db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     }
   },
 

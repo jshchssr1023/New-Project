@@ -199,7 +199,7 @@ async function main() {
 
   // Create railcars
   const insertCar = db.prepare(`
-    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, companyId)
+    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, companyId)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 

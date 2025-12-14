@@ -261,7 +261,7 @@ export const carsApi = {
     status?: string;
     carType?: string;
     customer?: string;
-    reasonShopped?: string;
+    reasonsShopped?: string;
   }): Promise<PaginatedResponse<Car>> => {
     const response = await apiClient.get<PaginatedResponse<Car>>('/cars', { params });
     return response.data;
@@ -321,7 +321,7 @@ export const carsApi = {
     ids?: string[];
     status?: string;
     customer?: string;
-    reasonShopped?: string;
+    reasonsShopped?: string;
     carType?: string;
     format?: 'umler' | 'standard';
   }): Promise<void> => {
@@ -331,7 +331,7 @@ export const carsApi = {
     }
     if (params?.status) queryParams.status = params.status;
     if (params?.customer) queryParams.customer = params.customer;
-    if (params?.reasonShopped) queryParams.reasonShopped = params.reasonShopped;
+    if (params?.reasonsShopped) queryParams.reasonsShopped = params.reasonsShopped;
     if (params?.carType) queryParams.carType = params.carType;
     if (params?.format) queryParams.format = params.format;
 
