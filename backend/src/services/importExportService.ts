@@ -9,8 +9,6 @@ import { prisma } from './db';
 import {
   analyzeHeaders,
   transformCarRecord,
-  VALID_SYSTEM_FIELDS,
-  REQUIRED_FIELDS,
 } from '../utils/importTransformers';
 
 // =============================================================================
@@ -157,7 +155,22 @@ export async function previewCarImport(
 }
 
 /**
- * Import cars from CSV
+ * Extended import result with CarFlowPlan info
+ */
+export interface ExtendedImportResult extends ImportResult {
+  carFlowPlansCreated: number;
+  shopAssignmentsProcessed: number;
+}
+
+/**
+ * Import cars from CSV (Qual Planner Master format)
+ *
+ * Handles all fields including:
+ * - Car identification (Mark + Number → railcarNumber)
+ * - Qualification dates (9 date fields)
+ * - Reference fields (CSR, CSL, Commercial)
+ * - Shop assignments from shop columns → CarFlowPlan entries
+ * - Status calculation (shoppingStatus)
  */
 export async function importCars(
   csvContent: string,
@@ -166,10 +179,18 @@ export async function importCars(
     updateExisting?: boolean;
     customMappings?: Record<string, string>;
     dryRun?: boolean;
+    createCarFlowPlans?: boolean;
+    userId?: string; // Required for CarFlowPlan creation
   } = {}
-): Promise<ImportResult> {
+): Promise<ExtendedImportResult> {
   const startTime = Date.now();
-  const { updateExisting = true, customMappings, dryRun = false } = options;
+  const {
+    updateExisting = true,
+    customMappings,
+    dryRun = false,
+    createCarFlowPlans = true,
+    userId,
+  } = options;
 
   const { headers, rows } = parseCSV(csvContent);
   const headerAnalysis = analyzeHeaders(headers);
@@ -180,16 +201,41 @@ export async function importCars(
   let imported = 0;
   let updated = 0;
   let skipped = 0;
+  let carFlowPlansCreated = 0;
+  let shopAssignmentsProcessed = 0;
 
   // Get existing cars for duplicate detection
   const existingCars = await prisma.car.findMany({
     where: { companyId },
-    select: { id: true, vehicleNumber: true },
+    select: { id: true, vehicleNumber: true, railcarNumber: true },
   });
-  const existingByNumber = new Map(existingCars.map(c => [c.vehicleNumber.toLowerCase(), c.id]));
+  const existingByNumber = new Map<string, string>(
+    existingCars.map((c: { id: string; vehicleNumber: string; railcarNumber: string }) => [
+      (c.railcarNumber || c.vehicleNumber).toLowerCase(),
+      c.id
+    ])
+  );
+
+  // Get existing shops for assignment matching
+  const existingShops = await prisma.shop.findMany({
+    where: { companyId, isActive: true },
+    select: { id: true, name: true, code: true, location: true },
+  });
+
+  // Build shop lookup map by name pattern
+  const shopLookup = new Map<string, string>();
+  for (const shop of existingShops) {
+    // Add multiple lookup keys for flexible matching
+    shopLookup.set(shop.name.toLowerCase(), shop.id);
+    shopLookup.set(shop.code.toLowerCase(), shop.id);
+    if (shop.location) {
+      shopLookup.set(`${shop.name} (${shop.location})`.toLowerCase(), shop.id);
+    }
+  }
 
   for (let i = 0; i < objects.length; i++) {
-    const result = transformCarRecord(objects[i], mappings);
+    // Pass headers to transformCarRecord for shop column extraction
+    const result = transformCarRecord(objects[i], mappings, headers);
     const rowNum = i + 2;
 
     if (!result.success) {
@@ -202,68 +248,152 @@ export async function importCars(
     }
 
     const carData = result.data;
-    const vehicleNumber = String(carData.railcarNumber);
-    const existingId = existingByNumber.get(vehicleNumber.toLowerCase());
+    const railcarNumber = String(carData.railcarNumber);
+    const existingId = existingByNumber.get(railcarNumber.toLowerCase());
+
+    // Build the car data object for Prisma
+    const prismaCarData = {
+      railcarNumber: railcarNumber,
+      vehicleNumber: railcarNumber, // Backward compatibility
+      carMark: String(carData.carMark || ''),
+      carNumber: String(carData.carNumber || ''),
+      carType: String(carData.carType || ''),
+      isTankCar: Boolean(carData.isTankCar),
+      commodity: String(carData.commodity || ''),
+      customer: String(carData.customer || ''),
+      fmsLesseeNumber: String(carData.fmsLesseeNumber || ''),
+      contractNumber: String(carData.contractNumber || ''),
+      contractExpiration: carData.contractExpiration as Date | null,
+      status: String(carData.status || 'To Be Routed'),
+      shoppingStatus: String(carData.shoppingStatus || 'Unknown'),
+      planStatus: String(carData.planStatus || ''),
+      portfolio: Boolean(carData.portfolio),
+      performedTankQual: Boolean(carData.performedTankQual),
+      performScheduled: Boolean(carData.performScheduled),
+      qualificationType: String(carData.qualificationType || ''),
+      reasonsShopped: String(carData.reasonsShopped || ''),
+      currentLocation: String(carData.currentLocation || ''),
+      homeRegion: String(carData.homeRegion || ''),
+      originRegion: String(carData.originRegion || ''),
+      pastRegion: String(carData.pastRegion || ''),
+      region2026: String(carData.region2026 || ''),
+      isJacketed: Boolean(carData.isJacketed),
+      isLined: Boolean(carData.isLined),
+      liningType: String(carData.liningType || ''),
+      buildYear: carData.buildYear as number | null,
+      csr: String(carData.csr || ''),
+      csl: String(carData.csl || ''),
+      commercial: String(carData.commercial || ''),
+      projectedCost: Number(carData.projectedCost) || 0,
+      daysInShop: Number(carData.daysInShop) || 0,
+      projectedCompletionMonth: String(carData.projectedCompletionMonth || ''),
+      shopEntryDate: carData.shopEntryDate as Date | null,
+      arrivalDate: carData.arrivalDate as Date | null,
+      lastServiceDate: carData.lastServiceDate as Date | null,
+      nextServiceDue: carData.nextServiceDue as Date | null,
+      notes: String(carData.notes || ''),
+      // Qualification date fields
+      minNoLining: carData.minNoLining as Date | null,
+      minWLining: carData.minWLining as Date | null,
+      interiorLining: carData.interiorLining as Date | null,
+      rule88B: carData.rule88B as Date | null,
+      safetyRelief: carData.safetyRelief as Date | null,
+      serviceEquipment: carData.serviceEquipment as Date | null,
+      stubSill: carData.stubSill as Date | null,
+      tankThickness: carData.tankThickness as Date | null,
+      tankQualification: carData.tankQualification as Date | null,
+    };
 
     try {
+      let carId: string;
+
       if (existingId) {
         if (updateExisting) {
           if (!dryRun) {
             await prisma.car.update({
               where: { id: existingId },
-              data: {
-                vehicleNumber: vehicleNumber,
-                carType: String(carData.carType || ''),
-                isTankCar: Boolean(carData.isTankCar),
-                commodity: String(carData.commodity || ''),
-                customer: String(carData.customer || ''),
-                status: String(carData.status || 'available'),
-                currentLocation: String(carData.currentLocation || ''),
-                homeRegion: String(carData.homeRegion || ''),
-                originRegion: String(carData.originRegion || ''),
-                reasonShopped: String(carData.reasonShopped || ''),
-                projectedCost: Number(carData.projectedCost) || 0,
-                daysInShop: Number(carData.daysInShop) || 0,
-                shopEntryDate: carData.shopEntryDate as Date | null,
-                lastServiceDate: carData.lastServiceDate as Date | null,
-                nextServiceDue: carData.nextServiceDue as Date | null,
-                notes: String(carData.notes || ''),
-              },
+              data: prismaCarData,
             });
           }
+          carId = existingId;
           updated++;
         } else {
+          carId = existingId;
           skipped++;
         }
       } else {
         if (!dryRun) {
-          await prisma.car.create({
+          const newCar = await prisma.car.create({
             data: {
-              vehicleNumber: vehicleNumber,
-              carType: String(carData.carType || ''),
-              isTankCar: Boolean(carData.isTankCar),
-              commodity: String(carData.commodity || ''),
-              customer: String(carData.customer || ''),
-              status: String(carData.status || 'available'),
-              currentLocation: String(carData.currentLocation || ''),
-              homeRegion: String(carData.homeRegion || ''),
-              originRegion: String(carData.originRegion || ''),
-              reasonShopped: String(carData.reasonShopped || ''),
-              projectedCost: Number(carData.projectedCost) || 0,
-              daysInShop: Number(carData.daysInShop) || 0,
-              shopEntryDate: carData.shopEntryDate as Date | null,
-              lastServiceDate: carData.lastServiceDate as Date | null,
-              nextServiceDue: carData.nextServiceDue as Date | null,
-              notes: String(carData.notes || ''),
+              ...prismaCarData,
               companyId,
             },
           });
+          carId = newCar.id;
+        } else {
+          carId = 'dry-run-id';
         }
         imported++;
       }
+
+      // Process shop assignments and create CarFlowPlan entries
+      if (createCarFlowPlans && userId && result.shopAssignments.length > 0 && !dryRun) {
+        for (const assignment of result.shopAssignments) {
+          shopAssignmentsProcessed++;
+
+          // Try to find the shop
+          const shopKey = assignment.shopLocation
+            ? `${assignment.shopName} (${assignment.shopLocation})`.toLowerCase()
+            : assignment.shopName.toLowerCase();
+
+          let shopId = shopLookup.get(shopKey);
+          if (!shopId) {
+            // Try just the shop name
+            shopId = shopLookup.get(assignment.shopName.toLowerCase());
+          }
+
+          if (shopId && carId !== 'dry-run-id') {
+            // Parse month and year from scheduledMonth (YYYY-MM format)
+            const [yearStr, monthStr] = assignment.scheduledMonth.split('-');
+            const plannedYear = parseInt(yearStr, 10);
+            const plannedMonth = parseInt(monthStr, 10);
+
+            // Check if car is in actionable status (Arrived, Enroute, To Be Routed)
+            const statusLower = String(carData.status).toLowerCase();
+            const shouldCreatePlan = ['arrived', 'enroute', 'to be routed'].includes(statusLower);
+
+            if (shouldCreatePlan) {
+              // Check for existing CarFlowPlan for this car
+              const existingPlan = await prisma.carFlowPlan.findUnique({
+                where: { carId },
+              });
+
+              if (!existingPlan) {
+                await prisma.carFlowPlan.create({
+                  data: {
+                    carId,
+                    shopId,
+                    plannedMonth,
+                    plannedYear,
+                    status: statusLower === 'arrived' ? 'In Progress' : 'Planned',
+                    shopReason: String(carData.reasonsShopped || carData.qualificationType || ''),
+                    estimatedCost: Number(carData.projectedCost) || null,
+                    priority: carData.shoppingStatus === 'Urgent' ? 1 :
+                              carData.shoppingStatus === 'Must Shop' ? 2 : 3,
+                    notes: `Imported from Qual Planner Master CSV`,
+                    committedById: userId,
+                    companyId,
+                  },
+                });
+                carFlowPlansCreated++;
+              }
+            }
+          }
+        }
+      }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error';
-      errors.push({ row: rowNum, identifier: vehicleNumber, error: errMsg });
+      errors.push({ row: rowNum, identifier: railcarNumber, error: errMsg });
     }
   }
 
@@ -274,6 +404,8 @@ export async function importCars(
     skipped,
     errors,
     duration: Date.now() - startTime,
+    carFlowPlansCreated,
+    shopAssignmentsProcessed,
   };
 }
 

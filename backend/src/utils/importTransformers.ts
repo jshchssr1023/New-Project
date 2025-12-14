@@ -193,30 +193,30 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'from_loc': 'originRegion',
   'ship_from': 'originRegion',
 
-  // reasonShopped synonyms
-  'reasonshopped': 'reasonShopped',
-  'reason_shopped': 'reasonShopped',
-  'reason shopped': 'reasonShopped',
-  'reason': 'reasonShopped',
-  'shopreason': 'reasonShopped',
-  'shop_reason': 'reasonShopped',
-  'shop reason': 'reasonShopped',
-  'service reason': 'reasonShopped',
-  'servicereason': 'reasonShopped',
+  // reasonsShopped synonyms (Note: schema uses plural 'reasonsShopped')
+  'reasonshopped': 'reasonsShopped',
+  'reason_shopped': 'reasonsShopped',
+  'reason shopped': 'reasonsShopped',
+  'reason': 'reasonsShopped',
+  'shopreason': 'reasonsShopped',
+  'shop_reason': 'reasonsShopped',
+  'shop reason': 'reasonsShopped',
+  'service reason': 'reasonsShopped',
+  'servicereason': 'reasonsShopped',
   // UMLER system abbreviations
-  'shoppi': 'reasonShopped',
-  'shop_typ': 'reasonShopped',
-  'shop_type': 'reasonShopped',
-  'shopping': 'reasonShopped',
-  'shopping_type': 'reasonShopped',
-  'repair_type': 'reasonShopped',
-  'repair_typ': 'reasonShopped',
-  'rep_type': 'reasonShopped',
-  'service_type': 'reasonShopped',
-  'svc_type': 'reasonShopped',
-  'maint_type': 'reasonShopped',
-  'work_type': 'reasonShopped',
-  'job_type': 'reasonShopped',
+  'shoppi': 'reasonsShopped',
+  'shop_typ': 'reasonsShopped',
+  'shop_type': 'reasonsShopped',
+  'shopping': 'reasonsShopped',
+  'shopping_type': 'reasonsShopped',
+  'repair_type': 'reasonsShopped',
+  'repair_typ': 'reasonsShopped',
+  'rep_type': 'reasonsShopped',
+  'service_type': 'reasonsShopped',
+  'svc_type': 'reasonsShopped',
+  'maint_type': 'reasonsShopped',
+  'work_type': 'reasonsShopped',
+  'job_type': 'reasonsShopped',
 
   // projectNumber synonyms
   'projectnumber': 'projectNumber',
@@ -373,87 +373,173 @@ export const HEADER_SYNONYMS: Record<string, string> = {
   'comment_txt': 'notes',
   'rmk_txt': 'notes',
 
-  // Qual Planner Master CSV fields
-  // tankQualDueDate synonyms
-  'tankqualduedate': 'tankQualDueDate',
-  'tank_qual_due_date': 'tankQualDueDate',
-  'tank qual due': 'tankQualDueDate',
-  'tankqualdue': 'tankQualDueDate',
-  'tank_qual_due': 'tankQualDueDate',
-  'qual_due': 'tankQualDueDate',
-  'qual_due_date': 'tankQualDueDate',
-  'qualification_due': 'tankQualDueDate',
-  'qualification_due_date': 'tankQualDueDate',
+  // ==========================================================================
+  // QUAL PLANNER MASTER CSV FIELD MAPPINGS
+  // ==========================================================================
 
-  // contractNumber synonyms
+  // Lessee Name → customer
+  'lessee name': 'customer',
+  'lesseename': 'customer',
+
+  // Car Mark → carMark (for sister car sorting)
+  'car mark': 'carMark',
+  'carmark': 'carMark',
+
+  // Mark and Number (components of railcarNumber)
+  'mark': 'carMark',
+  'number': 'carNumber',
+  'mark2': 'carMark2', // Ignored but mapped
+
+  // FMS Lessee Number
+  'fms lessee number': 'fmsLesseeNumber',
+  'fmslesseenumber': 'fmsLesseeNumber',
+  'fms_lessee_number': 'fmsLesseeNumber',
+
+  // Contract fields
+  'contract': 'contractNumber',
   'contractnumber': 'contractNumber',
   'contract_number': 'contractNumber',
   'contract number': 'contractNumber',
   'contract#': 'contractNumber',
   'contract #': 'contractNumber',
-  'contract': 'contractNumber',
   'contract_no': 'contractNumber',
 
-  // contractExpiration synonyms
+  'contract expiration': 'contractExpiration',
   'contractexpiration': 'contractExpiration',
   'contract_expiration': 'contractExpiration',
-  'contract expiration': 'contractExpiration',
   'contexp': 'contractExpiration',
   'cont_exp': 'contractExpiration',
   'cont exp': 'contractExpiration',
   'lease_end': 'contractExpiration',
   'lease_expiry': 'contractExpiration',
 
-  // isJacketed synonyms
+  // Primary Commodity
+  'primary commodity': 'commodity',
+  'primarycommodity': 'commodity',
+  'primary_commodity': 'commodity',
+
+  // Contact fields (reference only - display in car info drawer)
+  'csr': 'csr',
+  'csl': 'csl',
+  'commericial': 'commercial', // Note: CSV has typo "Commericial"
+  'commercial': 'commercial',
+
+  // Region fields
+  'past region': 'pastRegion',
+  'pastregion': 'pastRegion',
+  'past_region': 'pastRegion',
+  '2026 region': 'region2026',
+  '2026region': 'region2026',
+
+  // Jacketed/Lined
+  'jacketed': 'isJacketed',
   'isjacketed': 'isJacketed',
   'is_jacketed': 'isJacketed',
-  'jacketed': 'isJacketed',
   'jacketed?': 'isJacketed',
 
-  // isLined synonyms
+  'lined': 'isLined',
   'islined': 'isLined',
   'is_lined': 'isLined',
-  'lined': 'isLined',
   'lined?': 'isLined',
 
-  // buildYear synonyms
+  'lining type': 'liningType',
+  'liningtype': 'liningType',
+  'lining_type': 'liningType',
+
+  // Car Age and Build Year
+  'car age': 'carAge',
+  'carage': 'carAge',
+  'car_age': 'carAge',
   'buildyear': 'buildYear',
   'build_year': 'buildYear',
   'build year': 'buildYear',
-  'buildyr': 'buildYear',
-  'build_yr': 'buildYear',
-  'build yr': 'buildYear',
+  'year': 'buildYear',
   'year_built': 'buildYear',
-  'yearbuilt': 'buildYear',
 
-  // qualificationType synonyms
+  // Car Type
+  'car type level 2': 'carType',
+  'cartypelevel2': 'carType',
+  'car_type_level_2': 'carType',
+
+  // ==========================================================================
+  // QUALIFICATION DATE FIELDS (stored as years, e.g., 2025, 2030)
+  // These drive shopping urgency - car must be shopped if any are due/overdue
+  // ==========================================================================
+  'min (no lining)': 'minNoLining',
+  'min(nolining)': 'minNoLining',
+  'min_no_lining': 'minNoLining',
+  'minnolining': 'minNoLining',
+
+  'min w lining': 'minWLining',
+  'minwlining': 'minWLining',
+  'min_w_lining': 'minWLining',
+  'min with lining': 'minWLining',
+
+  'interior lining': 'interiorLining',
+  'interiorlining': 'interiorLining',
+  'interior_lining': 'interiorLining',
+
+  'rule 88b': 'rule88B',
+  'rule88b': 'rule88B',
+  'rule_88b': 'rule88B',
+  'rule 88b ': 'rule88B', // Note: CSV may have trailing space
+
+  'safety relief': 'safetyRelief',
+  'safetyrelief': 'safetyRelief',
+  'safety_relief': 'safetyRelief',
+
+  'service equipment': 'serviceEquipment',
+  'serviceequipment': 'serviceEquipment',
+  'service_equipment': 'serviceEquipment',
+  'service equipment ': 'serviceEquipment', // Note: CSV may have trailing space
+
+  'stub sill': 'stubSill',
+  'stubsill': 'stubSill',
+  'stub_sill': 'stubSill',
+
+  'tank thickness': 'tankThickness',
+  'tankthickness': 'tankThickness',
+  'tank_thickness': 'tankThickness',
+
+  'tank qualification': 'tankQualification',
+  'tankqualification': 'tankQualification',
+  'tank_qualification': 'tankQualification',
+
+  // ==========================================================================
+  // PORTFOLIO AND STATUS FIELDS
+  // ==========================================================================
+  'portfolio': 'portfolio',
+  'car': 'portfolio', // "Car" column in CSV indicates portfolio status
+
+  // Full/Partial Qual → qualificationType
+  'full/partial qual': 'qualificationType',
+  'fullpartialqual': 'qualificationType',
+  'full_partial_qual': 'qualificationType',
   'qualificationtype': 'qualificationType',
   'qualification_type': 'qualificationType',
-  'qualification type': 'qualificationType',
-  'qualtype': 'qualificationType',
-  'qual_type': 'qualificationType',
   'qual type': 'qualificationType',
 
-  // tankQualified synonyms
-  'tankqualified': 'tankQualified',
-  'tank_qualified': 'tankQualified',
-  'tank qualified': 'tankQualified',
-  'tankqual': 'tankQualified',
-  'tank_qual': 'tankQualified',
-  'tank qual': 'tankQualified',
+  // Perform Tank Qual (Yes = needs plan or be complete)
+  'perform tank qual': 'performedTankQual',
+  'performtankqual': 'performedTankQual',
+  'perform_tank_qual': 'performedTankQual',
 
-  // performScheduled synonyms
-  'performscheduled': 'performScheduled',
-  'perform_scheduled': 'performScheduled',
-  'perform scheduled': 'performScheduled',
-  'perfsched': 'performScheduled',
-  'perf_sched': 'performScheduled',
-  'perf sched': 'performScheduled',
+  // Scheduled (Planned Shopping, etc.)
+  'scheduled': 'performScheduled',
 
-  // planStatus synonyms
+  // Adjusted Status - IGNORED per user instruction
+  'adjusted status': '_ignoredAdjustedStatus',
+  'adjustedstatus': '_ignoredAdjustedStatus',
+
+  // Plan Status (Committed, Not Confirmed, Not Committed, or year like 2026)
+  'plan status': 'planStatus',
   'planstatus': 'planStatus',
   'plan_status': 'planStatus',
-  'plan status': 'planStatus',
+
+  // Cars & Year (compound field for reference)
+  'cars & year': 'carsAndYear',
+  'carsandyear': 'carsAndYear',
+  'cars_and_year': 'carsAndYear',
 };
 
 // Required fields that must be present (or mappable) for import
@@ -461,35 +547,76 @@ export const REQUIRED_FIELDS = ['railcarNumber'];
 
 // All valid system fields for car import
 export const VALID_SYSTEM_FIELDS = [
+  // Core car identifiers
   'railcarNumber',
+  'carMark',
+  'carNumber',
   'carType',
   'isTankCar',
   'commodity',
   'customer',
-  'projectNumber',
-  'reasonShopped',
+  'fmsLesseeNumber',
+
+  // Contract fields
+  'contractNumber',
+  'contractExpiration',
+
+  // Status and planning
   'status',
+  'shoppingStatus',
+  'planStatus',
+  'portfolio',
+  'performedTankQual',
+  'performScheduled',
+  'qualificationType',
+  'reasonsShopped',
+
+  // Location and region
   'currentLocation',
   'homeRegion',
   'originRegion',
+  'pastRegion',
+  'region2026',
+
+  // Physical characteristics
+  'isJacketed',
+  'isLined',
+  'liningType',
+  'buildYear',
+
+  // Reference contacts (display in car info drawer)
+  'csr',
+  'csl',
+  'commercial',
+
+  // Cost and timing
   'projectedCost',
   'daysInShop',
   'shopEntryDate',
+  'arrivalDate',
   'lastServiceDate',
   'nextServiceDue',
+  'projectedCompletionMonth',
   'assignedShopCode',
+
+  // Qualification date fields (stored as years or dates)
+  'minNoLining',
+  'minWLining',
+  'interiorLining',
+  'rule88B',
+  'safetyRelief',
+  'serviceEquipment',
+  'stubSill',
+  'tankThickness',
+  'tankQualification',
+
+  // Other
   'notes',
-  // Qual Planner Master CSV fields
-  'contractNumber',
-  'contractExpiration',
-  'isJacketed',
-  'isLined',
-  'buildYear',
-  'qualificationType',
-  'tankQualified',
-  'tankQualDueDate',
-  'performScheduled',
-  'planStatus',
+  'projectNumber',
+
+  // Ignored/reference fields (mapped but not stored in Car)
+  'carsAndYear',
+  '_ignoredAdjustedStatus',
 ];
 
 // ============================================================================
@@ -690,6 +817,350 @@ export function convertToDate(value: unknown): Date | null {
   return null;
 }
 
+/**
+ * Converts a year (e.g., 2025, "2025") to a Date at end of year (December 31st).
+ * This is used for qualification date fields that store years.
+ */
+export function convertYearToDate(value: unknown): Date | null {
+  if (!value) return null;
+
+  let year: number;
+
+  if (typeof value === 'number') {
+    year = value;
+  } else if (typeof value === 'string') {
+    // Handle year strings like "2025" or full dates
+    const trimmed = value.trim();
+    if (/^\d{4}$/.test(trimmed)) {
+      year = parseInt(trimmed, 10);
+    } else {
+      // Try parsing as a full date
+      const date = new Date(trimmed);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+      return null;
+    }
+  } else {
+    return null;
+  }
+
+  // Validate year range (reasonable range for railcar qualification)
+  if (year < 2000 || year > 2100) {
+    return null;
+  }
+
+  // Return December 31st of that year (end of year when qualification is due)
+  return new Date(year, 11, 31); // Month is 0-indexed, so 11 = December
+}
+
+/**
+ * Extracts the year from a Date or year value.
+ */
+export function extractYear(value: unknown): number | null {
+  if (!value) return null;
+
+  if (typeof value === 'number') {
+    // If it's a 4-digit year
+    if (value >= 2000 && value <= 2100) {
+      return value;
+    }
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d{4}$/.test(trimmed)) {
+      return parseInt(trimmed, 10);
+    }
+    // Try parsing as date and extract year
+    const date = new Date(trimmed);
+    if (!isNaN(date.getTime())) {
+      return date.getFullYear();
+    }
+  }
+
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return value.getFullYear();
+  }
+
+  return null;
+}
+
+// ============================================================================
+// SHOPPING STATUS CALCULATION
+// ============================================================================
+
+/**
+ * Shopping status values based on qualification dates.
+ * - URGENT: Past due or due this year, no plan
+ * - MUST_SHOP: Due this year, needs planning
+ * - UPCOMING: Due next year
+ * - COMPLIANT: All qualifications current
+ * - IN_SHOP: Currently at shop (Arrived, Enroute)
+ * - PLANNED: Has a plan in place
+ * - UNKNOWN: Cannot determine
+ */
+export const SHOPPING_STATUS_VALUES = [
+  'Urgent',
+  'Must Shop',
+  'Upcoming',
+  'Compliant',
+  'In Shop',
+  'Planned',
+  'Unknown',
+] as const;
+
+export type ShoppingStatus = typeof SHOPPING_STATUS_VALUES[number];
+
+/**
+ * Qualification date field names for iteration.
+ */
+export const QUALIFICATION_DATE_FIELDS = [
+  'minNoLining',
+  'minWLining',
+  'interiorLining',
+  'rule88B',
+  'safetyRelief',
+  'serviceEquipment',
+  'stubSill',
+  'tankThickness',
+  'tankQualification',
+] as const;
+
+/**
+ * Calculates the shopping status based on qualification dates and current status.
+ *
+ * Rules:
+ * - If any qualification date is past due (year < current year): URGENT (unless planned/complete)
+ * - If any qualification date is due this year: MUST_SHOP (unless planned/complete)
+ * - If any qualification date is due next year: UPCOMING
+ * - If status is Arrived/Enroute/In Shop: IN_SHOP
+ * - If planStatus indicates committed: PLANNED
+ * - If all dates are future: COMPLIANT
+ */
+export function calculateShoppingStatus(
+  qualificationDates: Record<string, unknown>,
+  currentStatus: string,
+  planStatus: string,
+  hasScheduledShop: boolean = false
+): { status: ShoppingStatus; reason: string; earliestDue: number | null } {
+  const currentYear = new Date().getFullYear();
+  let earliestDueYear: number | null = null;
+  let overdueField: string | null = null;
+  let dueThisYearField: string | null = null;
+  let dueNextYearField: string | null = null;
+
+  // Check current status first
+  const statusLower = (currentStatus || '').toLowerCase().trim();
+  if (['arrived', 'enroute', 'in shop', 'in_shop', 'inshop'].includes(statusLower)) {
+    return { status: 'In Shop', reason: `Current status: ${currentStatus}`, earliestDue: null };
+  }
+  if (statusLower === 'complete') {
+    return { status: 'Compliant', reason: 'Work complete', earliestDue: null };
+  }
+
+  // Check plan status
+  const planLower = (planStatus || '').toLowerCase().trim();
+  if (planLower === 'committed' || hasScheduledShop) {
+    return { status: 'Planned', reason: 'Has committed plan', earliestDue: null };
+  }
+
+  // Iterate through qualification dates to find earliest due
+  for (const field of QUALIFICATION_DATE_FIELDS) {
+    const year = extractYear(qualificationDates[field]);
+    if (year === null) continue;
+
+    if (earliestDueYear === null || year < earliestDueYear) {
+      earliestDueYear = year;
+    }
+
+    if (year < currentYear) {
+      if (!overdueField) overdueField = field;
+    } else if (year === currentYear) {
+      if (!dueThisYearField) dueThisYearField = field;
+    } else if (year === currentYear + 1) {
+      if (!dueNextYearField) dueNextYearField = field;
+    }
+  }
+
+  // Determine status based on earliest due date
+  if (overdueField) {
+    return {
+      status: 'Urgent',
+      reason: `${formatFieldName(overdueField)} overdue`,
+      earliestDue: earliestDueYear,
+    };
+  }
+
+  if (dueThisYearField) {
+    return {
+      status: 'Must Shop',
+      reason: `${formatFieldName(dueThisYearField)} due ${currentYear}`,
+      earliestDue: earliestDueYear,
+    };
+  }
+
+  if (dueNextYearField) {
+    return {
+      status: 'Upcoming',
+      reason: `${formatFieldName(dueNextYearField)} due ${currentYear + 1}`,
+      earliestDue: earliestDueYear,
+    };
+  }
+
+  if (earliestDueYear !== null) {
+    return {
+      status: 'Compliant',
+      reason: `Next due ${earliestDueYear}`,
+      earliestDue: earliestDueYear,
+    };
+  }
+
+  return { status: 'Unknown', reason: 'No qualification dates', earliestDue: null };
+}
+
+/**
+ * Formats a camelCase field name to human-readable format.
+ */
+function formatFieldName(field: string): string {
+  // Convert camelCase to Title Case with spaces
+  return field
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, str => str.toUpperCase())
+    .trim();
+}
+
+// ============================================================================
+// SHOP COLUMN DETECTION
+// ============================================================================
+
+/**
+ * Known shop name patterns from the Qual Planner Master CSV.
+ * These are the column headers that represent shop assignments with dates.
+ */
+export const KNOWN_SHOP_PATTERNS = [
+  /^AITX\s/i,
+  /Rail(car)?\s*Services/i,
+  /Railcar\s*Repair/i,
+  /Mobile\s*(Unit|Operations|Headquarters)/i,
+  /Procor/i,
+  /Eagle\s*Railcar/i,
+  /Cathcart/i,
+  /Greenbrier/i,
+  /Trinity/i,
+  /Transco/i,
+  /Curry\s*Rail/i,
+  /Rescar/i,
+  /Blastech/i,
+  /CAD\s*Railway/i,
+  /CALTRAX/i,
+  /CANDO/i,
+  /Frit\s*Car/i,
+  /Iron\s*Horse/i,
+  /KRS\s*Katahdin/i,
+  /Midwest\s*Railcar/i,
+  /PSC\s*Repair/i,
+  /TLC\s*Rail/i,
+  /TMC\s*Engineering/i,
+  /TNT\s*Repair/i,
+  /Transitech/i,
+  /VLS\s*Recovery/i,
+  /Red\s*River\s*Coatings/i,
+  /Texana\s*Midway/i,
+  /Apache\s*Railway/i,
+];
+
+/**
+ * Checks if a header name appears to be a shop column.
+ */
+export function isShopColumn(header: string): boolean {
+  // Check against known shop patterns
+  for (const pattern of KNOWN_SHOP_PATTERNS) {
+    if (pattern.test(header)) {
+      return true;
+    }
+  }
+
+  // Check for city/state pattern in parentheses (common in shop names)
+  if (/\([A-Za-z\s]+\)$/.test(header)) {
+    // Has location in parentheses, likely a shop
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Extracts shop assignments from a record's shop columns.
+ * Returns array of { shopName, scheduledDate } pairs.
+ */
+export interface ShopAssignment {
+  shopName: string;
+  shopLocation: string;
+  scheduledDate: Date;
+  scheduledMonth: string; // YYYY-MM format
+}
+
+export function extractShopAssignments(
+  record: Record<string, unknown>,
+  headers: string[]
+): ShopAssignment[] {
+  const assignments: ShopAssignment[] = [];
+
+  for (const header of headers) {
+    if (!isShopColumn(header)) continue;
+
+    const value = record[header];
+    if (!value || String(value).trim() === '') continue;
+
+    // Try to parse the date
+    const dateStr = String(value).trim();
+    const date = parseShopDate(dateStr);
+
+    if (date) {
+      // Extract location from parentheses if present
+      const locationMatch = header.match(/\(([^)]+)\)\s*$/);
+      const location = locationMatch ? locationMatch[1].trim() : '';
+      const shopName = header.replace(/\s*\([^)]+\)\s*$/, '').trim();
+
+      assignments.push({
+        shopName: shopName,
+        shopLocation: location,
+        scheduledDate: date,
+        scheduledMonth: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+      });
+    }
+  }
+
+  return assignments;
+}
+
+/**
+ * Parses a date string from shop column (handles M/D/YYYY format).
+ */
+function parseShopDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
+
+  // Handle M/D/YYYY or MM/DD/YYYY format
+  const mdyMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdyMatch) {
+    const [, month, day, year] = mdyMatch;
+    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+
+  // Try standard date parsing
+  const date = new Date(dateStr);
+  if (!isNaN(date.getTime())) {
+    return date;
+  }
+
+  return null;
+}
+
 // ============================================================================
 // HEADER MAPPING UTILITIES
 // ============================================================================
@@ -847,12 +1318,25 @@ export interface TransformationResult {
 }
 
 /**
+ * Extended transformation result with shop assignments.
+ */
+export interface ExtendedTransformationResult extends TransformationResult {
+  shopAssignments: ShopAssignment[];
+}
+
+/**
  * Transforms a raw car record with normalized field values.
+ * Handles all Qual Planner Master CSV fields including:
+ * - Car identification (Mark + Number → railcarNumber)
+ * - Qualification dates (stored as years)
+ * - Reference fields (CSR, CSL, Commercial)
+ * - Shop assignments from shop columns
  */
 export function transformCarRecord(
   record: Record<string, unknown>,
-  fieldMappings?: Record<string, string>
-): TransformationResult {
+  fieldMappings?: Record<string, string>,
+  headers?: string[]
+): ExtendedTransformationResult {
   const warnings: string[] = [];
   const errors: string[] = [];
   const data: Record<string, unknown> = {};
@@ -864,62 +1348,201 @@ export function transformCarRecord(
     normalizedRecord[mappedField] = value;
   }
 
-  // Transform each field
-  // railcarNumber (required) - also support legacy vehicleNumber
-  data.railcarNumber = normalizedRecord.railcarNumber || normalizedRecord.vehicleNumber || '';
-  // Keep vehicleNumber for backward compatibility
-  data.vehicleNumber = data.railcarNumber;
-  if (!data.railcarNumber) {
-    errors.push('Missing required field: railcarNumber (or railcar_number)');
+  // ==========================================================================
+  // RAILCAR NUMBER - Construct from Mark + Number if not directly provided
+  // ==========================================================================
+  let railcarNumber = String(normalizedRecord.railcarNumber || '').trim();
+
+  // If no direct railcarNumber, try to construct from carMark + carNumber
+  if (!railcarNumber && normalizedRecord.carMark && normalizedRecord.carNumber) {
+    railcarNumber = `${String(normalizedRecord.carMark).trim()}${String(normalizedRecord.carNumber).trim()}`;
   }
 
-  // carType
+  data.railcarNumber = railcarNumber;
+  data.vehicleNumber = railcarNumber; // Keep for backward compatibility
+
+  if (!railcarNumber) {
+    errors.push('Missing required field: railcarNumber (or Mark + Number)');
+  }
+
+  // Store Mark and Number separately for sister car sorting
+  data.carMark = String(normalizedRecord.carMark || '').trim();
+  data.carNumber = String(normalizedRecord.carNumber || '').trim();
+
+  // ==========================================================================
+  // CAR TYPE AND TANK CAR DETECTION
+  // ==========================================================================
   data.carType = String(normalizedRecord.carType || '').trim();
 
-  // isTankCar - with smart boolean conversion
-  const tankCarResult = convertToBoolean(normalizedRecord.isTankCar);
-  if (!tankCarResult.isValid && normalizedRecord.isTankCar !== undefined) {
-    warnings.push(`Ambiguous isTankCar value: "${normalizedRecord.isTankCar}", defaulting to false`);
-  }
-  // Also check if carType contains 'tank'
-  if (!tankCarResult.value && data.carType && String(data.carType).toLowerCase().includes('tank')) {
+  // isTankCar - smart detection from carType
+  const carTypeLower = String(data.carType).toLowerCase();
+  if (carTypeLower.includes('tank') || carTypeLower.includes('general service')) {
     data.isTankCar = true;
   } else {
+    const tankCarResult = convertToBoolean(normalizedRecord.isTankCar);
     data.isTankCar = tankCarResult.value;
   }
 
-  // status - with normalization
-  const statusResult = normalizeStatus(normalizedRecord.status as string);
-  if (!statusResult.isValid && normalizedRecord.status) {
-    errors.push(`Invalid status: "${normalizedRecord.status}". Valid values: ${VALID_STATUSES.join(', ')}`);
+  // ==========================================================================
+  // STATUS FIELDS
+  // ==========================================================================
+  // Current Status - keep original value for Qual Planner statuses
+  const rawStatus = String(normalizedRecord.status || '').trim();
+  const qualPlannerStatuses = ['arrived', 'complete', 'to be routed', 'release', 'up marketed', 'enroute', 'reassigned', 'released'];
+  if (qualPlannerStatuses.includes(rawStatus.toLowerCase())) {
+    data.status = rawStatus; // Keep original Qual Planner status
+  } else {
+    const statusResult = normalizeStatus(rawStatus);
+    data.status = statusResult.normalized;
+    if (!statusResult.isValid && rawStatus) {
+      warnings.push(`Non-standard status: "${rawStatus}"`);
+    }
   }
-  data.status = statusResult.normalized;
 
-  // String fields with defaults
-  data.commodity = String(normalizedRecord.commodity || '').trim();
+  // Plan Status - critical for workflow
+  data.planStatus = String(normalizedRecord.planStatus || '').trim();
+
+  // ==========================================================================
+  // CUSTOMER AND CONTRACT FIELDS
+  // ==========================================================================
   data.customer = String(normalizedRecord.customer || '').trim();
-  data.projectNumber = String(normalizedRecord.projectNumber || '').trim();
-  data.reasonShopped = String(normalizedRecord.reasonShopped || '').trim();
-  data.currentLocation = String(normalizedRecord.currentLocation || '').trim();
+  data.fmsLesseeNumber = String(normalizedRecord.fmsLesseeNumber || '').trim();
+  data.contractNumber = String(normalizedRecord.contractNumber || '').trim();
+  data.contractExpiration = convertToDate(normalizedRecord.contractExpiration);
+
+  // ==========================================================================
+  // COMMODITY
+  // ==========================================================================
+  data.commodity = String(normalizedRecord.commodity || '').trim();
+
+  // ==========================================================================
+  // REFERENCE CONTACT FIELDS (display in car info drawer)
+  // ==========================================================================
+  data.csr = String(normalizedRecord.csr || '').trim();
+  data.csl = String(normalizedRecord.csl || '').trim();
+  data.commercial = String(normalizedRecord.commercial || '').trim();
+
+  // ==========================================================================
+  // REGION FIELDS
+  // ==========================================================================
   data.homeRegion = String(normalizedRecord.homeRegion || '').trim();
   data.originRegion = String(normalizedRecord.originRegion || '').trim();
-  data.notes = String(normalizedRecord.notes || '').trim();
-  // Shop assignment (optional - for reference during import)
-  data.assignedShopCode = String(normalizedRecord.assignedShopCode || '').trim();
+  data.pastRegion = String(normalizedRecord.pastRegion || '').trim();
+  data.region2026 = String(normalizedRecord.region2026 || '').trim();
+  data.currentLocation = String(normalizedRecord.currentLocation || '').trim();
 
-  // Numeric fields
+  // ==========================================================================
+  // PHYSICAL CHARACTERISTICS
+  // ==========================================================================
+  // Jacketed - handle "Jacketed" string value
+  const jacketedValue = String(normalizedRecord.isJacketed || '').toLowerCase().trim();
+  data.isJacketed = jacketedValue === 'jacketed' || jacketedValue === 'yes' || jacketedValue === 'true' || jacketedValue === '1';
+
+  // Lined - handle "Unlined" vs "Lined" string values
+  const linedValue = String(normalizedRecord.isLined || '').toLowerCase().trim();
+  data.isLined = linedValue === 'lined' || linedValue === 'yes' || linedValue === 'true' || linedValue === '1';
+  // "Unlined" explicitly means not lined
+  if (linedValue === 'unlined') {
+    data.isLined = false;
+  }
+
+  data.liningType = String(normalizedRecord.liningType || '').trim();
+  data.buildYear = convertToInt(normalizedRecord.buildYear) || null;
+
+  // ==========================================================================
+  // QUALIFICATION TYPE AND SHOPPING REASON
+  // ==========================================================================
+  // Full/Partial Qual - normalize to standard values
+  const qualTypeRaw = String(normalizedRecord.qualificationType || '').toLowerCase().trim();
+  if (qualTypeRaw.includes('full')) {
+    data.qualificationType = 'Full Qual';
+  } else if (qualTypeRaw.includes('partial')) {
+    data.qualificationType = 'Partial Qual';
+  } else {
+    data.qualificationType = normalizedRecord.qualificationType || '';
+  }
+
+  data.reasonsShopped = String(normalizedRecord.reasonsShopped || '').trim();
+
+  // Perform Tank Qual - "Yes" means needs plan or complete
+  const performTankQual = String(normalizedRecord.performedTankQual || '').toLowerCase().trim();
+  data.performedTankQual = performTankQual === 'yes' || performTankQual === 'true' || performTankQual === '1';
+
+  // Scheduled field - indicates if car should have data points in system
+  const scheduledValue = String(normalizedRecord.performScheduled || '').toLowerCase().trim();
+  data.performScheduled = scheduledValue.includes('planned') || scheduledValue === 'yes' || scheduledValue === 'true';
+
+  // ==========================================================================
+  // PORTFOLIO (On Lease/Active)
+  // ==========================================================================
+  const portfolioValue = String(normalizedRecord.portfolio || '').toLowerCase().trim();
+  data.portfolio = portfolioValue === 'on lease' || portfolioValue === 'active' || portfolioValue === 'yes' || portfolioValue === 'true';
+
+  // ==========================================================================
+  // QUALIFICATION DATE FIELDS (stored as years → converted to end-of-year dates)
+  // ==========================================================================
+  const qualDates: Record<string, unknown> = {};
+
+  for (const field of QUALIFICATION_DATE_FIELDS) {
+    const yearValue = normalizedRecord[field];
+    if (yearValue) {
+      const date = convertYearToDate(yearValue);
+      data[field] = date;
+      qualDates[field] = yearValue; // Keep original for status calculation
+    } else {
+      data[field] = null;
+    }
+  }
+
+  // ==========================================================================
+  // CALCULATE SHOPPING STATUS
+  // ==========================================================================
+  // Extract shop assignments first to check if car has scheduled shop
+  const shopAssignments = headers ? extractShopAssignments(record, headers) : [];
+  const hasScheduledShop = shopAssignments.length > 0;
+
+  const shoppingStatusResult = calculateShoppingStatus(
+    qualDates,
+    data.status as string,
+    data.planStatus as string,
+    hasScheduledShop
+  );
+  data.shoppingStatus = shoppingStatusResult.status;
+
+  // ==========================================================================
+  // COST AND TIMING FIELDS
+  // ==========================================================================
   data.projectedCost = convertToFloat(normalizedRecord.projectedCost);
   data.daysInShop = convertToInt(normalizedRecord.daysInShop);
+  data.projectNumber = String(normalizedRecord.projectNumber || '').trim();
 
   // Date fields
   data.shopEntryDate = convertToDate(normalizedRecord.shopEntryDate);
+  data.arrivalDate = convertToDate(normalizedRecord.arrivalDate);
   data.lastServiceDate = convertToDate(normalizedRecord.lastServiceDate);
   data.nextServiceDue = convertToDate(normalizedRecord.nextServiceDue);
+
+  // ==========================================================================
+  // OTHER FIELDS
+  // ==========================================================================
+  data.notes = String(normalizedRecord.notes || '').trim();
+  data.assignedShopCode = String(normalizedRecord.assignedShopCode || '').trim();
+
+  // If car has shop assignments, use the first one as the assigned shop
+  if (shopAssignments.length > 0) {
+    const firstAssignment = shopAssignments[0];
+    // Format: Shop Name (Location)
+    data.assignedShopCode = firstAssignment.shopLocation
+      ? `${firstAssignment.shopName} (${firstAssignment.shopLocation})`
+      : firstAssignment.shopName;
+    data.projectedCompletionMonth = firstAssignment.scheduledMonth;
+  }
 
   return {
     success: errors.length === 0,
     data,
     warnings,
     errors,
+    shopAssignments,
   };
 }

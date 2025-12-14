@@ -135,6 +135,19 @@ model Car {
   planStatus               String           @default("") // Plan Status
 
   // =============================================================================
+  // REFERENCE FIELDS - Display in car info drawer (from Qual Planner Master CSV)
+  // =============================================================================
+  csr                      String           @default("") // Customer Service Rep
+  csl                      String           @default("") // Customer Service Lead
+  commercial               String           @default("") // Commercial contact
+  liningType               String           @default("") // Lining Type (if lined)
+  carMark                  String           @default("") // Car Mark prefix (for sister car sorting)
+  carNumber                String           @default("") // Car Number suffix (for sister car sorting)
+  fmsLesseeNumber          String           @default("") // FMS Lessee Number
+  pastRegion               String           @default("") // Past Region
+  region2026               String           @default("") // 2026 Region planning
+
+  // =============================================================================
   // QUALIFICATION DATE FIELDS - These drive shopping urgency
   // The earliest due date across all determines shopping_status
   // =============================================================================
