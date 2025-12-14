@@ -108,6 +108,31 @@ function buildWhereClause(where: WhereClause | undefined): { sql: string; params
   const params: any[] = [];
 
   for (const [key, value] of Object.entries(where)) {
+    // Handle Prisma compound unique key syntax (e.g., field1_field2_field3: { field1, field2, field3 })
+    // These keys contain underscores that match multiple field names in the value object
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      const valueKeys = Object.keys(value);
+      const isCompoundKey = valueKeys.length > 0 &&
+        !['gte', 'lte', 'gt', 'lt', 'contains', 'in', 'not', 'increment', 'decrement'].some(op => op in value) &&
+        valueKeys.every(vk => key.includes(vk));
+
+      if (isCompoundKey) {
+        // Expand compound key into individual field conditions
+        for (const [fieldName, fieldValue] of Object.entries(value)) {
+          validateColumnName(fieldName);
+          conditions.push(`"${fieldName}" = ?`);
+          if (fieldValue instanceof Date) {
+            params.push(fieldValue.toISOString());
+          } else if (typeof fieldValue === 'boolean') {
+            params.push(fieldValue ? 1 : 0);
+          } else {
+            params.push(fieldValue);
+          }
+        }
+        continue;
+      }
+    }
+
     // SECURITY: Validate column name before using in query
     validateColumnName(key);
 
@@ -492,12 +517,34 @@ function createTableHandler(tableName: string) {
       // SECURITY: Validate all column names
       keys.forEach(validateColumnName);
 
-      const setParts = keys.map(k => `"${k}" = ?`);
-      const setValues = Object.values(data).map(v => {
-        if (typeof v === 'boolean') return v ? 1 : 0;
-        if (v instanceof Date) return v.toISOString();
-        return v;
-      });
+      const setParts: string[] = [];
+      const setValues: any[] = [];
+
+      for (const k of keys) {
+        const v = data[k];
+        // Handle Prisma increment/decrement syntax: { increment: N } or { decrement: N }
+        if (typeof v === 'object' && v !== null && !Array.isArray(v) && !(v instanceof Date)) {
+          if ('increment' in v && typeof v.increment === 'number') {
+            setParts.push(`"${k}" = "${k}" + ?`);
+            setValues.push(v.increment);
+            continue;
+          }
+          if ('decrement' in v && typeof v.decrement === 'number') {
+            setParts.push(`"${k}" = "${k}" - ?`);
+            setValues.push(v.decrement);
+            continue;
+          }
+        }
+        // Standard value assignment
+        setParts.push(`"${k}" = ?`);
+        if (typeof v === 'boolean') {
+          setValues.push(v ? 1 : 0);
+        } else if (v instanceof Date) {
+          setValues.push(v.toISOString());
+        } else {
+          setValues.push(v);
+        }
+      }
 
       const query = `UPDATE "${tableName}" SET ${setParts.join(', ')} ${whereClause}`;
       try {
@@ -521,12 +568,34 @@ function createTableHandler(tableName: string) {
       // SECURITY: Validate all column names
       keys.forEach(validateColumnName);
 
-      const setParts = keys.map(k => `"${k}" = ?`);
-      const setValues = Object.values(data).map(v => {
-        if (typeof v === 'boolean') return v ? 1 : 0;
-        if (v instanceof Date) return v.toISOString();
-        return v;
-      });
+      const setParts: string[] = [];
+      const setValues: any[] = [];
+
+      for (const k of keys) {
+        const v = data[k];
+        // Handle Prisma increment/decrement syntax: { increment: N } or { decrement: N }
+        if (typeof v === 'object' && v !== null && !Array.isArray(v) && !(v instanceof Date)) {
+          if ('increment' in v && typeof v.increment === 'number') {
+            setParts.push(`"${k}" = "${k}" + ?`);
+            setValues.push(v.increment);
+            continue;
+          }
+          if ('decrement' in v && typeof v.decrement === 'number') {
+            setParts.push(`"${k}" = "${k}" - ?`);
+            setValues.push(v.decrement);
+            continue;
+          }
+        }
+        // Standard value assignment
+        setParts.push(`"${k}" = ?`);
+        if (typeof v === 'boolean') {
+          setValues.push(v ? 1 : 0);
+        } else if (v instanceof Date) {
+          setValues.push(v.toISOString());
+        } else {
+          setValues.push(v);
+        }
+      }
 
       const query = `UPDATE "${tableName}" SET ${setParts.join(', ')} ${whereClause}`;
       const result = db.prepare(query).run(...setValues, ...whereParams);
