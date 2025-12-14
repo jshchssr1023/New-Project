@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import {
   ArrowDownTrayIcon,
   DocumentTextIcon,
@@ -202,7 +203,10 @@ export default function PlanningGrid() {
         setSelectedPlan(plansData[0]);
       }
     } catch (error) {
-      console.error('Failed to load data:', error);
+      // Ignore canceled requests (caused by request deduplication)
+      if (!axios.isCancel(error)) {
+        console.error('Failed to load data:', error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -214,7 +218,10 @@ export default function PlanningGrid() {
       const planDetails = await plansApi.getById(selectedPlan.id);
       setAssignments(planDetails.assignments || []);
     } catch (error) {
-      console.error('Failed to load assignments:', error);
+      // Ignore canceled requests (caused by request deduplication or component unmount)
+      if (!axios.isCancel(error)) {
+        console.error('Failed to load assignments:', error);
+      }
     }
   };
 

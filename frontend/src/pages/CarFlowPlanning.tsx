@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import axios from 'axios';
 import {
   ChartBarIcon,
   TableCellsIcon,
@@ -299,8 +300,11 @@ export default function CarFlowPlanning() {
         const allocations = generateMonthlyAllocations(forecasts, AITX_SHOPS, NETWORKS_3P);
         setMonthlyAllocations(allocations);
       } catch (err) {
-        setError('Failed to load data');
-        console.error(err);
+        // Ignore canceled requests (caused by request deduplication or component unmount)
+        if (!axios.isCancel(err)) {
+          setError('Failed to load data');
+          console.error(err);
+        }
       } finally {
         setIsLoading(false);
       }
