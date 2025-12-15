@@ -820,4 +820,431 @@ router.put('/allocations/capacity', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// =============================================================================
+// DEMAND REGISTRY ROUTES
+// =============================================================================
+
+/**
+ * GET /api/sop/demand-registry - Get demand registry data
+ *
+ * Returns all cars that are due based on:
+ * - tankQualDueDate (qualifications due this year or rolling 3 months)
+ * - contractExpiration (returns within 6-month horizon)
+ * - reasonShopped = 'assignment' (pre-delivery prep)
+ */
+router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+  const { year, includeRolling3Months } = req.query;
+
+  try {
+    const filterYear = year ? parseInt(year as string) : new Date().getFullYear();
+    const now = new Date();
+    const yearEnd = new Date(filterYear, 11, 31, 23, 59, 59);
+    const sixMonthsOut = new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
+    const rolling3MonthCutoff = includeRolling3Months !== 'false'
+      ? new Date(now.getFullYear(), now.getMonth() + 3, now.getDate())
+      : yearEnd;
+
+    // Get cars with qualification due dates, contract expirations, or assignment reason
+    const cars = await prisma.car.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        OR: [
+          // Qualifications due this year or overdue
+          {
+            tankQualDueDate: {
+              lte: rolling3MonthCutoff,
+            },
+          },
+          // Returns in next 6 months
+          {
+            contractExpiration: {
+              lte: sixMonthsOut,
+            },
+          },
+          // Pre-delivery assignments
+          {
+            reasonsShopped: {
+              contains: 'assignment',
+              mode: 'insensitive',
+            },
+          },
+        ],
+        status: {
+          notIn: ['retired', 'scrapped'],
+        },
+      },
+      include: {
+        assignedShop: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+      },
+      orderBy: [
+        { tankQualDueDate: 'asc' },
+        { contractExpiration: 'asc' },
+      ],
+    });
+
+    // Build demand register items
+    const items: {
+      carId: string;
+      railcarNumber: string;
+      workType: string;
+      dueDate: string | null;
+      daysUntilDue: number;
+      isOverdue: boolean;
+      customer: string;
+      commodity: string;
+      isTankCar: boolean;
+      planningState: string;
+      assignedShopId: string | null;
+      assignedShopName: string | null;
+      scheduledMonth: string | null;
+    }[] = [];
+
+    const addedCarIds = new Set<string>();
+
+    cars.forEach((car: any) => {
+      // Process qualifications
+      if (car.tankQualDueDate) {
+        const qualDueDate = new Date(car.tankQualDueDate);
+        const daysUntil = Math.floor((qualDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const isInFilterYear = qualDueDate <= yearEnd;
+        const isInRolling3Months = qualDueDate <= rolling3MonthCutoff;
+        const isOverdue = daysUntil < 0;
+
+        if (isInFilterYear || isInRolling3Months || isOverdue) {
+          items.push({
+            carId: car.id,
+            railcarNumber: car.railcarNumber,
+            workType: 'qualification',
+            dueDate: car.tankQualDueDate?.toISOString() || null,
+            daysUntilDue: daysUntil,
+            isOverdue,
+            customer: car.customer || '',
+            commodity: car.commodity || '',
+            isTankCar: car.isTankCar || false,
+            planningState: car.status || 'not_planned',
+            assignedShopId: car.assignedShopId,
+            assignedShopName: car.assignedShop?.name || null,
+            scheduledMonth: car.projectedCompletionMonth || null,
+          });
+          addedCarIds.add(car.id);
+        }
+      }
+
+      // Process returns (lease expirations)
+      if (car.contractExpiration && !addedCarIds.has(car.id)) {
+        const leaseEndDate = new Date(car.contractExpiration);
+        const daysUntil = Math.floor((leaseEndDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const isInHorizon = leaseEndDate <= sixMonthsOut;
+        const isOverdue = daysUntil < 0;
+
+        if (isInHorizon || isOverdue) {
+          items.push({
+            carId: car.id,
+            railcarNumber: car.railcarNumber,
+            workType: 'return',
+            dueDate: car.contractExpiration?.toISOString() || null,
+            daysUntilDue: daysUntil,
+            isOverdue,
+            customer: car.customer || '',
+            commodity: car.commodity || '',
+            isTankCar: car.isTankCar || false,
+            planningState: car.status || 'not_planned',
+            assignedShopId: car.assignedShopId,
+            assignedShopName: car.assignedShop?.name || null,
+            scheduledMonth: car.projectedCompletionMonth || null,
+          });
+          addedCarIds.add(car.id);
+        }
+      }
+
+      // Process assignments
+      if (car.reasonsShopped?.toLowerCase().includes('assignment') && !addedCarIds.has(car.id)) {
+        const dueDate = car.nextServiceDue ? new Date(car.nextServiceDue) : now;
+        const daysUntil = Math.floor((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        items.push({
+          carId: car.id,
+          railcarNumber: car.railcarNumber,
+          workType: 'assignment',
+          dueDate: car.nextServiceDue?.toISOString() || null,
+          daysUntilDue: daysUntil,
+          isOverdue: daysUntil < 0,
+          customer: car.customer || '',
+          commodity: car.commodity || '',
+          isTankCar: car.isTankCar || false,
+          planningState: car.status || 'not_planned',
+          assignedShopId: car.assignedShopId,
+          assignedShopName: car.assignedShop?.name || null,
+          scheduledMonth: car.projectedCompletionMonth || null,
+        });
+      }
+    });
+
+    // Sort by overdue first, then by days until due
+    items.sort((a, b) => {
+      if (a.isOverdue && !b.isOverdue) return -1;
+      if (!a.isOverdue && b.isOverdue) return 1;
+      return a.daysUntilDue - b.daysUntilDue;
+    });
+
+    // Calculate summaries
+    const summaries: Record<string, {
+      total: number;
+      overdue: number;
+      notPlanned: number;
+      planned: number;
+      scheduled: number;
+    }> = {
+      qualification: { total: 0, overdue: 0, notPlanned: 0, planned: 0, scheduled: 0 },
+      assignment: { total: 0, overdue: 0, notPlanned: 0, planned: 0, scheduled: 0 },
+      return: { total: 0, overdue: 0, notPlanned: 0, planned: 0, scheduled: 0 },
+    };
+
+    items.forEach((item) => {
+      const summary = summaries[item.workType];
+      if (summary) {
+        summary.total++;
+        if (item.isOverdue) summary.overdue++;
+        if (!item.assignedShopId) summary.notPlanned++;
+        else if (item.planningState === 'scheduled') summary.scheduled++;
+        else summary.planned++;
+      }
+    });
+
+    res.json({
+      items,
+      summaries: Object.entries(summaries)
+        .filter(([, s]) => s.total > 0)
+        .map(([workType, stats]) => ({ workType, ...stats })),
+      totalNotPlanned: items.filter((i) => !i.assignedShopId).length,
+      totalPlanned: items.filter((i) => i.assignedShopId && i.planningState !== 'scheduled').length,
+      totalScheduled: items.filter((i) => i.planningState === 'scheduled').length,
+      totalOverdue: items.filter((i) => i.isOverdue).length,
+      filterYear,
+    });
+  } catch (error: any) {
+    console.error('Get demand registry error:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/sop/system-metrics - Get system-wide S&OP metrics
+ */
+router.get('/system-metrics', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+
+  try {
+    // Get car counts by status
+    const carCounts = await prisma.car.groupBy({
+      by: ['status'],
+      where: {
+        companyId: req.user!.companyId,
+      },
+      _count: true,
+    });
+
+    // Get shop capacities
+    const shops = await prisma.shop.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        isAitxInternal: true,
+        capacity: true,
+        qualCapacity: true,
+      },
+    });
+
+    // Calculate AITX vs 3P capacity
+    let aitxMonthly = 0;
+    let thirdPartyMonthly = 0;
+
+    shops.forEach((shop: any) => {
+      const monthlyCapacity = shop.capacity || shop.qualCapacity || 0;
+      if (shop.isAitxInternal) {
+        aitxMonthly += monthlyCapacity;
+      } else {
+        thirdPartyMonthly += monthlyCapacity;
+      }
+    });
+
+    const totalMonthly = aitxMonthly + thirdPartyMonthly;
+    const totalAnnual = totalMonthly * 12;
+
+    // Estimate demand from cars needing work
+    const carsNeedingWork = await prisma.car.count({
+      where: {
+        companyId: req.user!.companyId,
+        status: { in: ['available', 'scheduled', 'urgent'] },
+        OR: [
+          { tankQualDueDate: { not: null } },
+          { contractExpiration: { not: null } },
+          { reasonsShopped: { contains: 'assignment', mode: 'insensitive' } },
+        ],
+      },
+    });
+
+    const capacitySurplusDeficit = totalAnnual - carsNeedingWork;
+    const utilizationRate = totalAnnual > 0 ? carsNeedingWork / totalAnnual : 0;
+
+    res.json({
+      totalAnnualDemand: carsNeedingWork,
+      monthlyDemand: Math.round(carsNeedingWork / 12),
+      aitxAnnualCapacity: aitxMonthly * 12,
+      aitxMonthlyCapacity: aitxMonthly,
+      thirdPartyAnnualCapacity: thirdPartyMonthly * 12,
+      thirdPartyMonthlyCapacity: thirdPartyMonthly,
+      totalSystemCapacity: totalAnnual,
+      monthlyCapacity: totalMonthly,
+      capacitySurplusDeficit,
+      systemUtilizationRate: utilizationRate,
+      aitxPercentage: totalMonthly > 0 ? aitxMonthly / totalMonthly : 0,
+      thirdPartyPercentage: totalMonthly > 0 ? thirdPartyMonthly / totalMonthly : 0,
+      capacityStatus: capacitySurplusDeficit >= 0 ? 'Sufficient' : 'SHORTAGE',
+      surplusStatus: capacitySurplusDeficit >= 0 ? 'Surplus' : 'DEFICIT',
+      utilizationStatus: utilizationRate <= 0.9 ? 'Healthy' : 'Over-Utilized',
+      shopCount: shops.length,
+      aitxShopCount: shops.filter((s: any) => s.isAitxInternal).length,
+      thirdPartyShopCount: shops.filter((s: any) => !s.isAitxInternal).length,
+    });
+  } catch (error: any) {
+    console.error('Get system metrics error:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/sop/network-hierarchy - Get shop networks with hierarchy
+ *
+ * Returns networks organized by parent company with expandable shop locations
+ */
+router.get('/network-hierarchy', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+
+  try {
+    // Get all shops, grouped by network
+    const shops = await prisma.shop.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        isActive: true,
+      },
+      include: {
+        parentShop: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        childShops: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            city: true,
+            state: true,
+            capacity: true,
+            tankQualified: true,
+          },
+        },
+      },
+      orderBy: [
+        { network: 'asc' },
+        { name: 'asc' },
+      ],
+    });
+
+    // Group shops by network
+    const networkMap = new Map<string, {
+      id: string;
+      name: string;
+      isAitxInternal: boolean;
+      shops: any[];
+      totalMonthlyCapacity: number;
+      totalAnnualCapacity: number;
+    }>();
+
+    // First pass: create networks from parent shops
+    shops.forEach((shop: any) => {
+      if (shop.isParent || (shop.childShops && shop.childShops.length > 0)) {
+        const networkId = shop.network || shop.code || shop.id;
+        if (!networkMap.has(networkId)) {
+          networkMap.set(networkId, {
+            id: networkId,
+            name: shop.name,
+            isAitxInternal: shop.isAitxInternal || false,
+            shops: [],
+            totalMonthlyCapacity: 0,
+            totalAnnualCapacity: 0,
+          });
+        }
+      }
+    });
+
+    // Second pass: assign shops to networks
+    shops.forEach((shop: any) => {
+      const networkId = shop.network || (shop.parentShop?.code) || 'Other';
+
+      if (!networkMap.has(networkId)) {
+        networkMap.set(networkId, {
+          id: networkId,
+          name: networkId,
+          isAitxInternal: shop.isAitxInternal || false,
+          shops: [],
+          totalMonthlyCapacity: 0,
+          totalAnnualCapacity: 0,
+        });
+      }
+
+      const network = networkMap.get(networkId)!;
+      const monthlyCapacity = shop.capacity || 0;
+
+      network.shops.push({
+        id: shop.id,
+        code: shop.code,
+        name: shop.name,
+        city: shop.city || '',
+        state: shop.state || '',
+        monthlyCapacity,
+        annualCapacity: monthlyCapacity * 12,
+        tankQualified: shop.tankQualified || false,
+        isParent: shop.isParent || false,
+      });
+
+      network.totalMonthlyCapacity += monthlyCapacity;
+      network.totalAnnualCapacity += monthlyCapacity * 12;
+    });
+
+    // Convert to array and sort
+    const networks = Array.from(networkMap.values()).sort((a, b) => {
+      // AITX first, then alphabetically
+      if (a.isAitxInternal && !b.isAitxInternal) return -1;
+      if (!a.isAitxInternal && b.isAitxInternal) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    res.json({
+      networks,
+      totalNetworks: networks.length,
+      totalShops: shops.length,
+      aitxNetworks: networks.filter((n) => n.isAitxInternal).length,
+      thirdPartyNetworks: networks.filter((n) => !n.isAitxInternal).length,
+    });
+  } catch (error: any) {
+    console.error('Get network hierarchy error:', error);
+    res.status(500).json({ message: error.message || 'Internal server error' });
+  }
+});
+
 export default router;

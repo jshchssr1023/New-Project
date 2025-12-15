@@ -27,6 +27,11 @@ const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
 const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
 const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
 
+// S&OP Planning Module - Sales & Operations Planning for car flow
+const SOPCapacityPage = lazy(() => import('./pages/SOPCapacityPage'));
+const SOPPlanningPage = lazy(() => import('./pages/SOPPlanningPage'));
+const DemandRegistryPage = lazy(() => import('./pages/DemandRegistryPage'));
+
 // REMOVED: Master Plan Wizard components - replaced by Car Flow Planning module
 // const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
 // const MasterPlanAuditLog = lazy(() => import('./components/MasterPlanAuditLog'));
@@ -121,6 +126,12 @@ export default function App() {
             <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
             <Route path="rules" element={<RuleBuilder />} />
+
+            {/* S&OP Planning Module Routes */}
+            <Route path="sop-capacity" element={<SOPCapacityPage />} />
+            <Route path="sop-plan" element={<SOPPlanningPage />} />
+            <Route path="demand-registry" element={<DemandRegistryPage />} />
+
             {/* S&OP Supply Settings - admin only */}
             <Route
               path="sop-settings"
