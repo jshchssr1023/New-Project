@@ -10,6 +10,7 @@ import type { CarFlowPlan } from '../types/carFlow';
 type ViewMode = 'cards' | 'list' | 'network';
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
+const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Canada'];
 
 // Parent shop group interface (for hierarchy view)
 interface ParentShopGroup {
@@ -60,6 +61,8 @@ export default function ShopManagement() {
   const [locationFilter, setLocationFilter] = useState<string>(''); // Filter by specific shop location
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [ownershipFilter, setOwnershipFilter] = useState<string>('');
+  const [regionFilter, setRegionFilter] = useState<string>('');
   const [capacityData, setCapacityData] = useState<Record<string, any[]>>({});
   const [carFlowPlans, setCarFlowPlans] = useState<CarFlowPlan[]>([]);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
