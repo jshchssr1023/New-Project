@@ -83,13 +83,13 @@ export default function SOPDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
-  // Filter state
+  // Filter state - defaults to 'All' (empty string) for all filters
   const [filters, setFilters] = useState<DashboardFilters>({
     lesseeName: '',
     arrivalYear: '',
     carType: '',
     reasonsShopped: [],
-    performTankQual: 'Yes',
+    performTankQual: '', // Empty = All (no filter)
     qualPlanner: '',
     network: '',
     yearDue: '',
@@ -107,6 +107,8 @@ export default function SOPDashboard() {
           carsApi.getAll({ pageSize: 10000 }),
           shopsApi.getAll(),
         ]);
+        console.log('S&OP Dashboard - Cars loaded:', carsRes.data?.length || 0);
+        console.log('S&OP Dashboard - Shops loaded:', shopsRes?.length || 0);
         setCars(carsRes.data || []);
         setShops(shopsRes || []);
         setLastRefresh(new Date());
