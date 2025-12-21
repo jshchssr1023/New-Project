@@ -4,38 +4,47 @@
  */
 
 // =============================================================================
-// ENUMS
+// STATUS TYPE CONSTANTS (SQLite doesn't support enums)
 // =============================================================================
 
-export enum MasterPlanStatus {
-  DRAFT = 'DRAFT',
-  PENDING = 'PENDING',
-  APPROVED = 'APPROVED',
-  ACTIVE = 'ACTIVE',
-  SUPERSEDED = 'SUPERSEDED',
-  ARCHIVED = 'ARCHIVED',
-}
+// MasterPlan status values
+export const MASTER_PLAN_STATUS = {
+  DRAFT: 'DRAFT',
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  ACTIVE: 'ACTIVE',
+  SUPERSEDED: 'SUPERSEDED',
+  ARCHIVED: 'ARCHIVED',
+} as const;
 
-export enum CommitmentStatus {
-  DRAFT = 'DRAFT',
-  PLANNED = 'PLANNED',
-  IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETE = 'COMPLETE',
-  CANCELLED = 'CANCELLED',
-  DEFERRED = 'DEFERRED',
-  RESCHEDULED = 'RESCHEDULED',
-}
+export type MasterPlanStatus = typeof MASTER_PLAN_STATUS[keyof typeof MASTER_PLAN_STATUS];
 
-export enum AssignmentStatus {
-  DRAFT = 'DRAFT',
-  SCENARIO = 'SCENARIO',
-  PENDING_REVIEW = 'PENDING_REVIEW',
-  COMMITTED = 'COMMITTED',
-  IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
-  CANCELLED = 'CANCELLED',
-  SUPERSEDED = 'SUPERSEDED',
-}
+// Commitment status values
+export const COMMITMENT_STATUS = {
+  DRAFT: 'DRAFT',
+  PLANNED: 'PLANNED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETE: 'COMPLETE',
+  CANCELLED: 'CANCELLED',
+  DEFERRED: 'DEFERRED',
+  RESCHEDULED: 'RESCHEDULED',
+} as const;
+
+export type CommitmentStatus = typeof COMMITMENT_STATUS[keyof typeof COMMITMENT_STATUS];
+
+// Assignment status values
+export const ASSIGNMENT_STATUS = {
+  DRAFT: 'DRAFT',
+  SCENARIO: 'SCENARIO',
+  PENDING_REVIEW: 'PENDING_REVIEW',
+  COMMITTED: 'COMMITTED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  SUPERSEDED: 'SUPERSEDED',
+} as const;
+
+export type AssignmentStatus = typeof ASSIGNMENT_STATUS[keyof typeof ASSIGNMENT_STATUS];
 
 // =============================================================================
 // MASTER PLAN - Versioned Container for Fleet Schedule Snapshots
@@ -241,7 +250,7 @@ export namespace Prisma {
     id?: string | { in?: string[]; not?: string; equals?: string };
     companyId?: string;
     version?: number | { gte?: number; lte?: number };
-    status?: MasterPlanStatus | { in?: MasterPlanStatus[] };
+    status?: string | { in?: string[] };
     validFrom?: Date | { gte?: Date; lte?: Date };
     validTo?: Date | { gte?: Date; lte?: Date } | null;
     parentPlanId?: string | null;
@@ -258,7 +267,7 @@ export namespace Prisma {
     validTo?: Date | null;
     planningHorizonStart: Date;
     planningHorizonEnd: Date;
-    status?: MasterPlanStatus;
+    status?: string;
     createdById: string;
     companyId: string;
     parentPlanId?: string | null;
@@ -271,7 +280,7 @@ export namespace Prisma {
     validTo?: Date | null;
     planningHorizonStart?: Date;
     planningHorizonEnd?: Date;
-    status?: MasterPlanStatus;
+    status?: string;
     snapshotTakenAt?: Date | null;
     carCount?: number;
     shopCount?: number;
@@ -289,7 +298,7 @@ export namespace Prisma {
     carId?: string;
     shopId?: string;
     customerId?: string | null;
-    status?: CommitmentStatus | { in?: CommitmentStatus[] };
+    status?: string | { in?: string[] };
     qualificationEntryId?: string | null;
     plannedYear?: number | { gte?: number; lte?: number };
     plannedMonth?: number | { gte?: number; lte?: number };
@@ -307,7 +316,7 @@ export namespace Prisma {
     plannedYear: number;
     scheduledArrivalDate?: Date | null;
     scheduledCompletionDate?: Date | null;
-    status?: CommitmentStatus;
+    status?: string;
     qualificationEntryId?: string | null;
     workType?: string;
     shopReason?: string;
@@ -331,7 +340,7 @@ export namespace Prisma {
     plannedYear: number;
     scheduledArrivalDate?: Date | null;
     scheduledCompletionDate?: Date | null;
-    status?: CommitmentStatus;
+    status?: string;
     qualificationEntryId?: string | null;
     workType?: string;
     shopReason?: string;
@@ -352,7 +361,7 @@ export namespace Prisma {
     plannedYear?: number;
     scheduledArrivalDate?: Date | null;
     scheduledCompletionDate?: Date | null;
-    status?: CommitmentStatus;
+    status?: string;
     qualificationEntryId?: string | null;
     workType?: string;
     shopReason?: string;
@@ -378,7 +387,7 @@ export namespace Prisma {
     carId?: string;
     shopId?: string;
     customerId?: string | null;
-    status?: AssignmentStatus | { in?: AssignmentStatus[] };
+    status?: string | { in?: string[] };
     masterPlanId?: string | null;
     scenarioId?: string | null;
     qualificationEntryId?: string | null;
@@ -399,7 +408,7 @@ export namespace Prisma {
     scheduledMonth?: string;
     scheduledArrivalDate?: Date | null;
     scheduledCompletionDate?: Date | null;
-    status?: AssignmentStatus;
+    status?: string;
     qualificationEntryId?: string | null;
     workType?: string;
     shopReason?: string;
@@ -426,7 +435,7 @@ export namespace Prisma {
     scheduledMonth?: string;
     scheduledArrivalDate?: Date | null;
     scheduledCompletionDate?: Date | null;
-    status?: AssignmentStatus;
+    status?: string;
     qualificationEntryId?: string | null;
     workType?: string;
     shopReason?: string;
