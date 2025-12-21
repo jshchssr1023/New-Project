@@ -9,6 +9,7 @@ import {
   ArrowsRightLeftIcon,
   BeakerIcon,
   ChartBarIcon,
+  ChartPieIcon,
   UsersIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
@@ -39,6 +40,7 @@ const operationsNavigation = [
 
 // Reporting & Rules - Data review and configuration
 const reportingNavigation = [
+  { name: 'S&OP Dashboard', href: '/sop-dashboard', icon: ChartPieIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
 ];
