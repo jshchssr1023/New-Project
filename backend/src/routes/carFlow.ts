@@ -1352,10 +1352,7 @@ router.get('/sop-commitments', async (req: AuthenticatedRequest, res: Response) 
           select: { firstName: true, lastName: true }
         }
       },
-      orderBy: [
-        { shop: { name: 'asc' } },
-        { month: 'asc' }
-      ]
+      orderBy: { month: 'asc' }
     });
 
     res.json(commitments);
