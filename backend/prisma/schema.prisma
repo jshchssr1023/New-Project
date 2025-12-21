@@ -286,6 +286,9 @@ model Shop {
   masterPlanCommitments MasterPlanCommitment[]
   unifiedAssignments    UnifiedAssignment[]
 
+  // Shop Capability Profile (shop-first constraints)
+  capabilityProfile     ShopCapabilityProfile?
+
   // Note: code has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([code, companyId])
@@ -295,6 +298,84 @@ model Shop {
   @@index([companyId])
   @@index([isActive])
   @@index([isParent])
+}
+
+// =============================================================================
+// SHOP CAPABILITY PROFILE - Shop-First Constraints for S&OP Planning
+// =============================================================================
+// Defines what work a shop CAN perform (certifications) and what cars it CAN
+// handle (physical limits, hazmat, customer restrictions). This inverts the
+// traditional model where rules are assigned to cars - now shops declare their
+// capabilities and the allocation engine validates against them.
+// =============================================================================
+
+model ShopCapabilityProfile {
+  id                          String   @id @default(uuid())
+  shopId                      String   @unique
+  shop                        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // ==========================================================================
+  // CERTIFICATIONS - What work types this shop can perform
+  // ==========================================================================
+  canPerformTankLining        Boolean  @default(false)  // Tank lining repairs/inspections
+  canPerformAnnualQuals       Boolean  @default(false)  // Annual qualification testing
+  canPerformRule88B           Boolean  @default(false)  // Rule 88B compliance work
+  canPerformSafetyRelief      Boolean  @default(false)  // Safety relief valve service
+  canPerformStubSill          Boolean  @default(false)  // Stub sill inspections
+  canPerformTankThickness     Boolean  @default(false)  // Tank thickness testing
+  canPerformFullQualification Boolean  @default(true)   // Full tank qualification
+  canPerformPartialQual       Boolean  @default(true)   // Partial qualification
+  canPerformRepairs           Boolean  @default(true)   // General repairs
+  canPerformServiceEquipment  Boolean  @default(false)  // Service equipment inspection
+
+  // ==========================================================================
+  // PHYSICAL LIMITS - What car types/sizes this shop can handle
+  // ==========================================================================
+  allowedAssetClasses         String   @default("[]")   // JSON: ["Tank", "Hopper", "Boxcar", "Gondola"]
+  maxCarLength                Int?                       // Maximum car length in feet (null = no limit)
+  maxCarWeight                Int?                       // Maximum car weight in tons (null = no limit)
+  hasJacketedCarSupport       Boolean  @default(true)   // Can handle jacketed tank cars
+  hasLinedCarSupport          Boolean  @default(true)   // Can handle lined tank cars
+  allowedLiningTypes          String   @default("[]")   // JSON: ["Rubber", "Epoxy", "Glass"] - empty = all
+
+  // ==========================================================================
+  // HAZARDOUS MATERIAL RESTRICTIONS
+  // ==========================================================================
+  hazmatCertifications        String   @default("[]")   // JSON: DOT specs shop is certified for
+  restrictedCommodities       String   @default("[]")   // JSON: commodities NOT allowed at this shop
+  allowedCommodities          String   @default("[]")   // JSON: commodities explicitly allowed (empty = all)
+
+  // ==========================================================================
+  // CUSTOMER RESTRICTIONS
+  // ==========================================================================
+  preferredCustomers          String   @default("[]")   // JSON: customer codes with priority treatment
+  excludedCustomers           String   @default("[]")   // JSON: customers NOT served by this shop
+  isContractShop              Boolean  @default(false)  // Dedicated to specific customers only
+
+  // ==========================================================================
+  // CAPACITY CONSTRAINTS
+  // ==========================================================================
+  monthlyCapacity             Int      @default(50)     // Cars per month
+  maxConcurrentCars           Int      @default(10)     // Max cars in shop at once
+  preferredWorkloadMix        String   @default("{}")   // JSON: { "qualification": 60, "repair": 40 } %
+
+  // ==========================================================================
+  // 3RD PARTY COMMITMENT TRACKING (for S&OP Supply)
+  // ==========================================================================
+  hasContractualCommitment    Boolean  @default(false)  // Take-or-pay obligation
+  annualCommittedVolume       Int      @default(0)      // Annual cars committed
+  commitmentPenaltyRate       Float    @default(0)      // $/car penalty for under-utilization
+
+  // ==========================================================================
+  // AUDIT FIELDS
+  // ==========================================================================
+  companyId                   String
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@index([shopId])
+  @@index([companyId])
+  @@index([hasContractualCommitment])
 }
 
 // Junction table for Car-Shop eligibility (shop checkboxes in car database)
@@ -424,6 +505,12 @@ model Scenario {
   // S&OP Scenario fields
   isBaseline     Boolean                @default(false) // Is this the baseline scenario?
   parentId       String?                // For cloned scenarios
+
+  // Draft Mode (Sandbox) Support
+  isDraft              Boolean          @default(false) // True if this is a sandbox scenario
+  draftExpiresAt       DateTime?        // When the draft auto-expires (cleanup)
+  parentMasterPlanId   String?          // Master plan this draft is based on
+  draftKpiSnapshot     String           @default("{}") // JSON: Real-time KPI state in draft mode
   parent         Scenario?              @relation("ScenarioClones", fields: [parentId], references: [id])
   clones         Scenario[]             @relation("ScenarioClones")
 

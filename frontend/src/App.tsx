@@ -31,6 +31,7 @@ const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
 const SOPCapacityPage = lazy(() => import('./pages/SOPCapacityPage'));
 const SOPPlanningPage = lazy(() => import('./pages/SOPPlanningPage'));
 const DemandRegistryPage = lazy(() => import('./pages/DemandRegistryPage'));
+const MasterPlannerDashboard = lazy(() => import('./pages/MasterPlannerDashboard'));
 
 // REMOVED: Master Plan Wizard components - replaced by Car Flow Planning module
 // const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
@@ -131,6 +132,7 @@ export default function App() {
             <Route path="sop-capacity" element={<SOPCapacityPage />} />
             <Route path="sop-plan" element={<SOPPlanningPage />} />
             <Route path="demand-registry" element={<DemandRegistryPage />} />
+            <Route path="master-planner" element={<MasterPlannerDashboard />} />
 
             {/* S&OP Supply Settings - admin only */}
             <Route
