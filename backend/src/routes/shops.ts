@@ -165,6 +165,8 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       capabilities: shop.capabilities ? JSON.parse(shop.capabilities) : [],
       certifications: shop.certifications ? JSON.parse(shop.certifications) : [],
       preferredCustomers: shop.preferredCustomers ? JSON.parse(shop.preferredCustomers) : [],
+      allowedCarTypes: shop.allowedCarTypes ? JSON.parse(shop.allowedCarTypes) : [],
+      allowedShopReasons: shop.allowedShopReasons ? JSON.parse(shop.allowedShopReasons) : [],
       monthlyCapacity,
     });
   } catch (error) {
@@ -284,7 +286,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   const {
     name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
-    capabilities, certifications, preferredCustomers,
+    capabilities, certifications, preferredCustomers, allowedCarTypes, allowedShopReasons,
     contactName, contactEmail, contactPhone, notes, isActive
   } = req.body;
 
@@ -307,6 +309,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         capabilities: capabilities ? JSON.stringify(capabilities) : '[]',
         certifications: certifications ? JSON.stringify(certifications) : '[]',
         preferredCustomers: preferredCustomers ? JSON.stringify(preferredCustomers) : '[]',
+        allowedCarTypes: allowedCarTypes ? JSON.stringify(allowedCarTypes) : '[]',
+        allowedShopReasons: allowedShopReasons ? JSON.stringify(allowedShopReasons) : '[]',
         contactName: contactName || '',
         contactEmail: contactEmail || '',
         contactPhone: contactPhone || '',
@@ -564,7 +568,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   const {
     name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
-    capabilities, certifications, preferredCustomers,
+    capabilities, certifications, preferredCustomers, allowedCarTypes, allowedShopReasons,
     contactName, contactEmail, contactPhone, notes, isActive
   } = req.body;
 
@@ -591,6 +595,8 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
         capabilities: capabilities ? JSON.stringify(capabilities) : undefined,
         certifications: certifications ? JSON.stringify(certifications) : undefined,
         preferredCustomers: preferredCustomers ? JSON.stringify(preferredCustomers) : undefined,
+        allowedCarTypes: allowedCarTypes ? JSON.stringify(allowedCarTypes) : undefined,
+        allowedShopReasons: allowedShopReasons ? JSON.stringify(allowedShopReasons) : undefined,
         contactName,
         contactEmail,
         contactPhone,

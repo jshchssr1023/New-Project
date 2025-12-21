@@ -173,6 +173,8 @@ export interface Shop {
   baseTurnTime: number;
   turnTimeMultiplier: number;
   capabilities: string[];
+  allowedCarTypes: string[];
+  allowedShopReasons: string[];
   certifications: string[];
   preferredCustomers: string[];
   contactName: string;

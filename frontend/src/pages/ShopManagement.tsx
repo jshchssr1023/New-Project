@@ -9,6 +9,7 @@ import type { CarFlowPlan } from '../types/carFlow';
 
 type ViewMode = 'cards' | 'list' | 'network';
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
+const shopReasons = ['qualification', 'assignment', 'repair', 'release', 'return', 'maintenance', 'inspection'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
 const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Canada'];
 
@@ -285,6 +286,8 @@ export default function ShopManagement() {
     baseCostPerCar: 15000,
     baseTurnTime: 14,
     capabilities: [] as string[],
+    allowedCarTypes: [] as string[],
+    allowedShopReasons: [] as string[],
     certifications: [] as string[],
     contactName: '',
     contactEmail: '',
@@ -382,6 +385,8 @@ export default function ShopManagement() {
       setEditingShop(shop);
       const caps = shop.capabilities;
       const certs = shop.certifications;
+      const allowedTypes = (shop as any).allowedCarTypes;
+      const allowedReasons = (shop as any).allowedShopReasons;
       setFormData({
         name: shop.name,
         code: shop.code,
@@ -393,6 +398,8 @@ export default function ShopManagement() {
         baseCostPerCar: shop.baseCostPerCar || 15000,
         baseTurnTime: shop.baseTurnTime || 14,
         capabilities: Array.isArray(caps) ? caps : (typeof caps === 'string' && caps ? JSON.parse(caps) : []),
+        allowedCarTypes: Array.isArray(allowedTypes) ? allowedTypes : (typeof allowedTypes === 'string' && allowedTypes ? JSON.parse(allowedTypes) : []),
+        allowedShopReasons: Array.isArray(allowedReasons) ? allowedReasons : (typeof allowedReasons === 'string' && allowedReasons ? JSON.parse(allowedReasons) : []),
         certifications: Array.isArray(certs) ? certs : (typeof certs === 'string' && certs ? JSON.parse(certs) : []),
         contactName: shop.contactName || '',
         contactEmail: shop.contactEmail || '',
@@ -418,6 +425,8 @@ export default function ShopManagement() {
         baseCostPerCar: 15000,
         baseTurnTime: 14,
         capabilities: [],
+        allowedCarTypes: [],
+        allowedShopReasons: [],
         certifications: [],
         contactName: '',
         contactEmail: '',
@@ -484,6 +493,24 @@ export default function ShopManagement() {
       certifications: prev.certifications.includes(cert)
         ? prev.certifications.filter(c => c !== cert)
         : [...prev.certifications, cert],
+    }));
+  };
+
+  const toggleAllowedCarType = (carType: string) => {
+    setFormData(prev => ({
+      ...prev,
+      allowedCarTypes: prev.allowedCarTypes.includes(carType)
+        ? prev.allowedCarTypes.filter(t => t !== carType)
+        : [...prev.allowedCarTypes, carType],
+    }));
+  };
+
+  const toggleAllowedShopReason = (reason: string) => {
+    setFormData(prev => ({
+      ...prev,
+      allowedShopReasons: prev.allowedShopReasons.includes(reason)
+        ? prev.allowedShopReasons.filter(r => r !== reason)
+        : [...prev.allowedShopReasons, reason],
     }));
   };
 
@@ -1263,6 +1290,53 @@ export default function ShopManagement() {
                         {cert}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Shop Rules Section */}
+                <div className="border-t border-steel-200 pt-4 mt-4">
+                  <h3 className="text-sm font-semibold text-steel-900 mb-3">Shop Rules - Eligible Car Types & Reasons</h3>
+
+                  <div className="mb-4">
+                    <label className="label">Allowed Car Types</label>
+                    <p className="text-xs text-steel-500 mb-2">Select which car types this shop can service</p>
+                    <div className="flex flex-wrap gap-2">
+                      {carTypes.map(carType => (
+                        <button
+                          key={carType}
+                          type="button"
+                          onClick={() => toggleAllowedCarType(carType)}
+                          className={`px-3 py-1 rounded-full text-sm ${
+                            formData.allowedCarTypes.includes(carType)
+                              ? 'bg-green-600 text-white'
+                              : 'bg-steel-100 text-steel-700 hover:bg-steel-200'
+                          }`}
+                        >
+                          {carType}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="label">Allowed Shopping Reasons</label>
+                    <p className="text-xs text-steel-500 mb-2">Select which shopping reasons this shop can handle</p>
+                    <div className="flex flex-wrap gap-2">
+                      {shopReasons.map(reason => (
+                        <button
+                          key={reason}
+                          type="button"
+                          onClick={() => toggleAllowedShopReason(reason)}
+                          className={`px-3 py-1 rounded-full text-sm capitalize ${
+                            formData.allowedShopReasons.includes(reason)
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-steel-100 text-steel-700 hover:bg-steel-200'
+                          }`}
+                        >
+                          {reason}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 

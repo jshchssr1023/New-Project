@@ -247,9 +247,11 @@ model Shop {
   costIndex          Float            @default(1.0) // Cost index (1.0 = 3P baseline, 1.379 = AITX premium)
   baseTurnTime       Int              @default(14) // Base turn time in days
   turnTimeMultiplier Float            @default(1.0)
-  capabilities       String           @default("") // JSON array of car types this shop can handle
-  certifications     String           @default("") // JSON array: DOT, AAR, etc.
-  preferredCustomers String           @default("") // JSON array of preferred customer codes
+  capabilities       String           @default("[]") // JSON array of car types this shop can handle
+  allowedCarTypes    String           @default("[]") // JSON array: Tank Car, Covered Hopper, etc.
+  allowedShopReasons String           @default("[]") // JSON array: qualification, assignment, repair, release, return
+  certifications     String           @default("[]") // JSON array: DOT, AAR, etc.
+  preferredCustomers String           @default("[]") // JSON array of preferred customer codes
   contactName        String           @default("")
   contactEmail       String           @default("")
   contactPhone       String           @default("")
