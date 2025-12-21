@@ -28,6 +28,19 @@ model User {
   // S&OP Commitment relations
   createdSOPCommitments  SOPCommitment[] @relation("SOPCommitmentCreator")
   updatedSOPCommitments  SOPCommitment[] @relation("SOPCommitmentUpdater")
+
+  // Master Plan relations
+  createdMasterPlans     MasterPlan[] @relation("MasterPlanCreator")
+  submittedMasterPlans   MasterPlan[] @relation("MasterPlanSubmitter")
+  approvedMasterPlans    MasterPlan[] @relation("MasterPlanApprover")
+
+  // Master Plan Commitment relations
+  committedMasterPlanCommitments  MasterPlanCommitment[] @relation("MasterPlanCommitmentCommitter")
+  cancelledMasterPlanCommitments  MasterPlanCommitment[] @relation("MasterPlanCommitmentCanceller")
+
+  // Unified Assignment relations
+  committedUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCommitter")
+  cancelledUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCanceller")
 }
 
 model Company {
@@ -54,6 +67,11 @@ model Company {
   // Car Flow Planning relations
   carFlowPlans            CarFlowPlan[]
   sopCommitments          SOPCommitment[]
+
+  // Master Plan relations
+  masterPlans             MasterPlan[]
+  masterPlanCommitments   MasterPlanCommitment[]
+  unifiedAssignments      UnifiedAssignment[]
 }
 
 // Customer master for tracking lessees/owners
@@ -84,6 +102,10 @@ model Customer {
 
   // Scenario relations (multi-customer support)
   scenarioCustomers    ScenarioCustomer[]
+
+  // Master Plan relations
+  masterPlanCommitments MasterPlanCommitment[]
+  unifiedAssignments    UnifiedAssignment[]
 
   @@unique([code, companyId])
 }
@@ -176,6 +198,10 @@ model Car {
   // Car Flow Plan relations - one active commitment per car
   carFlowPlan              CarFlowPlan?     @relation("CarFlowPlanCar")
 
+  // Master Plan relations - one car can have multiple commitments across plans
+  masterPlanCommitments    MasterPlanCommitment[]
+  unifiedAssignments       UnifiedAssignment[]
+
   // Note: railcarNumber has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([railcarNumber, companyId])
@@ -255,6 +281,10 @@ model Shop {
 
   // Gold Standard relations
   weeklyCapacities     WeeklyCapacity[]
+
+  // Master Plan relations
+  masterPlanCommitments MasterPlanCommitment[]
+  unifiedAssignments    UnifiedAssignment[]
 
   // Note: code has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
@@ -812,6 +842,10 @@ model LeaseQualificationEntry {
   // Relations
   planEvents            QualificationPlanEvent[]
 
+  // Master Plan relations - assignments/commitments that address this qualification
+  masterPlanCommitments MasterPlanCommitment[]
+  unifiedAssignments    UnifiedAssignment[]
+
   @@index([companyId, queueStatus])
   @@index([targetQualMonth])
   @@index([carId])
@@ -1343,4 +1377,303 @@ model FilterPreset {
 
   @@index([companyId, pageType])
   @@index([createdById])
+}
+
+// =============================================================================
+// MASTER PLAN ENTITY - Versioned Container for Fleet Schedule Snapshots
+// =============================================================================
+// The MasterPlan acts as the single source of truth for the entire fleet's
+// schedule at a given point in time. Each MasterPlan is a versioned snapshot
+// that contains commitments for one or many cars across the planning horizon.
+// =============================================================================
+
+enum MasterPlanStatus {
+  DRAFT      // Plan is being worked on, not yet approved
+  PENDING    // Awaiting approval
+  APPROVED   // Approved but not yet active
+  ACTIVE     // Currently active plan (only one can be active at a time)
+  SUPERSEDED // Replaced by a newer version
+  ARCHIVED   // Historical reference only
+}
+
+model MasterPlan {
+  id              String           @id @default(uuid())
+
+  // Version identification
+  version         Int              @default(1) // Incremental version number
+  name            String           // e.g., "Q1 2026 Fleet Plan v3"
+  description     String           @default("")
+
+  // Temporal versioning - when this plan is/was valid
+  validFrom       DateTime         // When this plan becomes effective
+  validTo         DateTime?        // When this plan expires (null = indefinite)
+
+  // Planning horizon
+  planningHorizonStart DateTime    // Start of the planning window
+  planningHorizonEnd   DateTime    // End of the planning window
+
+  // Status workflow
+  status          MasterPlanStatus @default(DRAFT)
+
+  // Snapshot metadata
+  snapshotTakenAt DateTime?        // When the snapshot was captured
+  carCount        Int              @default(0) // Total cars in this plan
+  shopCount       Int              @default(0) // Total shops involved
+
+  // Parent/Child versioning for plan lineage
+  parentPlanId    String?
+  parentPlan      MasterPlan?      @relation("MasterPlanVersions", fields: [parentPlanId], references: [id])
+  childPlans      MasterPlan[]     @relation("MasterPlanVersions")
+
+  // Approval workflow
+  submittedAt     DateTime?
+  submittedById   String?
+  submittedBy     User?            @relation("MasterPlanSubmitter", fields: [submittedById], references: [id])
+  approvedAt      DateTime?
+  approvedById    String?
+  approvedBy      User?            @relation("MasterPlanApprover", fields: [approvedById], references: [id])
+  rejectionReason String           @default("")
+
+  // Audit fields
+  createdById     String
+  createdBy       User             @relation("MasterPlanCreator", fields: [createdById], references: [id])
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id])
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  commitments     MasterPlanCommitment[]
+  assignments     UnifiedAssignment[]
+
+  @@unique([companyId, version]) // Unique version per company
+  @@index([companyId, status])
+  @@index([validFrom, validTo])
+  @@index([status])
+  @@index([parentPlanId])
+  @@index([createdById])
+}
+
+// =============================================================================
+// MASTER PLAN COMMITMENT - Links Cars to a Specific MasterPlan
+// =============================================================================
+// Replaces/extends CarFlowPlan to allow a single car to have multiple "planned"
+// entries across different plan versions or time horizons. This enables:
+// - Tracking what was planned for a car at any point in time
+// - Comparing plans across versions
+// - Maintaining historical audit trail
+// =============================================================================
+
+enum CommitmentStatus {
+  DRAFT         // Not yet committed, can be modified freely
+  PLANNED       // Committed to the plan, awaiting execution
+  IN_PROGRESS   // Work has begun (car arrived at shop)
+  COMPLETE      // Work finished successfully
+  CANCELLED     // Removed from plan (soft delete)
+  DEFERRED      // Pushed to a future plan
+  RESCHEDULED   // Moved to different shop/date within same plan
+}
+
+model MasterPlanCommitment {
+  id                    String           @id @default(uuid())
+
+  // Link to MasterPlan (the versioned container)
+  masterPlanId          String
+  masterPlan            MasterPlan       @relation(fields: [masterPlanId], references: [id], onDelete: Cascade)
+
+  // Car being planned
+  carId                 String
+  car                   Car              @relation(fields: [carId], references: [id])
+
+  // Shop where work will be performed
+  shopId                String
+  shop                  Shop             @relation(fields: [shopId], references: [id])
+
+  // Customer (for reporting/grouping)
+  customerId            String?
+  customer              Customer?        @relation(fields: [customerId], references: [id])
+
+  // Planning period
+  plannedMonth          Int              // 1-12
+  plannedYear           Int              // e.g., 2026
+  scheduledArrivalDate  DateTime?        // Specific arrival date if known
+  scheduledCompletionDate DateTime?      // Expected completion date
+
+  // Commitment status workflow
+  status                CommitmentStatus @default(DRAFT)
+
+  // Link to qualification requirement this commitment satisfies
+  // Critical: This ensures we know WHY this car is being sent to shop
+  qualificationEntryId  String?
+  qualificationEntry    LeaseQualificationEntry? @relation(fields: [qualificationEntryId], references: [id])
+
+  // Work type and reason
+  workType              String           @default("qualification") // qualification, assignment, return, repair
+  shopReason            String           @default("") // Detailed reason for shopping
+
+  // Cost and duration estimates
+  estimatedCost         Float?
+  estimatedDays         Int              @default(14)
+  actualCost            Float?
+  actualDays            Int?
+
+  // Priority: 1=CRITICAL, 2=HIGH, 3=MEDIUM, 4=LOW
+  priority              Int              @default(3)
+
+  // Source tracking (where did this commitment come from?)
+  sourceType            String           @default("manual") // manual, scenario, import, system
+  sourceScenarioId      String?          // If created from a scenario
+  sourceAssignmentId    String?          // If created from unified assignment
+
+  // Execution tracking
+  actualArrivalDate     DateTime?
+  actualCompletionDate  DateTime?
+  executionNotes        String           @default("")
+
+  // Audit fields
+  committedAt           DateTime?
+  committedById         String?
+  committedBy           User?            @relation("MasterPlanCommitmentCommitter", fields: [committedById], references: [id])
+  cancelledAt           DateTime?
+  cancelledById         String?
+  cancelledBy           User?            @relation("MasterPlanCommitmentCanceller", fields: [cancelledById], references: [id])
+  cancellationReason    String           @default("")
+
+  notes                 String           @default("")
+  companyId             String
+  company               Company          @relation(fields: [companyId], references: [id])
+
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  // Note: A car can have multiple commitments across different MasterPlans
+  // but only ONE active commitment per car per MasterPlan
+  @@unique([masterPlanId, carId])
+  @@index([masterPlanId, status])
+  @@index([carId])
+  @@index([shopId, plannedYear, plannedMonth])
+  @@index([customerId])
+  @@index([qualificationEntryId])
+  @@index([status])
+  @@index([companyId])
+  @@index([plannedYear, plannedMonth])
+}
+
+// =============================================================================
+// UNIFIED ASSIGNMENT - Single Polymorphic Assignment Table
+// =============================================================================
+// Consolidates PlanAssignment, ScenarioCar, and CarFlowPlan into a single
+// assignment table. Uses a status field to distinguish between:
+// - DRAFT: Initial planning stage, can be modified freely
+// - SCENARIO: What-if analysis, not yet committed
+// - COMMITTED: Authoritative assignment, part of the Master Plan
+// =============================================================================
+
+enum AssignmentStatus {
+  DRAFT           // Initial draft, fully editable
+  SCENARIO        // Part of a what-if scenario
+  PENDING_REVIEW  // Awaiting review before commitment
+  COMMITTED       // Part of the authoritative Master Plan
+  IN_PROGRESS     // Execution started
+  COMPLETED       // Successfully completed
+  CANCELLED       // Removed/cancelled
+  SUPERSEDED      // Replaced by a newer assignment
+}
+
+model UnifiedAssignment {
+  id                    String           @id @default(uuid())
+
+  // Car being assigned
+  carId                 String
+  car                   Car              @relation(fields: [carId], references: [id])
+
+  // Shop assignment
+  shopId                String
+  shop                  Shop             @relation(fields: [shopId], references: [id])
+  suggestedShopId       String?          // Shop suggested by rule engine (before confirmation)
+
+  // Customer context
+  customerId            String?
+  customer              Customer?        @relation(fields: [customerId], references: [id])
+
+  // Planning period
+  plannedMonth          Int              // 1-12
+  plannedYear           Int              // e.g., 2026
+  scheduledMonth        String           @default("") // YYYY-MM format (for backward compatibility)
+  scheduledArrivalDate  DateTime?
+  scheduledCompletionDate DateTime?
+
+  // Assignment status - the key discriminator
+  status                AssignmentStatus @default(DRAFT)
+
+  // Link to qualification requirement this assignment addresses
+  qualificationEntryId  String?
+  qualificationEntry    LeaseQualificationEntry? @relation(fields: [qualificationEntryId], references: [id])
+
+  // Work details
+  workType              String           @default("qualification") // qualification, assignment, return, repair
+  shopReason            String           @default("") // Why this car needs shopping
+
+  // Cost and duration
+  estimatedCost         Float            @default(0)
+  estimatedDays         Int              @default(14)
+  actualCost            Float?
+  actualDays            Int?
+
+  // Priority: 1=CRITICAL, 2=HIGH, 3=MEDIUM, 4=LOW
+  priority              Int              @default(3)
+
+  // Rule engine scoring (for recommendations)
+  ruleScore             Float            @default(0)
+  ruleNotes             String           @default("")
+
+  // Optional MasterPlan link (for COMMITTED assignments)
+  masterPlanId          String?
+  masterPlan            MasterPlan?      @relation(fields: [masterPlanId], references: [id])
+
+  // Optional Scenario link (for SCENARIO assignments)
+  scenarioId            String?
+
+  // Optional legacy Plan link (for backward compatibility)
+  legacyPlanId          String?
+
+  // Source tracking
+  sourceType            String           @default("manual") // manual, scenario, import, rule_engine, migration
+  originalAssignmentId  String?          // Reference to original if this is a copy/migration
+
+  // Commitment tracking (when status = COMMITTED)
+  committedAt           DateTime?
+  committedById         String?
+  committedBy           User?            @relation("UnifiedAssignmentCommitter", fields: [committedById], references: [id])
+
+  // Execution tracking
+  actualArrivalDate     DateTime?
+  actualCompletionDate  DateTime?
+
+  // Cancellation tracking
+  cancelledAt           DateTime?
+  cancelledById         String?
+  cancelledBy           User?            @relation("UnifiedAssignmentCanceller", fields: [cancelledById], references: [id])
+  cancellationReason    String           @default("")
+
+  notes                 String           @default("")
+  companyId             String
+  company               Company          @relation(fields: [companyId], references: [id])
+
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  // Indexes for performance
+  @@unique([scenarioId, carId]) // One assignment per car per scenario
+  @@index([carId])
+  @@index([shopId])
+  @@index([customerId])
+  @@index([status])
+  @@index([masterPlanId])
+  @@index([scenarioId])
+  @@index([qualificationEntryId])
+  @@index([plannedYear, plannedMonth])
+  @@index([companyId, status])
+  @@index([shopId, plannedYear, plannedMonth])
 }
