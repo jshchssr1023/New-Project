@@ -1302,6 +1302,10 @@ model RateLimitEntry {
   windowStart DateTime // Start of the current rate limit window
   requestCount Int     @default(1)
 
+  // Audit timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   @@unique([identifier, endpoint, windowStart])
   @@index([windowStart]) // For cleanup of old entries
 }
