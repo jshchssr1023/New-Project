@@ -1339,17 +1339,9 @@ router.get('/sop-commitments', async (req: AuthenticatedRequest, res: Response) 
             code: true,
             city: true,
             state: true,
-            parentShopId: true,
-            parentShop: {
-              select: { id: true, name: true }
-            }
+            network: true,
+            isAitxInternal: true
           }
-        },
-        createdBy: {
-          select: { firstName: true, lastName: true }
-        },
-        updatedBy: {
-          select: { firstName: true, lastName: true }
         }
       },
       orderBy: { month: 'asc' }
