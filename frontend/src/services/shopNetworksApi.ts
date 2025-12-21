@@ -196,15 +196,38 @@ export async function updateNetworkSOPCommitment(
 // CSV PARSING UTILITY
 // =============================================================================
 
+/**
+ * Parse CSV content with support for quoted fields containing commas
+ */
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
 export function parseNetworksCsv(csvContent: string): NetworkImportData[] {
   const lines = csvContent.split('\n').filter(line => line.trim());
   if (lines.length < 2) return [];
 
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
   const networks: NetworkImportData[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const values = lines[i].split(',').map(v => v.trim());
+    const values = parseCSVLine(lines[i]).map(v => v.replace(/^["']|["']$/g, '').trim());
     const network: NetworkImportData = {
       name: '',
       code: '',
@@ -212,75 +235,51 @@ export function parseNetworksCsv(csvContent: string): NetworkImportData[] {
 
     headers.forEach((header, index) => {
       const value = values[index] || '';
-      switch (header) {
-        case 'name':
-        case 'network_name':
-        case 'networkname':
-          network.name = value;
-          break;
-        case 'code':
-        case 'network_code':
-        case 'networkcode':
-          network.code = value.toUpperCase();
-          break;
-        case 'description':
-          network.description = value;
-          break;
-        case 'is_aitx_internal':
-        case 'isaitxinternal':
-        case 'aitx_internal':
-        case 'internal':
-          network.isAitxInternal = value.toLowerCase() === 'true' || value === '1';
-          break;
-        case 'network_tier':
-        case 'networktier':
-        case 'tier':
-          network.networkTier = parseInt(value) || 3;
-          break;
-        case 'annual_target_volume':
-        case 'annualtargetvolume':
-        case 'target_volume':
-          network.annualTargetVolume = parseInt(value) || 0;
-          break;
-        case 'annual_committed_volume':
-        case 'annualcommittedvolume':
-        case 'committed_volume':
-          network.annualCommittedVolume = parseInt(value) || 0;
-          break;
-        case 'monthly_base_capacity':
-        case 'monthlybasecapacity':
-        case 'monthly_capacity':
-          network.monthlyBaseCapacity = parseInt(value) || 0;
-          break;
-        case 'cost_index':
-        case 'costindex':
-          network.costIndex = parseFloat(value) || 1.0;
-          break;
-        case 'has_contractual_commitment':
-        case 'hascontractualcommitment':
-        case 'take_or_pay':
-          network.hasContractualCommitment = value.toLowerCase() === 'true' || value === '1';
-          break;
-        case 'commitment_penalty_rate':
-        case 'commitmentpenaltyrate':
-        case 'penalty_rate':
-          network.commitmentPenaltyRate = parseFloat(value) || 0;
-          break;
-        case 'contact_name':
-        case 'contactname':
-          network.contactName = value;
-          break;
-        case 'contact_email':
-        case 'contactemail':
-          network.contactEmail = value;
-          break;
-        case 'contact_phone':
-        case 'contactphone':
-          network.contactPhone = value;
-          break;
-        case 'regions':
-          network.regions = value ? value.split(';').map(r => r.trim()) : [];
-          break;
+      const headerNorm = header.replace(/[_\s-]/g, '').toLowerCase();
+
+      // Network identification
+      if (['name', 'networkname', 'network'].includes(headerNorm)) {
+        network.name = value;
+      } else if (['code', 'networkcode', 'shopcode'].includes(headerNorm)) {
+        network.code = value.toUpperCase();
+      } else if (['description', 'desc', 'notes'].includes(headerNorm)) {
+        network.description = value;
+      }
+      // Classification
+      else if (['isaitxinternal', 'aitxinternal', 'internal', 'isinternal'].includes(headerNorm)) {
+        network.isAitxInternal = ['true', '1', 'yes', 'y', 'internal', 'aitx'].includes(value.toLowerCase());
+      } else if (['networktier', 'tier', 'priority'].includes(headerNorm)) {
+        network.networkTier = parseInt(value) || 3;
+      }
+      // Capacity volumes (can be adjusted manually after import)
+      else if (['annualtargetvolume', 'targetvolume', 'annualtarget'].includes(headerNorm)) {
+        network.annualTargetVolume = parseInt(value) || 0;
+      } else if (['annualcommittedvolume', 'committedvolume', 'commitment'].includes(headerNorm)) {
+        network.annualCommittedVolume = parseInt(value) || 0;
+      } else if (['monthlybasecapacity', 'monthlycapacity', 'capacity'].includes(headerNorm)) {
+        network.monthlyBaseCapacity = parseInt(value) || 0;
+      }
+      // Cost
+      else if (['costindex', 'cost', 'costmultiplier'].includes(headerNorm)) {
+        network.costIndex = parseFloat(value) || 1.0;
+      }
+      // Contractual
+      else if (['hascontractualcommitment', 'contractual', 'takeorpay'].includes(headerNorm)) {
+        network.hasContractualCommitment = ['true', '1', 'yes', 'y'].includes(value.toLowerCase());
+      } else if (['commitmentpenaltyrate', 'penaltyrate', 'penalty'].includes(headerNorm)) {
+        network.commitmentPenaltyRate = parseFloat(value) || 0;
+      }
+      // Contact
+      else if (['contactname', 'contact', 'contactperson'].includes(headerNorm)) {
+        network.contactName = value;
+      } else if (['contactemail', 'email'].includes(headerNorm)) {
+        network.contactEmail = value;
+      } else if (['contactphone', 'phone', 'telephone'].includes(headerNorm)) {
+        network.contactPhone = value;
+      }
+      // Regions
+      else if (['regions', 'region', 'coverage'].includes(headerNorm)) {
+        network.regions = value ? value.split(/[;|]/).map(r => r.trim()).filter(Boolean) : [];
       }
     });
 
@@ -291,6 +290,101 @@ export function parseNetworksCsv(csvContent: string): NetworkImportData[] {
   }
 
   return networks;
+}
+
+/**
+ * Parse shop CSV with lat/lon support
+ * This is for importing shops with location data
+ */
+export interface ShopImportData {
+  code: string;
+  name: string;
+  city?: string;
+  state?: string;
+  region?: string;
+  network?: string;
+  latitude?: number;
+  longitude?: number;
+  capacity?: number;
+  isAitxInternal?: boolean;
+  tankQualified?: boolean;
+  networkTier?: number;
+  servingRailroad?: string;
+}
+
+export function parseShopsCsv(csvContent: string): ShopImportData[] {
+  const lines = csvContent.split('\n').filter(line => line.trim());
+  if (lines.length < 2) return [];
+
+  const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+  const shops: ShopImportData[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]).map(v => v.replace(/^["']|["']$/g, '').trim());
+    const shop: ShopImportData = {
+      code: '',
+      name: '',
+    };
+
+    headers.forEach((header, index) => {
+      const value = values[index] || '';
+      const headerNorm = header.replace(/[_\s-]/g, '').toLowerCase();
+
+      // Identification
+      if (['code', 'shopcode'].includes(headerNorm)) {
+        shop.code = value.toUpperCase();
+      } else if (['name', 'shopname'].includes(headerNorm)) {
+        shop.name = value;
+      }
+      // Location
+      else if (['city'].includes(headerNorm)) {
+        shop.city = value;
+      } else if (['state', 'st', 'province'].includes(headerNorm)) {
+        shop.state = value;
+      } else if (['region'].includes(headerNorm)) {
+        shop.region = value;
+      }
+      // Coordinates - important for map view
+      else if (['latitude', 'lat'].includes(headerNorm)) {
+        const lat = parseFloat(value);
+        if (!isNaN(lat) && lat >= -90 && lat <= 90) {
+          shop.latitude = lat;
+        }
+      } else if (['longitude', 'lon', 'lng', 'long'].includes(headerNorm)) {
+        const lon = parseFloat(value);
+        if (!isNaN(lon) && lon >= -180 && lon <= 180) {
+          shop.longitude = lon;
+        }
+      }
+      // Network
+      else if (['network', 'shopnetwork', 'networkname'].includes(headerNorm)) {
+        shop.network = value;
+      }
+      // Capacity
+      else if (['capacity', 'monthlycapacity'].includes(headerNorm)) {
+        shop.capacity = parseInt(value) || 0;
+      }
+      // Classification
+      else if (['isaitxinternal', 'aitxinternal', 'internal'].includes(headerNorm)) {
+        shop.isAitxInternal = ['true', '1', 'yes', 'y', 'internal', 'aitx'].includes(value.toLowerCase());
+      } else if (['tankqualified', 'tankqual'].includes(headerNorm)) {
+        shop.tankQualified = ['true', '1', 'yes', 'y'].includes(value.toLowerCase());
+      } else if (['tier', 'networktier'].includes(headerNorm)) {
+        shop.networkTier = parseInt(value) || 5;
+      }
+      // Railroad
+      else if (['servingrailroad', 'railroad', 'rr'].includes(headerNorm)) {
+        shop.servingRailroad = value;
+      }
+    });
+
+    // Only add if we have required fields
+    if (shop.code && shop.name) {
+      shops.push(shop);
+    }
+  }
+
+  return shops;
 }
 
 // =============================================================================
