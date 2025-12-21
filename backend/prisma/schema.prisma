@@ -716,6 +716,7 @@ model AuditLog {
   userAgent   String   @default("")
   companyId   String
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([companyId, entityType, createdAt])
   @@index([userId, createdAt])
@@ -1376,6 +1377,8 @@ model InvalidatedToken {
   expiresAt   DateTime // When the token would have expired naturally
   invalidatedAt DateTime @default(now())
   reason      String   @default("logout") // logout, password_change, security_breach, admin_revoke
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([expiresAt]) // For cleanup job
   @@index([tokenHash])
