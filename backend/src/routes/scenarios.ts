@@ -307,6 +307,11 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
     });
     const existingCarIds = new Set(existingScenarioCars.map(sc => sc.carId));
 
+    // Parse scheduledMonth (YYYY-MM format) to get plannedMonth and plannedYear
+    const [yearStr, monthStr] = (scheduledMonth || '').split('-');
+    const plannedYear = yearStr ? parseInt(yearStr, 10) : new Date().getFullYear();
+    const plannedMonth = monthStr ? parseInt(monthStr, 10) : new Date().getMonth() + 1;
+
     // Filter out cars that already exist and prepare batch insert data
     const newCarsData = cars
       .filter(car => !existingCarIds.has(car.id))
@@ -315,7 +320,9 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
         return {
           scenarioId: req.params.id,
           carId: car.id,
-          scheduledMonth,
+          scheduledMonth: scheduledMonth || '',
+          plannedMonth,
+          plannedYear,
           suggestedShopId: recommendation?.suggestedShopId || null,
           estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || DEFAULT_ESTIMATED_COST,
           estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || DEFAULT_ESTIMATED_DAYS,
@@ -415,6 +422,11 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
       data: { customerFilter: customer },
     });
 
+    // Parse scheduledMonth (YYYY-MM format) to get plannedMonth and plannedYear
+    const [yearStr, monthStr] = (scheduledMonth || '').split('-');
+    const plannedYear = yearStr ? parseInt(yearStr, 10) : new Date().getFullYear();
+    const plannedMonth = monthStr ? parseInt(monthStr, 10) : new Date().getMonth() + 1;
+
     // Auto-suggest shops if requested
     let recommendations: any[] = [];
     if (autoSuggestShops) {
@@ -446,7 +458,9 @@ router.post('/:id/cars/by-customer', async (req: AuthRequest, res: Response) => 
           data: {
             scenarioId: req.params.id,
             carId: car.id,
-            scheduledMonth,
+            scheduledMonth: scheduledMonth || '',
+            plannedMonth,
+            plannedYear,
             suggestedShopId: recommendation?.suggestedShopId || null,
             estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || DEFAULT_ESTIMATED_COST,
             estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || DEFAULT_ESTIMATED_DAYS,

@@ -629,6 +629,7 @@ model AuditLog {
   userAgent   String   @default("")
   companyId   String
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([companyId, entityType, createdAt])
   @@index([userId, createdAt])
