@@ -591,8 +591,9 @@ router.get('/forecast', async (req: AuthRequest, res: Response) => {
       });
 
       const plannedByShop: Record<string, number> = {};
-      plannedAssignments.forEach((a: { shopId: string; _count: number }) => {
-        plannedByShop[a.shopId] = a._count;
+      plannedAssignments.forEach((a: { shopId: string; _count: number | { _all: number } }) => {
+        const count = typeof a._count === 'number' ? a._count : (a._count?._all || 0);
+        plannedByShop[a.shopId] = count;
       });
 
       // Calculate total capacity and utilization
@@ -843,28 +844,35 @@ router.get('/fleet', async (req: AuthRequest, res: Response) => {
       prisma.car.count({ where: { companyId, tankQualified: false } }),
     ]);
 
+    // Helper to extract count from Prisma groupBy result (handles both old and new Prisma formats)
+    const getCount = (item: { _count: number | { _all: number } }): number => {
+      if (typeof item._count === 'number') return item._count;
+      if (item._count && typeof item._count._all === 'number') return item._count._all;
+      return 0;
+    };
+
     res.json({
-      statusDistribution: statusCounts.map((s: { status: string; _count: number }) => ({
+      statusDistribution: statusCounts.map((s: { status: string; _count: number | { _all: number } }) => ({
         status: s.status,
-        count: s._count,
+        count: getCount(s),
       })),
       typeDistribution: typeCounts
-        .filter((t: { carType: string; _count: number }) => t.carType)
-        .map((t: { carType: string; _count: number }) => ({
+        .filter((t: { carType: string; _count: number | { _all: number } }) => t.carType)
+        .map((t: { carType: string; _count: number | { _all: number } }) => ({
           type: t.carType,
-          count: t._count,
+          count: getCount(t),
         })),
       regionDistribution: regionCounts
-        .filter((r: { homeRegion: string; _count: number }) => r.homeRegion)
-        .map((r: { homeRegion: string; _count: number }) => ({
+        .filter((r: { homeRegion: string; _count: number | { _all: number } }) => r.homeRegion)
+        .map((r: { homeRegion: string; _count: number | { _all: number } }) => ({
           region: r.homeRegion,
-          count: r._count,
+          count: getCount(r),
         })),
       topCustomers: customerCounts
-        .filter((c: { customer: string; _count: number }) => c.customer)
-        .map((c: { customer: string; _count: number }) => ({
+        .filter((c: { customer: string; _count: number | { _all: number } }) => c.customer)
+        .map((c: { customer: string; _count: number | { _all: number } }) => ({
           customer: c.customer,
-          count: c._count,
+          count: getCount(c),
         })),
       ageDistribution: Object.entries(ageBuckets).map(([range, count]) => ({
         range,
