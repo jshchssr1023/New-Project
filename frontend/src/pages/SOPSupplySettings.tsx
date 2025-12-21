@@ -84,7 +84,7 @@ export default function SOPSupplySettings() {
   // Fetch S&OP commitments for the selected year
   const { data: commitments = [], isLoading: commitmentsLoading, error } = useQuery({
     queryKey: ['sop-commitments', selectedYear],
-    queryFn: () => sopCommitmentApi.getAll(selectedYear),
+    queryFn: () => sopCommitmentApi.list({ year: selectedYear }),
   });
 
   // Get unique shop IDs from commitments
@@ -181,7 +181,7 @@ export default function SOPSupplySettings() {
 
   // Create/Update mutation
   const saveMutation = useMutation({
-    mutationFn: (data: CreateSOPCommitmentRequest) => sopCommitmentApi.createOrUpdate(data),
+    mutationFn: (data: CreateSOPCommitmentRequest) => sopCommitmentApi.upsert(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sop-commitments'] });
       setEditingCell(null);
@@ -230,7 +230,7 @@ export default function SOPSupplySettings() {
   // Copy from previous year
   const handleCopyFromPreviousYear = async (shopId: string) => {
     const previousYear = selectedYear - 1;
-    const previousCommitments = await sopCommitmentApi.getAll(previousYear);
+    const previousCommitments = await sopCommitmentApi.list({ year: previousYear });
     const shopCommitments = previousCommitments.filter((c) => c.shopId === shopId);
 
     if (shopCommitments.length === 0) {
