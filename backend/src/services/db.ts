@@ -830,6 +830,9 @@ export const prisma = {
   // Notification table
   notification: createTableHandler('Notification'),
 
+  // SOPAssignment table
+  sOPAssignment: createTableHandler('SOPAssignment'),
+
   // Gold Standard Wizard tables
   weeklyCapacity: createTableHandler('WeeklyCapacity'),
   capacityAudit: createTableHandler('CapacityAudit'),
