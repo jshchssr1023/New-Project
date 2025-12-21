@@ -12,10 +12,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { carsApi, shopsApi } from '../services/api';
 import { Car, Shop } from '../types';
-import Slicer, { SlicerBar, SlicerOption } from '../components/ui/Slicer';
+import Slicer, { SlicerBar } from '../components/ui/Slicer';
 import PieChart, { NETWORK_COLORS } from '../components/dashboard/PieChart';
 import StackedBarChart from '../components/dashboard/StackedBarChart';
-import { BarChart } from '../components/dashboard/BarChart';
+import BarChart from '../components/dashboard/BarChart';
 import { ALL_NETWORKS } from '../constants/shopNetworks';
 
 // Predefined car types
