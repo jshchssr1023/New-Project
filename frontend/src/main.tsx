@@ -7,6 +7,9 @@ import { AuthProvider } from './contexts/AuthContext';
 import { WebSocketProvider } from './contexts/WebSocketContext';
 import { CarSelectionProvider } from './contexts/CarSelectionContext';
 import { CollaborationProvider } from './contexts/CollaborationContext';
+import { LoadingProvider } from './contexts/LoadingContext';
+import { UndoRedoProvider } from './contexts/UndoRedoContext';
+import GlobalLoadingIndicator from './components/GlobalLoadingIndicator';
 import './index.css';
 
 // Create a QueryClient with default options
@@ -24,15 +27,20 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AuthProvider>
-          <WebSocketProvider>
-            <CollaborationProvider>
-              <CarSelectionProvider>
-                <App />
-              </CarSelectionProvider>
-            </CollaborationProvider>
-          </WebSocketProvider>
-        </AuthProvider>
+        <LoadingProvider>
+          <UndoRedoProvider>
+            <AuthProvider>
+              <WebSocketProvider>
+                <CollaborationProvider>
+                  <CarSelectionProvider>
+                    <GlobalLoadingIndicator />
+                    <App />
+                  </CarSelectionProvider>
+                </CollaborationProvider>
+              </WebSocketProvider>
+            </AuthProvider>
+          </UndoRedoProvider>
+        </LoadingProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>

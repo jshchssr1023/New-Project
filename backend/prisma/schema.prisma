@@ -72,6 +72,108 @@ model Company {
   masterPlans             MasterPlan[]
   masterPlanCommitments   MasterPlanCommitment[]
   unifiedAssignments      UnifiedAssignment[]
+
+  // Shop Network relations
+  shopNetworks            ShopNetwork[]
+}
+
+// =============================================================================
+// SHOP NETWORK - 3rd Party Networks for S&OP Planning
+// =============================================================================
+// Represents a 3rd party service network (e.g., Trinity, Greenbrier, Eagle)
+// Shops can be assigned to a network for capacity planning and allocation
+// =============================================================================
+
+model ShopNetwork {
+  id                    String   @id @default(uuid())
+  name                  String   // Network name: "Trinity", "Eagle Railcar", etc.
+  code                  String   @unique // Short code: "TRINITY", "EAGLE", etc.
+  description           String   @default("")
+
+  // Network classification
+  isAitxInternal        Boolean  @default(false) // True for AITX internal, false for 3P
+  networkTier           Int      @default(3) // 1-5, lower = preferred (for 3P ranking)
+
+  // Capacity and commitment
+  annualTargetVolume    Int      @default(0) // Annual committed volume
+  annualCommittedVolume Int      @default(0) // Take-or-pay commitment
+  monthlyBaseCapacity   Int      @default(0) // Base monthly capacity across all locations
+
+  // Financial
+  costIndex             Float    @default(1.0) // Cost multiplier vs baseline (1.0 = baseline)
+  hasContractualCommitment Boolean @default(false) // Take-or-pay obligation
+  commitmentPenaltyRate Float    @default(0) // $/car penalty for under-utilization
+  contractStartDate     DateTime? // Contract start date
+  contractEndDate       DateTime? // Contract end date
+
+  // Contact information
+  contactName           String   @default("")
+  contactEmail          String   @default("")
+  contactPhone          String   @default("")
+
+  // Status
+  isActive              Boolean  @default(true)
+  notes                 String   @default("")
+
+  // Geographic coverage
+  regions               String   @default("[]") // JSON array: ["Midwest", "Southwest", "Southeast"]
+
+  // Company ownership
+  companyId             String
+  company               Company  @relation(fields: [companyId], references: [id])
+
+  // Shop relations - shops belonging to this network
+  shops                 Shop[]   @relation("ShopNetwork")
+
+  // S&OP Commitment tracking per network
+  sopNetworkCommitments SOPNetworkCommitment[]
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([code, companyId])
+  @@index([companyId])
+  @@index([isActive])
+  @@index([isAitxInternal])
+  @@index([networkTier])
+}
+
+// =============================================================================
+// S&OP NETWORK COMMITMENT - Monthly commitment tracking per network
+// =============================================================================
+// Tracks committed and actual usage by network per month for S&OP planning
+// =============================================================================
+
+model SOPNetworkCommitment {
+  id                String      @id @default(uuid())
+
+  // Network reference
+  networkId         String
+  network           ShopNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+
+  // Period
+  year              Int         // e.g., 2026
+  month             Int         // 1-12
+
+  // Commitment tracking
+  committedVolume   Int         @default(0) // Cars committed to this network for this month
+  actualVolume      Int         @default(0) // Actual cars sent/planned
+
+  // Variance tracking
+  variancePercent   Float       @default(0) // (actual - committed) / committed * 100
+  isUnderCommitment Boolean     @default(false) // True if under take-or-pay threshold
+  penaltyAmount     Float       @default(0) // Calculated penalty if under-committed
+
+  // Audit fields
+  notes             String      @default("")
+  companyId         String
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@unique([networkId, year, month])
+  @@index([networkId, year])
+  @@index([companyId, year, month])
 }
 
 // Customer master for tracking lessees/owners
@@ -225,8 +327,16 @@ model Shop {
   city               String           @default("")
   state              String           @default("")
   region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
-  network            String           @default("") // Shop network: e.g., "AITX-Own", "3rd Party"
+  network            String           @default("") // Shop network: e.g., "AITX-Own", "3rd Party" (legacy, use networkId)
   servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
+
+  // Location coordinates for map view
+  latitude           Float?           // GPS latitude
+  longitude          Float?           // GPS longitude
+
+  // Shop Network Reference (for 3rd party networks)
+  networkId          String?          // FK to ShopNetwork table
+  shopNetwork        ShopNetwork?     @relation("ShopNetwork", fields: [networkId], references: [id])
 
   // Parent/Child Shop Hierarchy (Network Structure)
   // isParent=true means this is a SHOP_NETWORK, children are SHOP_LOCATIONs
@@ -293,6 +403,7 @@ model Shop {
   // Compound constraint retained for multi-tenant compatibility
   @@index([code, companyId])
   @@index([parentShopId])
+  @@index([networkId])
   // Performance indexes for frequently filtered fields
   @@index([region])
   @@index([companyId])

@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 
 // Lazy load - heavy pages with code splitting
 const ShopManagement = lazy(() => import('./pages/ShopManagement'));
+const ShopNetworks = lazy(() => import('./pages/ShopNetworks'));
 const CarsPage = lazy(() => import('./pages/CarsPage'));
 const CarManagement = lazy(() => import('./pages/CarManagement')); // Keep old for fallback
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
@@ -109,6 +110,7 @@ export default function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="shops" element={<ShopManagement />} />
+            <Route path="shop-networks" element={<ShopNetworks />} />
             {/* New redesigned cars page with card view */}
             <Route path="cars" element={<CarsPage />} />
             {/* Legacy table-only cars page (accessible via /cars-legacy) */}
