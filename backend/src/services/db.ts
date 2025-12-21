@@ -142,19 +142,19 @@ function buildWhereClause(where: WhereClause | undefined): { sql: string; params
       // Handle operators like { gte, lte, contains, etc. }
       if ('gte' in value) {
         conditions.push(`"${key}" >= ?`);
-        params.push(value.gte);
+        params.push(value.gte instanceof Date ? value.gte.toISOString() : value.gte);
       }
       if ('lte' in value) {
         conditions.push(`"${key}" <= ?`);
-        params.push(value.lte);
+        params.push(value.lte instanceof Date ? value.lte.toISOString() : value.lte);
       }
       if ('gt' in value) {
         conditions.push(`"${key}" > ?`);
-        params.push(value.gt);
+        params.push(value.gt instanceof Date ? value.gt.toISOString() : value.gt);
       }
       if ('lt' in value) {
         conditions.push(`"${key}" < ?`);
-        params.push(value.lt);
+        params.push(value.lt instanceof Date ? value.lt.toISOString() : value.lt);
       }
       if ('contains' in value) {
         conditions.push(`"${key}" LIKE ?`);
@@ -675,6 +675,120 @@ function createTableHandler(tableName: string) {
       } else {
         return await createTableHandler(tableName).create({ data: options.create });
       }
+    },
+
+    groupBy: async (options: { by: string[]; where?: WhereClause; _count?: { [key: string]: boolean }; _sum?: { [key: string]: boolean }; _avg?: { [key: string]: boolean }; _min?: { [key: string]: boolean }; _max?: { [key: string]: boolean } }) => {
+      const { by, where, _count, _sum, _avg, _min, _max } = options;
+
+      // SECURITY: Validate all column names in 'by'
+      by.forEach(validateColumnName);
+
+      const groupByColumns = by.map(col => `"${col}"`).join(', ');
+
+      // Build aggregation expressions
+      const aggregations: string[] = [];
+
+      if (_count) {
+        for (const [field, enabled] of Object.entries(_count)) {
+          if (enabled) {
+            validateColumnName(field);
+            aggregations.push(`COUNT("${field}") as "_count_${field}"`);
+          }
+        }
+      }
+
+      if (_sum) {
+        for (const [field, enabled] of Object.entries(_sum)) {
+          if (enabled) {
+            validateColumnName(field);
+            aggregations.push(`SUM("${field}") as "_sum_${field}"`);
+          }
+        }
+      }
+
+      if (_avg) {
+        for (const [field, enabled] of Object.entries(_avg)) {
+          if (enabled) {
+            validateColumnName(field);
+            aggregations.push(`AVG("${field}") as "_avg_${field}"`);
+          }
+        }
+      }
+
+      if (_min) {
+        for (const [field, enabled] of Object.entries(_min)) {
+          if (enabled) {
+            validateColumnName(field);
+            aggregations.push(`MIN("${field}") as "_min_${field}"`);
+          }
+        }
+      }
+
+      if (_max) {
+        for (const [field, enabled] of Object.entries(_max)) {
+          if (enabled) {
+            validateColumnName(field);
+            aggregations.push(`MAX("${field}") as "_max_${field}"`);
+          }
+        }
+      }
+
+      const selectClause = aggregations.length > 0
+        ? `${groupByColumns}, ${aggregations.join(', ')}`
+        : groupByColumns;
+
+      const { sql: whereClause, params } = buildWhereClause(where);
+      const query = `SELECT ${selectClause} FROM "${tableName}" ${whereClause} GROUP BY ${groupByColumns}`;
+
+      const rows = db.prepare(query).all(...params);
+
+      // Transform results to match Prisma's groupBy format
+      return rows.map((row: any) => {
+        const result: any = {};
+
+        // Add grouped columns
+        for (const col of by) {
+          result[col] = row[col];
+        }
+
+        // Transform aggregation results to Prisma format
+        if (_count) {
+          result._count = {};
+          for (const field of Object.keys(_count)) {
+            result._count[field] = row[`_count_${field}`] || 0;
+          }
+        }
+
+        if (_sum) {
+          result._sum = {};
+          for (const field of Object.keys(_sum)) {
+            result._sum[field] = row[`_sum_${field}`] || 0;
+          }
+        }
+
+        if (_avg) {
+          result._avg = {};
+          for (const field of Object.keys(_avg)) {
+            result._avg[field] = row[`_avg_${field}`] || 0;
+          }
+        }
+
+        if (_min) {
+          result._min = {};
+          for (const field of Object.keys(_min)) {
+            result._min[field] = row[`_min_${field}`];
+          }
+        }
+
+        if (_max) {
+          result._max = {};
+          for (const field of Object.keys(_max)) {
+            result._max[field] = row[`_max_${field}`];
+          }
+        }
+
+        return result;
+      });
     }
   };
 }

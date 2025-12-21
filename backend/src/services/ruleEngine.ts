@@ -414,17 +414,26 @@ export async function recommendShopsForMultipleCars(
   // Process in batches to update capacity as we go
   const runningCapacity = new Map<string, number>();
 
-  // Get initial capacity
-  const assignments = await prisma.planAssignment.groupBy({
-    by: ['shopId'],
-    where: {
-      scheduledMonth: month,
-      shop: { companyId },
-    },
-    _count: { id: true },
+  // Get shop IDs for this company first (workaround for SQLite - no nested relation filters)
+  const companyShops = await prisma.shop.findMany({
+    where: { companyId },
+    select: { id: true },
   });
+  const companyShopIds = companyShops.map((s: { id: string }) => s.id);
 
-  assignments.forEach(a => runningCapacity.set(a.shopId, a._count.id));
+  // Get initial capacity using shop IDs filter
+  const assignments = companyShopIds.length > 0
+    ? await prisma.planAssignment.groupBy({
+        by: ['shopId'],
+        where: {
+          scheduledMonth: month,
+          shopId: { in: companyShopIds },
+        },
+        _count: { id: true },
+      })
+    : [];
+
+  assignments.forEach((a: { shopId: string; _count: { id: number } }) => runningCapacity.set(a.shopId, a._count.id));
 
   for (const car of cars) {
     const result = await recommendShopsForCar(prisma, companyId, car, month);
