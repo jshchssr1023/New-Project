@@ -137,13 +137,29 @@ router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
 router.post('/', async (req: AuthRequest, res: Response) => {
   const { name, description, startDate, endDate } = req.body;
 
+  // Validate required fields
+  if (!name) {
+    return res.status(400).json({ message: 'Plan name is required' });
+  }
+
+  // Validate and parse dates
+  const parsedStartDate = startDate ? new Date(startDate) : new Date();
+  const parsedEndDate = endDate ? new Date(endDate) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default 30 days
+
+  if (isNaN(parsedStartDate.getTime())) {
+    return res.status(400).json({ message: 'Invalid start date' });
+  }
+  if (isNaN(parsedEndDate.getTime())) {
+    return res.status(400).json({ message: 'Invalid end date' });
+  }
+
   try {
     const plan = await prisma.plan.create({
       data: {
         name,
         description: description || '',
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
         companyId: req.user!.companyId,
         createdBy: req.user!.id,
       },
