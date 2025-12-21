@@ -108,6 +108,99 @@ const OPTIONAL_HEADERS: Record<string, string[]> = {
 };
 
 // =============================================================================
+// CSV SHOP COLUMN NAME TO SHOP CODE MAPPING
+// =============================================================================
+// Maps the CSV column names (columns 40-114) to shop codes for assignment creation
+// Format: 'CSV Column Name' -> 'SHOP-CODE'
+// =============================================================================
+const CSV_SHOP_COLUMN_MAPPING: Record<string, string> = {
+  'AITX Fleet Services of Canada Inc. (Sarnia)': 'AITX-SARNIA',
+  'AITX Railcar Services LLC (N Kansas City)': 'AITX-NKC',
+  'AITX Mini/Mobile Unit 93 (Mounds)': 'AITX-MOUNDS',
+  'AITX Mobile Headquarters (LaPorte)': 'AITX-LAPORTE',
+  'AITX Mobile Operations (Houston)': 'AITX-HOUSTON',
+  'AITX Railcar Services LLC (Brookhaven)': 'AITX-BROOKHAVEN',
+  'AITX Railcar Services LLC (Bude)': 'AITX-BUDE',
+  'AITX Railcar Services LLC (Longview)': 'AITX-LONGVIEW',
+  'AITX Railcar Services LLC (Tennille)': 'AITX-TENNILLE',
+  'AITX Repair-KCK MRU (Kansas City)': 'AITX-KCK',
+  'AITX Repair-Milton, PA MRU': 'AITX-MILTON',
+  'AITX Repair-Sweetwater, TX MRU ': 'AITX-SWEETWATER',
+  'Apache Railway - Snowflake AZ (Snowflake)': 'APACHE-SNOWFLAKE',
+  'Blastech Corp (BRANTFORD)': 'BLAST-BRANTFORD',
+  'CAD Railway Services (Lachine, Montreal)': 'CAD-LACHINE',
+  'CALTRAX, Inc. (Calgary)': 'CALTRAX-CALGARY',
+  'CANDO Rail Services (Oakbank)': 'CANDO-OAKBANK',
+  'Cathcart (Amarillo) (Amarillo)': 'CTH-AMARILLO',
+  'Cathcart (Elk Mills) (Elk Mills)': 'CTH-ELKMILLS',
+  'Cathcart - Hinton (Hinton)': 'CTH-HINTON',
+  'Cathcart (Lynchburg) (Lynchburg)': 'CTH-LYNCHBURG',
+  'Cathcart - Kansas City (Kansas City)': 'CTH-KC',
+  'Cathcart - Maumee (Maumee)': 'CTH-MAUMEE',
+  'Cathcart Rail - Hastings (Hastings)': 'CTH-HASTINGS',
+  'Curry Rail Services - Hollidaysburg PA (Hollidaysburg)': 'CRY-HOLLIDAYSBURG',
+  'Curry Rail Services Hockley (Hockley)': 'CRY-HOCKLEY',
+  'Curry Rail Services Shoshoni (Shoshoni)': 'CRY-SHOSHONI',
+  'Eagle Railcar (Cairo)': 'EGL-CAIRO',
+  'Eagle Railcar (Channelview) (Eastland)': 'EGL-CHANNELVIEW',
+  'Eagle Railcar (DuBois)': 'EGL-DUBOIS',
+  'Eagle Railcar (Elkhart)': 'EGL-ELKHART',
+  'Eagle Railcar (Fitzgerald)': 'EGL-FITZGERALD',
+  'Eagle Railcar (Gordon)': 'EGL-GORDON',
+  'Eagle Railcar (Junction City)': 'EGL-JUNCTIONCITY',
+  'Eagle Railcar (Longview)': 'EGL-LONGVIEW',
+  'Eagle Railcar-Georgetown/Orange (Georgetown)': 'EGL-GEORGETOWN',
+  'Eagle Railcar Services (Orange)': 'EGL-ORANGE',
+  'Eagle Railcar Services (Roscoe)': 'EGL-ROSCOE',
+  'Eagle Railcar (Washington)': 'EGL-WASHINGTON',
+  'Eagle Railcar (Wichita Falls)': 'EGL-WICHITAFALLS',
+  'Frit Car and Equipment, Inc. (Brewton)': 'FRIT-BREWTON',
+  'Frit Car and Equipment, Inc. (Bridgeton)': 'FRIT-BRIDGETON',
+  'Greenbrier Repair & Services (Cleburne)': 'GBR-CLEBURNE',
+  'Greenbrier Repair & Services (Finley)': 'GBR-FINLEY',
+  'Greenbrier Repair-Central (Marmaduke)': 'GBR-MARMADUKE',
+  'Greenbrier Rail Services (Omaha, NE)': 'GBR-OMAHA',
+  'H.C. Chandler and Son, Inc. (Plantersville)': 'HCC-PLANTERSVILLE',
+  'Iron Horse Rail Services (Beaumont)': 'IRONHORSE-BEAUMONT',
+  'KRS Katahdin Railcar Services  (Bangor)': 'KRS-BANGOR',
+  'Midwest Railcar Repair, Inc. (Brandon (Corson))': 'MWR-BRANDON',
+  'PSC Repair (Beaumont, TX)': 'PSC-BEAUMONT',
+  'Procor Limited (N. Van)': 'PRO-NVAN',
+  'Procor Limited (Joffre)': 'PRO-JOFFRE',
+  'Procor Limited (Sarnia)': 'PRO-SARNIA',
+  'Procor - Transmark (Lethbridge, AB)': 'PRO-LETHBRIDGE',
+  'Rescar (Savanna, IL)': 'RESCAR-SAVANNA',
+  'TLC Rail Services/Inserv-Wright City (Wright City, OK)': 'TLC-WRIGHTCITY',
+  'TMC Engineering Services (Houston, TX)': 'TMC-HOUSTON',
+  'TNT Repair Services (Longview)': 'TNT-LONGVIEW',
+  'Transco (Texarkana)': 'TRC-TEXARKANA',
+  'Transco Rail (Sayre)': 'TRC-SAYRE',
+  'Transco Railway (Oelwein)': 'TRC-OELWEIN',
+  'Transco Railway Products, Inc. (Miles City)': 'TRC-MILESCITY',
+  'Transco-Sheldon, TX (Houston)': 'TRC-SHELDON',
+  'Transitech, Inc. (Fordyce)': 'TRANSITECH-FORDYCE',
+  'Trinity Industries, Inc. (Ft. Worth)': 'TRI-FTWORTH',
+  'Trinity Industries, Inc. (Saginaw)': 'TRI-SAGINAW',
+  'Trinity Rail Services (Shell Rock, IA)': 'TRI-SHELLROCK',
+  'Trinity Rail - Sunray (Sunray, TX)': 'TRI-SUNRAY',
+  'Red River Coatings (Nash, TX)': 'RRC-NASH',
+  'Rescar #380 (Deer Park)': 'RESCAR-DEERPARK',
+  'Texana Midway Tank Cleaning (Texarkana, TX)': 'TEXANA-TEXARKANA',
+  'VLS RECOVERY SERVICES  - Hockley (hockley)': 'VLS-HOCKLEY',
+};
+
+// Store shop assignments parsed from CSV for later assignment creation
+interface CSVShopAssignment {
+  railcarNumber: string;
+  shopCode: string;
+  scheduledDate: Date;
+  scheduledMonth: string; // YYYY-MM format
+}
+
+// Global array to store shop assignments during CSV import
+let csvShopAssignments: CSVShopAssignment[] = [];
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
@@ -395,6 +488,52 @@ function parseFloatSafe(value: string, fallback: number = 0): number {
 }
 
 // =============================================================================
+// SHOP ASSIGNMENT EXTRACTION FROM CSV
+// =============================================================================
+
+/**
+ * Extract shop assignments from a CSV record by checking all shop columns.
+ * Shop columns contain dates in MM/DD/YYYY format when a car is scheduled at that shop.
+ *
+ * @param record - CSV record (key-value pairs of column name -> value)
+ * @param railcarNumber - The car's railcar number
+ * @returns Array of shop assignments found in this record
+ */
+function extractShopAssignmentsFromRecord(
+  record: Record<string, string>,
+  railcarNumber: string
+): CSVShopAssignment[] {
+  const assignments: CSVShopAssignment[] = [];
+
+  for (const [columnName, value] of Object.entries(record)) {
+    // Skip empty values
+    if (!value || value.trim() === '') continue;
+
+    // Check if this column is a known shop column
+    const shopCode = CSV_SHOP_COLUMN_MAPPING[columnName];
+    if (!shopCode) continue;
+
+    // Parse the date value (MM/DD/YYYY format)
+    const scheduledDate = parseDate(value);
+    if (!scheduledDate) continue;
+
+    // Convert to YYYY-MM format for scheduledMonth
+    const year = scheduledDate.getFullYear();
+    const month = String(scheduledDate.getMonth() + 1).padStart(2, '0');
+    const scheduledMonth = `${year}-${month}`;
+
+    assignments.push({
+      railcarNumber,
+      shopCode,
+      scheduledDate,
+      scheduledMonth,
+    });
+  }
+
+  return assignments;
+}
+
+// =============================================================================
 // DELIVERABLE #2: importCarsFromCSV WITH BULK UPSERT
 // =============================================================================
 
@@ -436,6 +575,9 @@ async function importCarsFromCSV(
     warnings: [],
     duration: 0,
   };
+
+  // Clear previous shop assignments
+  csvShopAssignments = [];
 
   // Check if file exists
   if (!fs.existsSync(csvPath)) {
@@ -547,6 +689,15 @@ async function importCarsFromCSV(
           stats.skippedRows++;
           stats.warnings.push(`Row ${globalRowIndex}: Skipped - no Mark/Number found to construct railcarNumber`);
           continue;
+        }
+
+        // =================================================================
+        // EXTRACT SHOP ASSIGNMENTS FROM CSV COLUMNS
+        // =================================================================
+        // Shop columns (40-114) contain dates when car is scheduled at that shop
+        const shopAssignments = extractShopAssignmentsFromRecord(record, railcarNumber);
+        if (shopAssignments.length > 0) {
+          csvShopAssignments.push(...shopAssignments);
         }
 
         // =================================================================
@@ -867,42 +1018,98 @@ const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', '
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 
-// Shop locations - actual shop data
+// Shop locations - matches CSV_SHOP_COLUMN_MAPPING for accurate assignment creation
 const shopData = [
-  // Midwest Region
-  { name: 'AITX Maumee', code: 'MAUM', city: 'Maumee', state: 'OH', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1200, turnTime: 85, contact: 'Mike Thompson (419) 555-1234', notes: 'Primary Midwest hub' },
-  { name: 'AITX East Chicago', code: 'ECHI', city: 'East Chicago', state: 'IN', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1400, turnTime: 80, contact: 'Dave Wilson (219) 555-2345', notes: 'Full service facility' },
-  { name: 'AITX Coffeyville', code: 'COFF', city: 'Coffeyville', state: 'KS', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 900, turnTime: 90, contact: 'Jim Baker (620) 555-3456', notes: '' },
-  { name: 'Watco Coffeyville', code: 'WATC', city: 'Coffeyville', state: 'KS', region: 'Midwest', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 800, turnTime: 95, contact: 'Steve Morris (620) 555-4567', notes: 'Watco partnership' },
-  { name: 'Mid-America Railcar', code: 'MARC', city: 'Kansas City', state: 'MO', region: 'Midwest', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Tom Anderson (816) 555-5678', notes: '' },
-  { name: 'GATX Danville', code: 'GATX', city: 'Danville', state: 'IL', region: 'Midwest', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1600, turnTime: 75, contact: 'Robert Lee (217) 555-6789', notes: 'High capacity facility' },
+  // AITX Internal Shops
+  { name: 'AITX Fleet Services of Canada Inc.', code: 'AITX-SARNIA', city: 'Sarnia', state: 'ON', region: 'Canada', network: 'AITX', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-NKC', city: 'N Kansas City', state: 'MO', region: 'Midwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Mini/Mobile Unit 93', code: 'AITX-MOUNDS', city: 'Mounds', state: 'OK', region: 'Southwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 120, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Mobile Headquarters', code: 'AITX-LAPORTE', city: 'LaPorte', state: 'TX', region: 'Southwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Mobile Operations', code: 'AITX-HOUSTON', city: 'Houston', state: 'TX', region: 'Southwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-BROOKHAVEN', city: 'Brookhaven', state: 'MS', region: 'Southeast', network: 'AITX', certifications: 'Qualification', annualCapacity: 420, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-BUDE', city: 'Bude', state: 'MS', region: 'Southeast', network: 'AITX', certifications: 'Qualification', annualCapacity: 420, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-LONGVIEW', city: 'Longview', state: 'TX', region: 'Southwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-TENNILLE', city: 'Tennille', state: 'GA', region: 'Southeast', network: 'AITX', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Repair-KCK MRU', code: 'AITX-KCK', city: 'Kansas City', state: 'KS', region: 'Midwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 120, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Repair-Milton, PA MRU', code: 'AITX-MILTON', city: 'Milton', state: 'PA', region: 'Northeast', network: 'AITX', certifications: 'Qualification', annualCapacity: 120, turnTime: 14, contact: '', notes: '' },
+  { name: 'AITX Repair-Sweetwater, TX MRU', code: 'AITX-SWEETWATER', city: 'Sweetwater', state: 'TX', region: 'Southwest', network: 'AITX', certifications: 'Qualification', annualCapacity: 120, turnTime: 14, contact: '', notes: '' },
 
-  // South Region
-  { name: 'AITX Texarkana', code: 'TXRK', city: 'Texarkana', state: 'TX', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1100, turnTime: 85, contact: 'Carlos Rodriguez (903) 555-7890', notes: '' },
-  { name: 'AITX Longview', code: 'LONG', city: 'Longview', state: 'TX', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Lining', annualCapacity: 950, turnTime: 90, contact: 'Mark Johnson (903) 555-8901', notes: 'Lining specialist' },
-  { name: 'AITX Bossier City', code: 'BOSS', city: 'Bossier City', state: 'LA', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 850, turnTime: 92, contact: 'Paul Davis (318) 555-9012', notes: '' },
-  { name: 'Ennis Railcar', code: 'ENNS', city: 'Ennis', state: 'TX', region: 'South', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 700, turnTime: 95, contact: 'John Smith (972) 555-0123', notes: '' },
-  { name: 'RSI Rail Group', code: 'RSI', city: 'Longview', state: 'TX', region: 'South', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1300, turnTime: 82, contact: 'Brian Taylor (903) 555-1235', notes: 'Full fabrication capabilities' },
+  // Trinity
+  { name: 'Trinity Industries, Inc.', code: 'TRI-FTWORTH', city: 'Ft. Worth', state: 'TX', region: 'Southwest', network: 'Trinity', certifications: 'Qualification', annualCapacity: 480, turnTime: 14, contact: '', notes: '' },
+  { name: 'Trinity Industries, Inc.', code: 'TRI-SAGINAW', city: 'Saginaw', state: 'MI', region: 'Midwest', network: 'Trinity', certifications: 'Qualification', annualCapacity: 420, turnTime: 14, contact: '', notes: '' },
+  { name: 'Trinity Rail Services', code: 'TRI-SHELLROCK', city: 'Shell Rock', state: 'IA', region: 'Midwest', network: 'Trinity', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'Trinity Rail - Sunray', code: 'TRI-SUNRAY', city: 'Sunray', state: 'TX', region: 'Southwest', network: 'Trinity', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
 
-  // Gulf Region
-  { name: 'AITX Eagle', code: 'EAGL', city: 'Eagle Pass', state: 'TX', region: 'Gulf', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Miguel Santos (830) 555-2346', notes: 'Border location' },
-  { name: 'Rescar Houston', code: 'RHOU', city: 'Houston', state: 'TX', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1500, turnTime: 78, contact: 'Greg Harris (713) 555-3457', notes: 'Major Gulf hub' },
-  { name: 'TankCar Services', code: 'TANK', city: 'Beaumont', state: 'TX', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1100, turnTime: 85, contact: 'Larry White (409) 555-4568', notes: 'Tank car specialist' },
-  { name: 'Union Tank Repair', code: 'UTCR', city: 'Lake Charles', state: 'LA', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 900, turnTime: 90, contact: 'Chris Martin (337) 555-5679', notes: '' },
-  { name: 'UTLX Alexandria', code: 'UTLX', city: 'Alexandria', state: 'LA', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1200, turnTime: 82, contact: 'James Brown (318) 555-6780', notes: '' },
+  // Greenbrier
+  { name: 'Greenbrier Repair & Services', code: 'GBR-CLEBURNE', city: 'Cleburne', state: 'TX', region: 'Southwest', network: 'Greenbrier', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'Greenbrier Repair & Services', code: 'GBR-FINLEY', city: 'Finley', state: 'ND', region: 'Midwest', network: 'Greenbrier', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Greenbrier Repair-Central', code: 'GBR-MARMADUKE', city: 'Marmaduke', state: 'AR', region: 'Southeast', network: 'Greenbrier', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Greenbrier Rail Services', code: 'GBR-OMAHA', city: 'Omaha', state: 'NE', region: 'Midwest', network: 'Greenbrier', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
 
-  // Northeast Region
-  { name: 'Midland Rail Services', code: 'MDLD', city: 'Midland', state: 'PA', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Frank Miller (412) 555-7891', notes: '' },
-  { name: 'GBW Rail Services', code: 'GBW', city: 'Hornell', state: 'NY', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1100, turnTime: 85, contact: 'Dan Clark (607) 555-8902', notes: '' },
-  { name: 'National Steel Car', code: 'NSC', city: 'Hamilton', state: 'ON', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1400, turnTime: 80, contact: 'Andrew Scott (905) 555-9013', notes: 'Canada location' },
-  { name: 'Procor Sarnia', code: 'PROC', city: 'Sarnia', state: 'ON', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 950, turnTime: 90, contact: 'Kevin Moore (519) 555-0124', notes: 'Canada location' },
+  // Eagle Railcar
+  { name: 'Eagle Railcar', code: 'EGL-CAIRO', city: 'Cairo', state: 'GA', region: 'Southeast', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar (Channelview)', code: 'EGL-CHANNELVIEW', city: 'Eastland', state: 'TX', region: 'Southwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-DUBOIS', city: 'DuBois', state: 'PA', region: 'Northeast', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-ELKHART', city: 'Elkhart', state: 'IN', region: 'Midwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-FITZGERALD', city: 'Fitzgerald', state: 'GA', region: 'Southeast', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-GORDON', city: 'Gordon', state: 'GA', region: 'Southeast', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-JUNCTIONCITY', city: 'Junction City', state: 'KS', region: 'Midwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-LONGVIEW', city: 'Longview', state: 'TX', region: 'Southwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar-Georgetown/Orange', code: 'EGL-GEORGETOWN', city: 'Georgetown', state: 'TX', region: 'Southwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar Services', code: 'EGL-ORANGE', city: 'Orange', state: 'TX', region: 'Southwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar Services', code: 'EGL-ROSCOE', city: 'Roscoe', state: 'TX', region: 'Southwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-WASHINGTON', city: 'Washington', state: 'IN', region: 'Midwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Eagle Railcar', code: 'EGL-WICHITAFALLS', city: 'Wichita Falls', state: 'TX', region: 'Southwest', network: 'Eagle', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
 
-  // West Region
-  { name: 'Vulcan Rail Services', code: 'VULC', city: 'Los Angeles', state: 'CA', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Tony Garcia (213) 555-1236', notes: 'West coast hub' },
-  { name: 'Frontier Railcar', code: 'FRNT', city: 'Salt Lake City', state: 'UT', region: 'West', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 750, turnTime: 95, contact: 'Bill Jackson (801) 555-2347', notes: '' },
-  { name: 'CF Rail', code: 'CFR', city: 'Denver', state: 'CO', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 850, turnTime: 92, contact: 'Rick Nelson (303) 555-3458', notes: '' },
-  { name: 'Apex Rail', code: 'APEX', city: 'Phoenix', state: 'AZ', region: 'West', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 600, turnTime: 100, contact: 'Sam Adams (602) 555-4569', notes: '' },
-  { name: 'Nortrak Services', code: 'NORT', city: 'Seattle', state: 'WA', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 800, turnTime: 92, contact: 'Eric Young (206) 555-5670', notes: 'Pacific Northwest' },
+  // Cathcart
+  { name: 'Cathcart (Amarillo)', code: 'CTH-AMARILLO', city: 'Amarillo', state: 'TX', region: 'Southwest', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Cathcart (Elk Mills)', code: 'CTH-ELKMILLS', city: 'Elk Mills', state: 'MD', region: 'Northeast', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Cathcart - Hinton', code: 'CTH-HINTON', city: 'Hinton', state: 'AB', region: 'Canada', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Cathcart (Lynchburg)', code: 'CTH-LYNCHBURG', city: 'Lynchburg', state: 'VA', region: 'Southeast', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Cathcart - Kansas City', code: 'CTH-KC', city: 'Kansas City', state: 'MO', region: 'Midwest', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Cathcart - Maumee', code: 'CTH-MAUMEE', city: 'Maumee', state: 'OH', region: 'Midwest', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Cathcart Rail - Hastings', code: 'CTH-HASTINGS', city: 'Hastings', state: 'NE', region: 'Midwest', network: 'Cathcart', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+
+  // Curry Rail Services
+  { name: 'Curry Rail Services - Hollidaysburg PA', code: 'CRY-HOLLIDAYSBURG', city: 'Hollidaysburg', state: 'PA', region: 'Northeast', network: 'Curry', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Curry Rail Services Hockley', code: 'CRY-HOCKLEY', city: 'Hockley', state: 'TX', region: 'Southwest', network: 'Curry', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'Curry Rail Services Shoshoni', code: 'CRY-SHOSHONI', city: 'Shoshoni', state: 'WY', region: 'West', network: 'Curry', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+
+  // Procor
+  { name: 'Procor Limited', code: 'PRO-NVAN', city: 'N. Van', state: 'BC', region: 'Canada', network: 'Procor', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Procor Limited', code: 'PRO-JOFFRE', city: 'Joffre', state: 'AB', region: 'Canada', network: 'Procor', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'Procor Limited', code: 'PRO-SARNIA', city: 'Sarnia', state: 'ON', region: 'Canada', network: 'Procor', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'Procor - Transmark', code: 'PRO-LETHBRIDGE', city: 'Lethbridge', state: 'AB', region: 'Canada', network: 'Procor', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+
+  // Transco
+  { name: 'Transco', code: 'TRC-TEXARKANA', city: 'Texarkana', state: 'TX', region: 'Southwest', network: 'Transco', certifications: 'Qualification', annualCapacity: 360, turnTime: 14, contact: '', notes: '' },
+  { name: 'Transco Rail', code: 'TRC-SAYRE', city: 'Sayre', state: 'OK', region: 'Southwest', network: 'Transco', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Transco Railway', code: 'TRC-OELWEIN', city: 'Oelwein', state: 'IA', region: 'Midwest', network: 'Transco', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Transco Railway Products, Inc.', code: 'TRC-MILESCITY', city: 'Miles City', state: 'MT', region: 'West', network: 'Transco', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Transco-Sheldon, TX', code: 'TRC-SHELDON', city: 'Houston', state: 'TX', region: 'Southwest', network: 'Transco', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+
+  // Other 3rd Party
+  { name: 'Apache Railway - Snowflake AZ', code: 'APACHE-SNOWFLAKE', city: 'Snowflake', state: 'AZ', region: 'West', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'Blastech Corp', code: 'BLAST-BRANTFORD', city: 'Brantford', state: 'ON', region: 'Canada', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'CAD Railway Services', code: 'CAD-LACHINE', city: 'Lachine', state: 'QC', region: 'Canada', network: 'Other', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'CALTRAX, Inc.', code: 'CALTRAX-CALGARY', city: 'Calgary', state: 'AB', region: 'Canada', network: 'Other', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'CANDO Rail Services', code: 'CANDO-OAKBANK', city: 'Oakbank', state: 'MB', region: 'Canada', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Frit Car and Equipment, Inc.', code: 'FRIT-BREWTON', city: 'Brewton', state: 'AL', region: 'Southeast', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'Frit Car and Equipment, Inc.', code: 'FRIT-BRIDGETON', city: 'Bridgeton', state: 'NJ', region: 'Northeast', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'H.C. Chandler and Son, Inc.', code: 'HCC-PLANTERSVILLE', city: 'Plantersville', state: 'AL', region: 'Southeast', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'Iron Horse Rail Services', code: 'IRONHORSE-BEAUMONT', city: 'Beaumont', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'KRS Katahdin Railcar Services', code: 'KRS-BANGOR', city: 'Bangor', state: 'ME', region: 'Northeast', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'Midwest Railcar Repair, Inc.', code: 'MWR-BRANDON', city: 'Brandon (Corson)', state: 'SD', region: 'Midwest', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'PSC Repair', code: 'PSC-BEAUMONT', city: 'Beaumont', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'Rescar', code: 'RESCAR-SAVANNA', city: 'Savanna', state: 'IL', region: 'Midwest', network: 'Other', certifications: 'Qualification', annualCapacity: 300, turnTime: 14, contact: '', notes: '' },
+  { name: 'TLC Rail Services/Inserv-Wright City', code: 'TLC-WRIGHTCITY', city: 'Wright City', state: 'OK', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'TMC Engineering Services', code: 'TMC-HOUSTON', city: 'Houston', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'TNT Repair Services', code: 'TNT-LONGVIEW', city: 'Longview', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Transitech, Inc.', code: 'TRANSITECH-FORDYCE', city: 'Fordyce', state: 'AR', region: 'Southeast', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Red River Coatings', code: 'RRC-NASH', city: 'Nash', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'Rescar #380', code: 'RESCAR-DEERPARK', city: 'Deer Park', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 240, turnTime: 14, contact: '', notes: '' },
+  { name: 'Texana Midway Tank Cleaning', code: 'TEXANA-TEXARKANA', city: 'Texarkana', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
+  { name: 'VLS RECOVERY SERVICES - Hockley', code: 'VLS-HOCKLEY', city: 'Hockley', state: 'TX', region: 'Southwest', network: 'Other', certifications: 'Qualification', annualCapacity: 180, turnTime: 14, contact: '', notes: '' },
 ];
 
 async function main() {
@@ -1183,25 +1390,144 @@ async function main() {
 
   console.log(`✓ Created 2 plans (${CURRENT_YEAR} active, ${NEXT_YEAR} draft)`);
 
-  // Create assignments using dynamic month arrays
+  // ==========================================================================
+  // CREATE PLAN ASSIGNMENTS FROM CSV DATA
+  // ==========================================================================
+  // Uses csvShopAssignments array populated during CSV import instead of
+  // random generation. This ensures shop schedules match the actual CSV data.
+  // ==========================================================================
+
   const activeShops = shops.filter((s) => s.isActive);
 
-  // Distribute cars across shops and months for current year
-  let assignmentCount = 0;
-  const usedCarMonthsCurrent = new Set<string>();
+  // Build lookup maps for efficient matching
+  const carLookup = new Map<string, string>();
+  for (const car of cars) {
+    carLookup.set(car.railcarNumber, car.id);
+  }
+
+  const shopLookup = new Map<string, string>();
+  for (const shop of shops) {
+    shopLookup.set(shop.code, shop.id);
+  }
 
   // Calculate current month for status assignment
   const currentMonthStr = `${CURRENT_YEAR}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  for (const month of monthsCurrentYear) {
-    for (const shop of activeShops) {
-      const carsForShop = Math.floor(Math.random() * shop.capacity * 0.8) + 2;
-      for (let i = 0; i < carsForShop; i++) {
-        const car = cars[Math.floor(Math.random() * cars.length)];
-        const key = `${car.id}-${month}`;
+  // Separate CSV assignments by year
+  const currentYearAssignments = csvShopAssignments.filter(
+    (a) => a.scheduledMonth.startsWith(String(CURRENT_YEAR))
+  );
+  const nextYearAssignments = csvShopAssignments.filter(
+    (a) => a.scheduledMonth.startsWith(String(NEXT_YEAR))
+  );
 
-        if (!usedCarMonthsCurrent.has(key)) {
-          usedCarMonthsCurrent.add(key);
+  console.log(`\n📊 CSV Shop Assignments Summary:`);
+  console.log(`   Total assignments parsed: ${csvShopAssignments.length}`);
+  console.log(`   ${CURRENT_YEAR} assignments: ${currentYearAssignments.length}`);
+  console.log(`   ${NEXT_YEAR} assignments: ${nextYearAssignments.length}`);
+
+  // Create assignments for current year from CSV data
+  let assignmentCount = 0;
+  let skippedCount = 0;
+  const usedCarMonthsCurrent = new Set<string>();
+
+  for (const assignment of currentYearAssignments) {
+    const carId = carLookup.get(assignment.railcarNumber);
+    const shopId = shopLookup.get(assignment.shopCode);
+
+    if (!carId || !shopId) {
+      skippedCount++;
+      continue;
+    }
+
+    const key = `${carId}-${assignment.scheduledMonth}`;
+    if (usedCarMonthsCurrent.has(key)) {
+      continue; // Skip duplicate car-month combinations
+    }
+
+    usedCarMonthsCurrent.add(key);
+
+    // Determine status based on scheduled month vs current month
+    let status: string;
+    if (assignment.scheduledMonth < currentMonthStr) {
+      status = 'completed';
+    } else if (assignment.scheduledMonth === currentMonthStr) {
+      status = 'in_progress';
+    } else {
+      status = 'pending';
+    }
+
+    await prisma.planAssignment.create({
+      data: {
+        id: uuidv4(),
+        planId: planCurrentYear.id,
+        carId: carId,
+        shopId: shopId,
+        scheduledMonth: assignment.scheduledMonth,
+        estimatedCost: 15000 + Math.floor(Math.random() * 20000),
+        estimatedDuration: 10 + Math.floor(Math.random() * 10),
+        status: status,
+      },
+    });
+    assignmentCount++;
+  }
+
+  console.log(`✓ Created ${assignmentCount} assignments for ${CURRENT_YEAR} plan from CSV data`);
+  if (skippedCount > 0) {
+    console.log(`   (Skipped ${skippedCount} assignments due to missing car/shop matches)`);
+  }
+
+  // Create assignments for next year from CSV data
+  assignmentCount = 0;
+  skippedCount = 0;
+  const usedCarMonthsNext = new Set<string>();
+
+  for (const assignment of nextYearAssignments) {
+    const carId = carLookup.get(assignment.railcarNumber);
+    const shopId = shopLookup.get(assignment.shopCode);
+
+    if (!carId || !shopId) {
+      skippedCount++;
+      continue;
+    }
+
+    const key = `${carId}-${assignment.scheduledMonth}`;
+    if (usedCarMonthsNext.has(key)) {
+      continue; // Skip duplicate car-month combinations
+    }
+
+    usedCarMonthsNext.add(key);
+
+    await prisma.planAssignment.create({
+      data: {
+        id: uuidv4(),
+        planId: planNextYear.id,
+        carId: carId,
+        shopId: shopId,
+        scheduledMonth: assignment.scheduledMonth,
+        estimatedCost: 15000 + Math.floor(Math.random() * 20000),
+        estimatedDuration: 10 + Math.floor(Math.random() * 10),
+        status: 'pending',
+      },
+    });
+    assignmentCount++;
+  }
+
+  console.log(`✓ Created ${assignmentCount} assignments for ${NEXT_YEAR} plan from CSV data`);
+  if (skippedCount > 0) {
+    console.log(`   (Skipped ${skippedCount} assignments due to missing car/shop matches)`);
+  }
+
+  // If no CSV assignments were created, fall back to generating sample data
+  if (currentYearAssignments.length === 0 && nextYearAssignments.length === 0) {
+    console.log(`\n⚠️  No shop assignments found in CSV. Generating sample assignments...`);
+
+    // Generate minimal sample assignments for demo purposes
+    let sampleCount = 0;
+    for (const month of monthsCurrentYear.slice(0, 3)) {
+      for (const shop of activeShops.slice(0, 5)) {
+        const car = cars[sampleCount % cars.length];
+        if (car) {
           await prisma.planAssignment.create({
             data: {
               id: uuidv4(),
@@ -1211,49 +1537,15 @@ async function main() {
               scheduledMonth: month,
               estimatedCost: 15000 + Math.floor(Math.random() * 20000),
               estimatedDuration: 10 + Math.floor(Math.random() * 10),
-              status: month < currentMonthStr ? 'completed' : month === currentMonthStr ? 'in_progress' : 'pending',
+              status: month < currentMonthStr ? 'completed' : 'pending',
             },
           });
-          assignmentCount++;
+          sampleCount++;
         }
       }
     }
+    console.log(`   Created ${sampleCount} sample assignments for demonstration`);
   }
-
-  console.log(`✓ Created ${assignmentCount} assignments for ${CURRENT_YEAR} plan`);
-
-  // Create fewer assignments for next year draft plan
-  assignmentCount = 0;
-  const usedCarMonthsNext = new Set<string>();
-
-  for (const month of monthsNextYear.slice(0, 6)) {
-    for (const shop of activeShops.slice(0, 10)) {
-      const carsForShop = Math.floor(Math.random() * shop.capacity * 0.5) + 1;
-      for (let i = 0; i < carsForShop; i++) {
-        const car = cars[Math.floor(Math.random() * cars.length)];
-        const key = `${car.id}-${month}`;
-
-        if (!usedCarMonthsNext.has(key)) {
-          usedCarMonthsNext.add(key);
-          await prisma.planAssignment.create({
-            data: {
-              id: uuidv4(),
-              planId: planNextYear.id,
-              carId: car.id,
-              shopId: shop.id,
-              scheduledMonth: month,
-              estimatedCost: 15000 + Math.floor(Math.random() * 20000),
-              estimatedDuration: 10 + Math.floor(Math.random() * 10),
-              status: 'pending',
-            },
-          });
-          assignmentCount++;
-        }
-      }
-    }
-  }
-
-  console.log(`✓ Created ${assignmentCount} assignments for ${NEXT_YEAR} plan`);
 
   // Create a sample scenario with dynamic years
   const nextYearShort = String(NEXT_YEAR).slice(-2);
