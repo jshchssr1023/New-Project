@@ -440,41 +440,49 @@ export async function importShops(
   const existingByCode = new Map(existingShops.map(s => [s.code.toLowerCase(), s.id]));
 
   for (let i = 0; i < objects.length; i++) {
-    const row = objects[i];
+    const originalRow = objects[i];
     const rowNum = i + 2;
 
-    const code = String(row.code || row.shop_code || row.shopCode || row.id || row.shopId || '').trim();
-    const name = String(row.name || row.shop_name || row.shopName || row.ShopNameDisplay || row.shopnamedisplay || row.displayName || '').trim();
+    // Normalize all keys to lowercase for case-insensitive matching
+    const row: Record<string, string> = {};
+    for (const [key, value] of Object.entries(originalRow)) {
+      row[key.toLowerCase().replace(/[_\s-]/g, '')] = String(value || '');
+    }
+
+    // Match various column name formats (all normalized to lowercase, no spaces/underscores)
+    const code = (row.code || row.shopcode || row.id || row.shopid || '').trim();
+    const name = (row.name || row.shopname || row.shopnamedisplay || row.displayname || '').trim();
 
     if (!code || !name) {
       errors.push({ row: rowNum, identifier: code || 'unknown', error: 'Missing code or name' });
       continue;
     }
 
-    // Parse latitude/longitude
-    const latValue = row.latitude || row.lat || row.Latitude || row.Lat;
-    const lonValue = row.longitude || row.lon || row.lng || row.long || row.Longitude || row.Lon || row.Lng || row.Long;
-    const latitude = latValue ? parseFloat(String(latValue)) : null;
-    const longitude = lonValue ? parseFloat(String(lonValue)) : null;
+    // Parse latitude/longitude (keys already normalized)
+    const latValue = row.latitude || row.lat || '';
+    const lonValue = row.longitude || row.lon || row.lng || row.long || '';
+    const latitude = latValue ? parseFloat(latValue) : null;
+    const longitude = lonValue ? parseFloat(lonValue) : null;
 
+    // Build shop data (all row keys are normalized lowercase)
     const shopData: Record<string, unknown> = {
       name,
       code,
-      location: String(row.location || row.address || '').trim(),
-      region: String(row.region || '').trim(),
-      city: String(row.city || row.City || '').trim(),
-      state: String(row.state || row.State || row.st || row.ST || '').trim(),
-      capacity: parseInt(String(row.capacity || row.monthlyCapacity || '50'), 10),
-      baseCostPerCar: parseFloat(String(row.baseCostPerCar || row.cost || row.costPerCar || '0')),
-      baseTurnTime: parseInt(String(row.baseTurnTime || row.turnTime || '14'), 10),
-      capabilities: JSON.stringify((String(row.capabilities || '')).split(',').map(s => s.trim()).filter(Boolean)),
-      certifications: JSON.stringify((String(row.certifications || '')).split(',').map(s => s.trim()).filter(Boolean)),
-      preferredCustomers: JSON.stringify((String(row.preferredCustomers || '')).split(',').map(s => s.trim()).filter(Boolean)),
-      isActive: row.isActive !== 'false' && row.isActive !== '0' && row.isActive !== 'no',
-      servingRailroad: String(row.servingRailroad || row.railroad || row.rr || row.RR || '').trim(),
-      network: String(row.network || row.shopNetwork || '').trim(),
-      tankQualified: row.tankQualified === 'true' || row.tankQualified === '1' || row.tankQualified === 'yes' || row.tankQualified === 'Y' || row.tankQualified === true,
-      isAitxInternal: row.isAitxInternal === 'true' || row.isAitxInternal === '1' || row.isAitxInternal === 'yes' || row.internal === 'true' || row.internal === 'AITX',
+      location: (row.location || row.address || '').trim(),
+      region: (row.region || '').trim(),
+      city: (row.city || '').trim(),
+      state: (row.state || row.st || '').trim(),
+      capacity: parseInt(row.capacity || row.monthlycapacity || '50', 10),
+      baseCostPerCar: parseFloat(row.basecostpercar || row.cost || row.costpercar || '0'),
+      baseTurnTime: parseInt(row.baseturntime || row.turntime || '14', 10),
+      capabilities: JSON.stringify((row.capabilities || '').split(',').map((s: string) => s.trim()).filter(Boolean)),
+      certifications: JSON.stringify((row.certifications || '').split(',').map((s: string) => s.trim()).filter(Boolean)),
+      preferredCustomers: JSON.stringify((row.preferredcustomers || '').split(',').map((s: string) => s.trim()).filter(Boolean)),
+      isActive: row.isactive !== 'false' && row.isactive !== '0' && row.isactive !== 'no',
+      servingRailroad: (row.servingrailroad || row.railroad || row.rr || '').trim(),
+      network: (row.network || row.shopnetwork || '').trim(),
+      tankQualified: ['true', '1', 'yes', 'y'].includes((row.tankqualified || '').toLowerCase()),
+      isAitxInternal: ['true', '1', 'yes', 'y', 'aitx', 'internal'].includes((row.isaitxinternal || row.internal || '').toLowerCase()),
     };
 
     // Add coordinates if valid
