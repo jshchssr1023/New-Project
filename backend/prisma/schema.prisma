@@ -1499,6 +1499,8 @@ model RateLimitEntry {
   endpoint    String   // Route pattern being limited
   windowStart DateTime // Start of the current rate limit window
   requestCount Int     @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([identifier, endpoint, windowStart])
   @@index([windowStart]) // For cleanup of old entries
