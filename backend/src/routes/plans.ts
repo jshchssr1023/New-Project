@@ -747,8 +747,10 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
       }),
     ]);
 
-    const carMap = new Map(cars.map(c => [c.id, c]));
-    const shopMap = new Map(shops.map(s => [s.id, s]));
+    type CarType = typeof cars[0];
+    type ShopType = typeof shops[0];
+    const carMap = new Map<string, CarType>(cars.map(c => [c.id, c]));
+    const shopMap = new Map<string, ShopType>(shops.map(s => [s.id, s]));
     const existingSet = new Set(existingAssignments.map(a => `${a.carId}-${a.scheduledMonth}`));
 
     // Validate all assignments before creating any

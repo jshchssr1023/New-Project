@@ -832,9 +832,12 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
       })
     ]);
 
-    const carMap = new Map(cars.map(c => [c.id, c]));
-    const shopMap = new Map(shops.map(s => [s.id, s]));
-    const existingPlanMap = new Map(existingPlans.map(p => [p.carId, p]));
+    type CarType = typeof cars[0];
+    type ShopType = typeof shops[0];
+    type PlanType = typeof existingPlans[0];
+    const carMap = new Map<string, CarType>(cars.map(c => [c.id, c]));
+    const shopMap = new Map<string, ShopType>(shops.map(s => [s.id, s]));
+    const existingPlanMap = new Map<string, PlanType>(existingPlans.map(p => [p.carId, p]));
 
     // Build S&OP commitment lookup
     const sopMap = new Map<string, typeof sopCommitments[0]>();

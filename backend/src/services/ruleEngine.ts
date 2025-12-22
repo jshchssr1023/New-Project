@@ -207,11 +207,26 @@ export async function evaluateShopForCar(
 
   // Apply each rule
   for (const rule of rules.filter(r => r.isActive).sort((a, b) => b.priority - a.priority)) {
-    let conditions: Record<string, unknown> = {};
-    let actions: Record<string, unknown> = {};
+    interface RuleConditions {
+      requireTankQualification?: boolean;
+      minAvailable?: number;
+      usePerformanceMetrics?: boolean;
+    }
+    interface RuleActions {
+      excludeIfNotQualified?: boolean;
+      excludeIfFull?: boolean;
+      performanceWeight?: number;
+      penaltyForCritical?: number;
+      penaltyForWarning?: number;
+      bonusScore?: number;
+      penaltyIfMissing?: number;
+      scoreWeight?: number;
+    }
+    let conditions: RuleConditions = {};
+    let actions: RuleActions = {};
     try {
-      conditions = JSON.parse(rule.conditions);
-      actions = JSON.parse(rule.actions);
+      conditions = JSON.parse(rule.conditions) as RuleConditions;
+      actions = JSON.parse(rule.actions) as RuleActions;
     } catch {
       // Skip malformed rules
       continue;

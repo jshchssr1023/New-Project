@@ -7,8 +7,8 @@ import webhookAlertService from './webhookAlertService';
 export interface AuditLogEntry {
   userId: string;
   userEmail?: string;
-  action: 'create' | 'update' | 'delete' | 'commit' | 'assign' | 'export' | 'view' | 'import';
-  entityType: 'Car' | 'Shop' | 'Plan' | 'PlanAssignment' | 'Scenario' | 'User' | 'ReportTemplate' | 'ScheduledReport';
+  action: 'create' | 'update' | 'delete' | 'commit' | 'assign' | 'export' | 'view' | 'import' | 'backup_export' | 'backup_restore';
+  entityType: 'Car' | 'Shop' | 'Plan' | 'PlanAssignment' | 'Scenario' | 'User' | 'ReportTemplate' | 'ScheduledReport' | 'System';
   entityId?: string;
   entityName?: string;
   changes?: Record<string, { old?: unknown; new?: unknown }>;

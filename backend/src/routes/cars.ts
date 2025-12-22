@@ -307,7 +307,7 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
       select: { id: true, railcarNumber: true },
     });
 
-    const existingCarMap = new Map(existingCars.map(c => [c.railcarNumber, c.id]));
+    const existingCarMap = new Map<string, string>(existingCars.map(c => [c.railcarNumber, c.id]));
 
     // Phase 3: Prepare batch operations
     type CarCreateData = typeof validatedCars[0]['dbCarData'] & { companyId: string };

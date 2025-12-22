@@ -31,6 +31,7 @@ export interface ShopForValidation {
   id: string;
   code: string;
   name: string;
+  region?: string;
   isAitxInternal: boolean;
   tankQualified: boolean;
   capacity: number;
@@ -492,7 +493,7 @@ export async function validateBulkAllocations(
       companyId,
     },
   });
-  const carMap = new Map(cars.map(c => [c.id, c as CarForValidation]));
+  const carMap = new Map<string, CarForValidation>(cars.map(c => [c.id, c as CarForValidation]));
 
   // Fetch all shops with capability profiles
   const shops = await prisma.shop.findMany({
@@ -504,7 +505,7 @@ export async function validateBulkAllocations(
       capabilityProfile: true,
     },
   });
-  const shopMap = new Map(shops.map(s => [s.id, s as unknown as ShopForValidation]));
+  const shopMap = new Map<string, ShopForValidation>(shops.map(s => [s.id, s as unknown as ShopForValidation]));
 
   // Get capacity usage for each shop-month combination
   const monthKeys = [...new Set(requests.map(r => `${r.plannedYear}-${String(r.plannedMonth).padStart(2, '0')}`))];

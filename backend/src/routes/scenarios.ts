@@ -1196,8 +1196,8 @@ router.post('/:id/approve', async (req: AuthRequest, res: Response) => {
       message: `MasterPlan created with ${masterPlan.commitments?.length || sopAssignmentData.length} commitments. ${carsWithShops.length} cars updated.`,
       masterPlan: {
         id: masterPlan.id,
-        planName: masterPlan.planName,
-        fiscalYear: masterPlan.fiscalYear,
+        planName: masterPlan.name,
+        fiscalYear: masterPlan.planningHorizonStart ? new Date(masterPlan.planningHorizonStart).getFullYear() : new Date().getFullYear(),
         version: masterPlan.version,
         status: masterPlan.status,
         commitmentCount: masterPlan.commitments?.length || sopAssignmentData.length,

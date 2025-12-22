@@ -30,14 +30,16 @@ import { z } from 'zod';
 
 /**
  * Valid status values for MasterPlan
- * Workflow: draft -> under_review -> approved -> active -> archived
+ * Workflow: DRAFT -> PENDING -> APPROVED -> ACTIVE -> SUPERSEDED/ARCHIVED
+ * Note: These match the Prisma enum values (UPPERCASE)
  */
 export const MasterPlanStatusSchema = z.enum([
-  'draft',
-  'under_review',
-  'approved',
-  'active',
-  'archived',
+  'DRAFT',
+  'PENDING',
+  'APPROVED',
+  'ACTIVE',
+  'SUPERSEDED',
+  'ARCHIVED',
 ]);
 
 export type MasterPlanStatus = z.infer<typeof MasterPlanStatusSchema>;
@@ -265,10 +267,10 @@ export class MasterPlanService {
       where: {
         companyId: scenario.companyId,
         fiscalYear,
-        status: 'active',
+        status: 'ACTIVE',
       },
       data: {
-        status: 'archived',
+        status: 'ARCHIVED',
       },
     });
 
@@ -318,7 +320,7 @@ export class MasterPlanService {
           planName: input.planName,
           fiscalYear,
           version: newVersion,
-          status: 'draft', // Starts as draft, can be promoted to approved/active
+          status: 'DRAFT', // Starts as draft, can be promoted to approved/active
           baseScenarioId: scenario.id,
           validFrom,
           validTo,
@@ -410,7 +412,7 @@ export class MasterPlanService {
     const plan = await this.prisma.masterPlan.findFirst({
       where: {
         companyId,
-        status: 'active',
+        status: 'ACTIVE',
       },
       include: {
         commitments: {
@@ -576,10 +578,11 @@ export class MasterPlanService {
       offset?: number;
     }
   ): Promise<MasterPlan[]> {
-    const where: Prisma.MasterPlanWhereInput = {
+    // Cast status to any to handle Prisma enum type compatibility
+    const where = {
       companyId,
       ...(options?.fiscalYear && { fiscalYear: options.fiscalYear }),
-      ...(options?.status && { status: options.status }),
+      ...(options?.status && { status: options.status as any }),
     };
 
     const plans = await this.prisma.masterPlan.findMany({
@@ -634,10 +637,10 @@ export class MasterPlanService {
         where: {
           companyId: plan.companyId,
           fiscalYear: plan.fiscalYear,
-          status: 'active',
+          status: 'ACTIVE',
           id: { not: masterPlanId },
         },
-        data: { status: 'archived' },
+        data: { status: 'ARCHIVED' },
       });
     }
 
@@ -777,7 +780,7 @@ export class MasterPlanService {
     // Find the active plan that contains this month
     const plan = await this.prisma.masterPlan.findFirst({
       where: {
-        status: 'active',
+        status: 'ACTIVE',
         validFrom: { lte: new Date(`${scheduledMonth}-01`) },
         validTo: { gte: new Date(`${scheduledMonth}-01`) },
       },
@@ -853,7 +856,7 @@ export class MasterPlanService {
       const activePlan = await this.prisma.masterPlan.findFirst({
         where: {
           companyId: customer.companyId,
-          status: 'active',
+          status: 'ACTIVE',
         },
       });
 

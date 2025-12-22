@@ -314,7 +314,7 @@ async function getShopsWithCapacity(
     _count: { id: true },
   });
 
-  const usageMap = new Map(usageData.map(u => [u.shopId, u._count.id]));
+  const usageMap = new Map<string, number>(usageData.map(u => [u.shopId, u._count.id]));
 
   // Get S&OP commitments for the target month
   const commitments = await prisma.sOPCommitment.findMany({
@@ -325,7 +325,8 @@ async function getShopsWithCapacity(
     },
   });
 
-  const commitmentMap = new Map(commitments.map(c => [c.shopId, c]));
+  type CommitmentType = typeof commitments[0];
+  const commitmentMap = new Map<string, CommitmentType>(commitments.map(c => [c.shopId, c]));
 
   return shops.map(shop => {
     const profile = shop.capabilityProfile;
