@@ -36,7 +36,7 @@ export default function CarFormModal({
     notes: '',
     lined: false,
     liningType: '',
-    portfolio: '',
+    portfolio: false,
     fullPartialQual: '',
     performTankQual: false,
     minNoLining: null,
@@ -71,7 +71,7 @@ export default function CarFormModal({
           notes: '',
           lined: false,
           liningType: '',
-          portfolio: '',
+          portfolio: false,
           fullPartialQual: '',
           performTankQual: false,
           minNoLining: null,
@@ -248,15 +248,15 @@ export default function CarFormModal({
                         <option value="retired">Retired</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="label">Portfolio</label>
+                    <div className="flex items-center gap-2">
                       <input
-                        type="text"
-                        value={formData.portfolio || ''}
-                        onChange={(e) => updateField('portfolio', e.target.value)}
-                        className="input"
-                        placeholder="Lease status"
+                        type="checkbox"
+                        checked={formData.portfolio || false}
+                        onChange={(e) => updateField('portfolio', e.target.checked)}
+                        className="h-4 w-4 text-rail-600 rounded border-steel-300"
+                        id="portfolio"
                       />
+                      <label htmlFor="portfolio" className="label mb-0">Portfolio (On Lease/Active)</label>
                     </div>
                   </div>
 

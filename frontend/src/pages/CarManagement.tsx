@@ -135,7 +135,7 @@ export default function CarManagement() {
         status: statusFilter || undefined,
         carType: carTypeFilter || undefined,
         customer: customerFilter || undefined,
-        reasonShopped: reasonFilter || undefined,
+        reasonsShopped: reasonFilter || undefined,
       });
       setCars(response.data);
       setTotalPages(response.totalPages);
@@ -260,7 +260,7 @@ export default function CarManagement() {
         ids: exportSelected && selectedCars.size > 0 ? Array.from(selectedCars) : undefined,
         status: statusFilter || undefined,
         customer: customerFilter || undefined,
-        reasonShopped: reasonFilter || undefined,
+        reasonsShopped: reasonFilter || undefined,
         carType: carTypeFilter || undefined,
       });
     } catch (error) {

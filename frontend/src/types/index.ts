@@ -81,6 +81,7 @@ export interface Car {
   // PORTFOLIO AND STATUS FIELDS
   // =============================================================================
   portfolio: boolean; // On Lease / Active (from Portfolio column)
+  onRent: boolean; // Whether car is currently on rent/lease
   shoppingStatus: string; // Computed: Urgent, Must Shop, Upcoming, Compliant, In Shop, Planned, Unknown
   planStatus: string; // Plan Status: Committed, Not Confirmed, Not Committed, year
   performTankQual: boolean; // Perform Tank Qual flag

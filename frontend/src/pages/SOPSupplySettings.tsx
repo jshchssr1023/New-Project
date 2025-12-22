@@ -84,19 +84,19 @@ export default function SOPSupplySettings() {
   // Fetch S&OP commitments for the selected year
   const { data: commitments = [], isLoading: commitmentsLoading, error } = useQuery({
     queryKey: ['sop-commitments', selectedYear],
-    queryFn: () => sopCommitmentApi.getAll(selectedYear),
+    queryFn: () => sopCommitmentApi.list({ year: selectedYear }),
   });
 
   // Get unique shop IDs from commitments
   const shopsWithCommitments = useMemo(() => {
-    const shopIds = new Set(commitments.map((c) => c.shopId));
+    const shopIds = new Set(commitments.map((c: { shopId: string }) => c.shopId));
     return shops.filter((s: Shop) => shopIds.has(s.id));
   }, [shops, commitments]);
 
   // Build commitment map for quick lookup
   const commitmentMap = useMemo(() => {
     const map = new Map<string, number>();
-    commitments.forEach((c) => {
+    commitments.forEach((c: { shopId: string; month: number; committedVolume: number }) => {
       map.set(`${c.shopId}-${c.month}`, c.committedVolume);
     });
     return map;
@@ -181,7 +181,7 @@ export default function SOPSupplySettings() {
 
   // Create/Update mutation
   const saveMutation = useMutation({
-    mutationFn: (data: CreateSOPCommitmentRequest) => sopCommitmentApi.createOrUpdate(data),
+    mutationFn: (data: CreateSOPCommitmentRequest) => sopCommitmentApi.upsert(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sop-commitments'] });
       setEditingCell(null);
@@ -230,15 +230,15 @@ export default function SOPSupplySettings() {
   // Copy from previous year
   const handleCopyFromPreviousYear = async (shopId: string) => {
     const previousYear = selectedYear - 1;
-    const previousCommitments = await sopCommitmentApi.getAll(previousYear);
-    const shopCommitments = previousCommitments.filter((c) => c.shopId === shopId);
+    const previousCommitments = await sopCommitmentApi.list({ year: previousYear });
+    const shopCommitments = previousCommitments.filter((c: { shopId: string }) => c.shopId === shopId);
 
     if (shopCommitments.length === 0) {
       alert(`No commitments found for ${previousYear}`);
       return;
     }
 
-    const newCommitments: CreateSOPCommitmentRequest[] = shopCommitments.map((c) => ({
+    const newCommitments: CreateSOPCommitmentRequest[] = shopCommitments.map((c: { shopId: string; month: number; committedVolume: number }) => ({
       shopId: c.shopId,
       year: selectedYear,
       month: c.month,

@@ -28,7 +28,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 import Drawer from '../components/ui/Drawer';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { Skeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
 import type { ShopNetwork, Shop } from '../types';
 import {
@@ -1325,8 +1325,8 @@ export default function ShopNetworks() {
         onConfirm={handleDeleteConfirm}
         title="Delete Network"
         message={`Are you sure you want to delete "${networkToDelete?.name}"? This action cannot be undone.`}
-        confirmLabel="Delete"
-        confirmVariant="danger"
+        confirmText="Delete"
+        variant="danger"
       />
     </div>
   );

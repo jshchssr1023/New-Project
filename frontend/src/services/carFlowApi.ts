@@ -185,6 +185,26 @@ export interface BulkPlanResponse {
   plans?: CarFlowPlan[];
   conflicts?: BulkPlanConflict[];
   allowOverride?: boolean;
+  errors?: {
+    carId: string;
+    railcarNumber?: string;
+    error: string;
+    code: string;
+  }[];
+  warnings?: {
+    shopId: string;
+    shopName: string;
+    month: string;
+    currentUsage: number;
+    capacity: number;
+    carCount: number;
+  }[];
+  skipped?: {
+    carId: string;
+    railcarNumber?: string;
+    error: string;
+    code: string;
+  }[];
 }
 
 export const carFlowPlanApi = {
