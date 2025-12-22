@@ -48,7 +48,7 @@ const variantConfig: Record<DialogVariant, {
   },
 };
 
-export default function ConfirmDialog({
+export function ConfirmDialog({
   isOpen,
   onClose,
   onConfirm,
@@ -149,3 +149,5 @@ export default function ConfirmDialog({
     </Transition.Root>
   );
 }
+
+export default ConfirmDialog;
