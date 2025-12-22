@@ -1231,16 +1231,28 @@ router.get('/capacity', async (req: AuthenticatedRequest, res: Response) => {
 
     const draftScenarioIds = userDraftScenarios.map(s => s.id);
 
-    // Get draft scenario car counts by shop/month
-    const draftUsage = await prisma.scenarioCar.groupBy({
-      by: ['shopId', 'plannedMonth', 'plannedYear'],
+    // Get draft scenario car counts by shop/month (manual aggregation since groupBy not supported)
+    const draftScenarioCars = draftScenarioIds.length > 0 ? await prisma.scenarioCar.findMany({
       where: {
         scenarioId: { in: draftScenarioIds },
         plannedYear: yearNum,
         plannedMonth: { in: months },
         shopId: { not: null }
       },
-      _count: { id: true }
+      select: { shopId: true, plannedMonth: true, plannedYear: true }
+    }) : [];
+
+    // Manually aggregate the draft usage counts
+    const draftUsageMap = new Map<string, number>();
+    for (const car of draftScenarioCars) {
+      if (car.shopId) {
+        const key = `${car.shopId}-${car.plannedMonth}-${car.plannedYear}`;
+        draftUsageMap.set(key, (draftUsageMap.get(key) || 0) + 1);
+      }
+    }
+    const draftUsage = Array.from(draftUsageMap.entries()).map(([key, count]) => {
+      const [shopId, plannedMonth, plannedYear] = key.split('-');
+      return { shopId, plannedMonth: parseInt(plannedMonth), plannedYear: parseInt(plannedYear), _count: { id: count } };
     });
 
     // Build capacity map

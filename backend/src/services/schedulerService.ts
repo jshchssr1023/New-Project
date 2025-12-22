@@ -107,7 +107,7 @@ class SchedulerService {
    * Check and run all due scheduled reports
    */
   async checkAndRunDueReports(): Promise<void> {
-    const now = new Date();
+    const now = new Date().toISOString();
 
     try {
       // Find all due reports
