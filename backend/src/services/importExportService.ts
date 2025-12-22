@@ -443,29 +443,47 @@ export async function importShops(
     const row = objects[i];
     const rowNum = i + 2;
 
-    const code = String(row.code || row.shop_code || row.shopCode || '').trim();
-    const name = String(row.name || row.shop_name || row.shopName || '').trim();
+    const code = String(row.code || row.shop_code || row.shopCode || row.id || row.shopId || '').trim();
+    const name = String(row.name || row.shop_name || row.shopName || row.ShopNameDisplay || row.shopnamedisplay || row.displayName || '').trim();
 
     if (!code || !name) {
       errors.push({ row: rowNum, identifier: code || 'unknown', error: 'Missing code or name' });
       continue;
     }
 
-    const shopData = {
+    // Parse latitude/longitude
+    const latValue = row.latitude || row.lat || row.Latitude || row.Lat;
+    const lonValue = row.longitude || row.lon || row.lng || row.long || row.Longitude || row.Lon || row.Lng || row.Long;
+    const latitude = latValue ? parseFloat(String(latValue)) : null;
+    const longitude = lonValue ? parseFloat(String(lonValue)) : null;
+
+    const shopData: Record<string, unknown> = {
       name,
       code,
+      location: String(row.location || row.address || '').trim(),
       region: String(row.region || '').trim(),
-      address: String(row.address || '').trim(),
-      city: String(row.city || '').trim(),
-      state: String(row.state || '').trim(),
-      capacity: parseInt(String(row.capacity || '50'), 10),
-      baseCostPerCar: parseFloat(String(row.baseCostPerCar || row.cost || '0')),
+      city: String(row.city || row.City || '').trim(),
+      state: String(row.state || row.State || row.st || row.ST || '').trim(),
+      capacity: parseInt(String(row.capacity || row.monthlyCapacity || '50'), 10),
+      baseCostPerCar: parseFloat(String(row.baseCostPerCar || row.cost || row.costPerCar || '0')),
       baseTurnTime: parseInt(String(row.baseTurnTime || row.turnTime || '14'), 10),
       capabilities: JSON.stringify((String(row.capabilities || '')).split(',').map(s => s.trim()).filter(Boolean)),
       certifications: JSON.stringify((String(row.certifications || '')).split(',').map(s => s.trim()).filter(Boolean)),
       preferredCustomers: JSON.stringify((String(row.preferredCustomers || '')).split(',').map(s => s.trim()).filter(Boolean)),
       isActive: row.isActive !== 'false' && row.isActive !== '0' && row.isActive !== 'no',
+      servingRailroad: String(row.servingRailroad || row.railroad || row.rr || row.RR || '').trim(),
+      network: String(row.network || row.shopNetwork || '').trim(),
+      tankQualified: row.tankQualified === 'true' || row.tankQualified === '1' || row.tankQualified === 'yes' || row.tankQualified === 'Y' || row.tankQualified === true,
+      isAitxInternal: row.isAitxInternal === 'true' || row.isAitxInternal === '1' || row.isAitxInternal === 'yes' || row.internal === 'true' || row.internal === 'AITX',
     };
+
+    // Add coordinates if valid
+    if (latitude !== null && !isNaN(latitude) && latitude >= -90 && latitude <= 90) {
+      shopData.latitude = latitude;
+    }
+    if (longitude !== null && !isNaN(longitude) && longitude >= -180 && longitude <= 180) {
+      shopData.longitude = longitude;
+    }
 
     try {
       const existingId = existingByCode.get(code.toLowerCase());

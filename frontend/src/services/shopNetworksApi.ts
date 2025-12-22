@@ -331,9 +331,9 @@ export function parseShopsCsv(csvContent: string): ShopImportData[] {
       const headerNorm = header.replace(/[_\s-]/g, '').toLowerCase();
 
       // Identification
-      if (['code', 'shopcode'].includes(headerNorm)) {
+      if (['code', 'shopcode', 'id', 'shopid'].includes(headerNorm)) {
         shop.code = value.toUpperCase();
-      } else if (['name', 'shopname'].includes(headerNorm)) {
+      } else if (['name', 'shopname', 'shopnamedisplay', 'displayname'].includes(headerNorm)) {
         shop.name = value;
       }
       // Location
