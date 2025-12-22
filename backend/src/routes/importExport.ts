@@ -301,4 +301,182 @@ router.get('/mappings', authenticateToken, async (req: Request, res: Response) =
   res.json(mappingInfo);
 });
 
+// =============================================================================
+// FULL DATA BACKUP ENDPOINTS
+// =============================================================================
+
+/**
+ * Export full data backup as JSON
+ * Includes: cars, shops, networks, assignments, plans, scenarios
+ */
+router.get('/backup', authenticateToken, async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+  const companyId = authReq.user?.companyId;
+  const userId = authReq.user?.id;
+  const prisma: any = req.app.locals.prisma;
+
+  if (!companyId || !userId) {
+    return res.status(403).json({ error: 'Company access required' });
+  }
+
+  // Only admins can create backups
+  if (authReq.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required for data backup' });
+  }
+
+  try {
+    // Fetch all data for the company
+    const [cars, shops, networks, carFlowPlans, scenarios, customers] = await Promise.all([
+      prisma.car.findMany({
+        where: { companyId },
+        orderBy: { railcarNumber: 'asc' },
+      }),
+      prisma.shop.findMany({
+        where: { companyId },
+        include: {
+          capabilityProfile: true,
+        },
+        orderBy: { code: 'asc' },
+      }),
+      prisma.shopNetwork.findMany({
+        where: { companyId },
+        include: {
+          sopNetworkCommitments: true,
+        },
+        orderBy: { code: 'asc' },
+      }),
+      prisma.carFlowPlan.findMany({
+        where: { companyId },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.scenario.findMany({
+        where: { companyId },
+        include: {
+          cars: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.customer.findMany({
+        where: { companyId },
+        orderBy: { name: 'asc' },
+      }),
+    ]);
+
+    const backup = {
+      metadata: {
+        version: '1.0',
+        exportedAt: new Date().toISOString(),
+        exportedBy: userId,
+        companyId,
+        counts: {
+          cars: cars.length,
+          shops: shops.length,
+          networks: networks.length,
+          carFlowPlans: carFlowPlans.length,
+          scenarios: scenarios.length,
+          customers: customers.length,
+        },
+      },
+      data: {
+        cars,
+        shops,
+        networks,
+        carFlowPlans,
+        scenarios,
+        customers,
+      },
+    };
+
+    // Audit the backup
+    await auditService.logAudit({
+      action: 'backup_export',
+      entityType: 'System',
+      details: {
+        counts: backup.metadata.counts,
+      },
+      userId,
+      companyId,
+    });
+
+    const filename = `chronos_backup_${new Date().toISOString().split('T')[0]}.json`;
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.json(backup);
+  } catch (error) {
+    logger.error('Error creating backup:', error);
+    res.status(500).json({ error: 'Failed to create backup' });
+  }
+});
+
+/**
+ * Validate backup file structure
+ */
+router.post('/backup/validate', authenticateToken, async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+
+  if (authReq.user?.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  const { backup } = req.body;
+
+  if (!backup || typeof backup !== 'object') {
+    return res.status(400).json({ error: 'Backup data required' });
+  }
+
+  try {
+    const validation = {
+      isValid: true,
+      errors: [] as string[],
+      warnings: [] as string[],
+      summary: {
+        version: backup.metadata?.version || 'unknown',
+        exportedAt: backup.metadata?.exportedAt || 'unknown',
+        counts: backup.metadata?.counts || {},
+      },
+    };
+
+    // Check required structure
+    if (!backup.metadata) {
+      validation.errors.push('Missing metadata section');
+      validation.isValid = false;
+    }
+
+    if (!backup.data) {
+      validation.errors.push('Missing data section');
+      validation.isValid = false;
+    }
+
+    // Check data arrays
+    const expectedArrays = ['cars', 'shops', 'networks', 'carFlowPlans', 'scenarios', 'customers'];
+    for (const key of expectedArrays) {
+      if (backup.data && !Array.isArray(backup.data[key])) {
+        validation.warnings.push(`Missing or invalid ${key} array`);
+      }
+    }
+
+    // Validate car records structure
+    if (Array.isArray(backup.data?.cars) && backup.data.cars.length > 0) {
+      const sampleCar = backup.data.cars[0];
+      if (!sampleCar.railcarNumber) {
+        validation.warnings.push('Car records may be missing railcarNumber field');
+      }
+    }
+
+    // Validate shop records structure
+    if (Array.isArray(backup.data?.shops) && backup.data.shops.length > 0) {
+      const sampleShop = backup.data.shops[0];
+      if (!sampleShop.code || !sampleShop.name) {
+        validation.warnings.push('Shop records may be missing code or name field');
+      }
+    }
+
+    res.json(validation);
+  } catch (error) {
+    logger.error('Error validating backup:', error);
+    res.status(500).json({ error: 'Failed to validate backup' });
+  }
+});
+
 export default router;

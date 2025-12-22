@@ -224,10 +224,53 @@ body {
   to { transform: translateY(0); opacity: 1; }
 }
 
+@keyframes loadingBar {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 .animate-fadeIn {
   animation: fadeIn 0.2s ease-out;
 }
 
 .animate-slideUp {
   animation: slideUp 0.3s ease-out;
+}
+
+.animate-loading-bar {
+  animation: loadingBar 1.5s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Input field alias for form styling */
+@layer components {
+  .input-field {
+    @apply w-full px-3.5 py-2 text-sm bg-white border border-steel-300 rounded-lg
+           focus:ring-2 focus:ring-rail-500/20 focus:border-rail-500
+           outline-none transition-all duration-200 placeholder:text-steel-400;
+  }
+
+  .input-field:disabled {
+    @apply bg-steel-100 text-steel-500 cursor-not-allowed;
+  }
+
+  /* Progress bar container */
+  .progress-bar {
+    @apply h-2 bg-steel-200 rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-rail-600 rounded-full transition-all duration-300;
+  }
 }

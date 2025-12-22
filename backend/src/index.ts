@@ -28,6 +28,7 @@ import apiKeysRoutes from './routes/apiKeys';
 // REMOVED: masterPlanWizardRoutes - replaced by Car Flow Planning module
 import carFlowRoutes from './routes/carFlow';
 import allocationRoutes from './routes/allocation';
+import shopNetworksRoutes from './routes/shopNetworks';
 import publicApiV1 from './routes/api/v1';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
@@ -92,6 +93,7 @@ app.use('/api/api-keys', apiRateLimit);
 // REMOVED: app.use('/api/master-plan-wizard', apiRateLimit);
 app.use('/api/car-flow', apiRateLimit);
 app.use('/api/allocation', apiRateLimit);
+app.use('/api/shop-networks', apiRateLimit);
 app.use('/api/v1', apiRateLimit);
 
 // Routes
@@ -117,6 +119,7 @@ app.use('/api/api-keys', apiKeysRoutes);
 // REMOVED: app.use('/api/master-plan-wizard', masterPlanWizardRoutes);
 app.use('/api/car-flow', carFlowRoutes);
 app.use('/api/allocation', allocationRoutes);
+app.use('/api/shop-networks', shopNetworksRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);

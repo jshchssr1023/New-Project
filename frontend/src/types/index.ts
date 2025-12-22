@@ -143,6 +143,70 @@ export function calculateShoppingStatus(car: Car): ShoppingStatus {
   return 'Compliant';
 }
 
+// =============================================================================
+// SHOP NETWORK - 3rd Party Networks for S&OP Planning
+// =============================================================================
+export interface ShopNetwork {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  isAitxInternal: boolean;
+  networkTier: number;
+  annualTargetVolume: number;
+  annualCommittedVolume: number;
+  monthlyBaseCapacity: number;
+  costIndex: number;
+  hasContractualCommitment: boolean;
+  commitmentPenaltyRate: number;
+  contractStartDate: string | null;
+  contractEndDate: string | null;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  isActive: boolean;
+  notes: string;
+  regions: string[];
+  companyId: string;
+  // Populated relations
+  shops?: Shop[];
+  shopCount?: number;
+  totalMonthlyCapacity?: number;
+  sopNetworkCommitments?: SOPNetworkCommitment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SOPNetworkCommitment {
+  id: string;
+  networkId: string;
+  year: number;
+  month: number;
+  committedVolume: number;
+  actualVolume: number;
+  variancePercent: number;
+  isUnderCommitment: boolean;
+  penaltyAmount: number;
+  notes: string;
+  companyId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShopNetworkCapacitySummary {
+  id: string;
+  name: string;
+  code: string;
+  isAitxInternal: boolean;
+  networkTier: number;
+  shopCount: number;
+  totalMonthlyCapacity: number;
+  totalAnnualCapacity: number;
+  annualCommittedVolume: number;
+  hasContractualCommitment: boolean;
+  monthlyData: Record<number, { committed: number; actual: number }>;
+}
+
 export interface Shop {
   id: string;
   name: string;
@@ -153,6 +217,12 @@ export interface Shop {
   region: string;
   network: string;
   servingRailroad: string;
+  // Location coordinates for map view
+  latitude?: number | null;
+  longitude?: number | null;
+  // Shop Network Reference (for 3rd party networks)
+  networkId?: string | null;
+  shopNetwork?: ShopNetwork;
   // Parent/Child Shop Hierarchy
   parentShopId: string | null;  // Reference to parent shop (for network/group hierarchy)
   parentShop?: Shop;            // Parent shop object (when populated)
