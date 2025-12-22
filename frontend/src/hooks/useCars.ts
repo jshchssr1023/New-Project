@@ -249,7 +249,7 @@ export function useCars(options: UseCarsOptions = {}) {
           car.tankQualification,
         ].filter(Boolean);
 
-        if (qualDates.length === 0) return filters.shoppingStatus === 'unknown';
+        if (qualDates.length === 0) return filters.shoppingStatus === 'Unknown';
 
         let hasUrgent = false;
         let hasMustShop = false;
@@ -267,10 +267,10 @@ export function useCars(options: UseCarsOptions = {}) {
         }
 
         switch (filters.shoppingStatus) {
-          case 'urgent': return hasUrgent;
-          case 'must_shop': return hasMustShop && !hasUrgent;
-          case 'upcoming': return hasUpcoming && !hasUrgent && !hasMustShop;
-          case 'compliant': return !hasUrgent && !hasMustShop && !hasUpcoming;
+          case 'Urgent': return hasUrgent;
+          case 'Must Shop': return hasMustShop && !hasUrgent;
+          case 'Upcoming': return hasUpcoming && !hasUrgent && !hasMustShop;
+          case 'Compliant': return !hasUrgent && !hasMustShop && !hasUpcoming;
           default: return true;
         }
       });

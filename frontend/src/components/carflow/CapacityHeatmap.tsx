@@ -78,7 +78,7 @@ export default function CapacityHeatmap({
   // Fetch capacity data
   const { data: capacityData, isLoading, error } = useQuery({
     queryKey: ['capacity', year, scenarioId],
-    queryFn: () => capacityApi.getCapacity(year, scenarioId || undefined),
+    queryFn: () => capacityApi.get({ year }),
   });
 
   const capacity = capacityData?.capacity || [];
@@ -143,14 +143,14 @@ export default function CapacityHeatmap({
           </tr>
         </thead>
         <tbody>
-          {capacity.map((shopCapacity) => {
+          {capacity.map((shopCapacity: ShopCapacity) => {
             const monthsData = shopCapacity.months;
             const totalCommitted = Object.values(monthsData).reduce(
-              (sum, m) => sum + (m?.committed || 0),
+              (sum: number, m: ShopCapacityMonth) => sum + (m?.committed || 0),
               0
             );
             const totalPlanned = Object.values(monthsData).reduce(
-              (sum, m) => sum + (m?.planned || 0) + (m?.draftUsage || 0),
+              (sum: number, m: ShopCapacityMonth) => sum + (m?.planned || 0) + (m?.draftUsage || 0),
               0
             );
 
@@ -243,11 +243,11 @@ export default function CapacityHeatmap({
               Monthly Total
             </td>
             {MONTHS.map((_, monthIdx) => {
-              const monthTotal = capacity.reduce((sum, shop) => {
+              const monthTotal = capacity.reduce((sum: number, shop: ShopCapacity) => {
                 const monthData = shop.months[monthIdx + 1];
                 return sum + (monthData?.planned || 0) + (monthData?.draftUsage || 0);
               }, 0);
-              const monthCommitted = capacity.reduce((sum, shop) => {
+              const monthCommitted = capacity.reduce((sum: number, shop: ShopCapacity) => {
                 const monthData = shop.months[monthIdx + 1];
                 return sum + (monthData?.committed || 0);
               }, 0);
@@ -265,11 +265,11 @@ export default function CapacityHeatmap({
             <td
               className={`border border-steel-200 ${compact ? 'px-2 py-1' : 'px-3 py-2'} text-center font-semibold bg-steel-200`}
             >
-              {capacity.reduce((sum, shop) => {
+              {capacity.reduce((sum: number, shop: ShopCapacity) => {
                 return (
                   sum +
                   Object.values(shop.months).reduce(
-                    (m, data) => m + (data?.planned || 0) + (data?.draftUsage || 0),
+                    (m: number, data: ShopCapacityMonth) => m + (data?.planned || 0) + (data?.draftUsage || 0),
                     0
                   )
                 );

@@ -1,6 +1,10 @@
-import { ExclamationTriangleIcon, ClockIcon, CheckCircleIcon, CalendarIcon } from '@heroicons/react/24/outline';
+import { ExclamationTriangleIcon, ClockIcon, CheckCircleIcon, CalendarIcon, WrenchScrewdriverIcon, ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
 
-export type ShoppingStatus = 'urgent' | 'must_shop' | 'upcoming' | 'compliant' | 'unknown';
+// Import the canonical ShoppingStatus type from carFlow
+import type { ShoppingStatus } from '../../types/carFlow';
+
+// Re-export for backwards compatibility
+export type { ShoppingStatus };
 
 interface ShoppingStatusBadgeProps {
   status: ShoppingStatus;
@@ -16,40 +20,54 @@ const statusConfig: Record<ShoppingStatus, {
   borderColor: string;
   icon: typeof ExclamationTriangleIcon;
 }> = {
-  urgent: {
+  'Urgent': {
     label: 'URGENT',
     bgColor: 'bg-red-100',
     textColor: 'text-red-800',
     borderColor: 'border-red-300',
     icon: ExclamationTriangleIcon,
   },
-  must_shop: {
+  'Must Shop': {
     label: 'MUST SHOP',
     bgColor: 'bg-amber-100',
     textColor: 'text-amber-800',
     borderColor: 'border-amber-300',
     icon: ClockIcon,
   },
-  upcoming: {
+  'Upcoming': {
     label: 'UPCOMING',
     bgColor: 'bg-blue-100',
     textColor: 'text-blue-800',
     borderColor: 'border-blue-300',
     icon: CalendarIcon,
   },
-  compliant: {
+  'Compliant': {
     label: 'COMPLIANT',
     bgColor: 'bg-green-100',
     textColor: 'text-green-800',
     borderColor: 'border-green-300',
     icon: CheckCircleIcon,
   },
-  unknown: {
+  'Unknown': {
     label: 'N/A',
     bgColor: 'bg-steel-100',
     textColor: 'text-steel-600',
     borderColor: 'border-steel-300',
     icon: ClockIcon,
+  },
+  'In Shop': {
+    label: 'IN SHOP',
+    bgColor: 'bg-purple-100',
+    textColor: 'text-purple-800',
+    borderColor: 'border-purple-300',
+    icon: WrenchScrewdriverIcon,
+  },
+  'Planned': {
+    label: 'PLANNED',
+    bgColor: 'bg-indigo-100',
+    textColor: 'text-indigo-800',
+    borderColor: 'border-indigo-300',
+    icon: ClipboardDocumentCheckIcon,
   },
 };
 
@@ -104,7 +122,7 @@ export function getShoppingStatus(car: {
   ].filter(Boolean);
 
   if (qualDates.length === 0) {
-    return 'unknown';
+    return 'Unknown';
   }
 
   let hasUrgent = false;
@@ -128,11 +146,11 @@ export function getShoppingStatus(car: {
     }
   }
 
-  // Priority: urgent > must_shop > upcoming > compliant
-  if (hasUrgent) return 'urgent';
-  if (hasMustShop) return 'must_shop';
-  if (hasUpcoming) return 'upcoming';
-  return 'compliant';
+  // Priority: Urgent > Must Shop > Upcoming > Compliant
+  if (hasUrgent) return 'Urgent';
+  if (hasMustShop) return 'Must Shop';
+  if (hasUpcoming) return 'Upcoming';
+  return 'Compliant';
 }
 
 // Get the earliest qualification date that needs attention

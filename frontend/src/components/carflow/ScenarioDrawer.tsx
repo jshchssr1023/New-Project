@@ -65,7 +65,7 @@ export default function ScenarioDrawer({
   // Fetch scenarios
   const { data: scenarios = [], isLoading } = useQuery({
     queryKey: ['scenarios', statusFilter === 'all' ? undefined : statusFilter],
-    queryFn: () => scenarioApi.list(statusFilter === 'all' ? undefined : statusFilter),
+    queryFn: () => scenarioApi.list(statusFilter === 'all' ? undefined : { status: statusFilter }),
     enabled: isOpen,
   });
 

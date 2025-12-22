@@ -13,8 +13,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { useCars } from '../hooks/useCars';
 import { useCarSelection } from '../contexts/CarSelectionContext';
-import CarCard from '../components/cars/CarCard';
-import CarFilters from '../components/cars/CarFilters';
 import BulkActionsBar from '../components/cars/BulkActionsBar';
 import HierarchicalFilter from '../components/cars/HierarchicalFilter';
 import ShoppingStatusBadge, { getShoppingStatus } from '../components/cars/ShoppingStatusBadge';
@@ -235,10 +233,10 @@ export default function CarsPage() {
           <div className="p-4 border-t border-steel-200">
             <h3 className="text-sm font-semibold text-steel-900 mb-3">Shopping Status</h3>
             <div className="space-y-2">
-              <ShoppingStatusSummary cars={displayedCars} status="urgent" onClick={() => updateFilters({ shoppingStatus: 'urgent' })} isActive={filters.shoppingStatus === 'urgent'} />
-              <ShoppingStatusSummary cars={displayedCars} status="must_shop" onClick={() => updateFilters({ shoppingStatus: 'must_shop' })} isActive={filters.shoppingStatus === 'must_shop'} />
-              <ShoppingStatusSummary cars={displayedCars} status="upcoming" onClick={() => updateFilters({ shoppingStatus: 'upcoming' })} isActive={filters.shoppingStatus === 'upcoming'} />
-              <ShoppingStatusSummary cars={displayedCars} status="compliant" onClick={() => updateFilters({ shoppingStatus: 'compliant' })} isActive={filters.shoppingStatus === 'compliant'} />
+              <ShoppingStatusSummary cars={displayedCars} status="Urgent" onClick={() => updateFilters({ shoppingStatus: 'Urgent' })} isActive={filters.shoppingStatus === 'Urgent'} />
+              <ShoppingStatusSummary cars={displayedCars} status="Must Shop" onClick={() => updateFilters({ shoppingStatus: 'Must Shop' })} isActive={filters.shoppingStatus === 'Must Shop'} />
+              <ShoppingStatusSummary cars={displayedCars} status="Upcoming" onClick={() => updateFilters({ shoppingStatus: 'Upcoming' })} isActive={filters.shoppingStatus === 'Upcoming'} />
+              <ShoppingStatusSummary cars={displayedCars} status="Compliant" onClick={() => updateFilters({ shoppingStatus: 'Compliant' })} isActive={filters.shoppingStatus === 'Compliant'} />
             </div>
           </div>
         </div>
@@ -368,15 +366,15 @@ export default function CarsPage() {
               <Slicer
                 label="Reason"
                 options={REASON_OPTIONS.map(r => ({ value: r, label: r }))}
-                value={filters.reasonShopped || ''}
-                onChange={(v) => updateFilters({ reasonShopped: v as string })}
+                value={filters.reasonsShopped || ''}
+                onChange={(v) => updateFilters({ reasonsShopped: v as string })}
                 placeholder="All"
                 size="sm"
               />
             </SlicerBar>
 
             {/* Clear Filters */}
-            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonShopped) && (
+            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonsShopped) && (
               <button
                 onClick={handleClearAllFilters}
                 className="text-sm text-crimson-600 hover:text-crimson-700 font-medium"
@@ -551,24 +549,24 @@ function ShoppingStatusSummary({
   isActive,
 }: {
   cars: Car[];
-  status: 'urgent' | 'must_shop' | 'upcoming' | 'compliant';
+  status: 'Urgent' | 'Must Shop' | 'Upcoming' | 'Compliant';
   onClick: () => void;
   isActive: boolean;
 }) {
   const count = cars.filter(car => getShoppingStatus(car as any) === status).length;
 
-  const labels = {
-    urgent: 'Urgent (Prior Year)',
-    must_shop: 'Must Shop This Year',
-    upcoming: 'Upcoming (Next Year)',
-    compliant: 'Compliant',
+  const labels: Record<string, string> = {
+    'Urgent': 'Urgent (Prior Year)',
+    'Must Shop': 'Must Shop This Year',
+    'Upcoming': 'Upcoming (Next Year)',
+    'Compliant': 'Compliant',
   };
 
-  const colors = {
-    urgent: 'bg-red-100 text-red-700 border-red-200',
-    must_shop: 'bg-amber-100 text-amber-700 border-amber-200',
-    upcoming: 'bg-blue-100 text-blue-700 border-blue-200',
-    compliant: 'bg-green-100 text-green-700 border-green-200',
+  const colors: Record<string, string> = {
+    'Urgent': 'bg-red-100 text-red-700 border-red-200',
+    'Must Shop': 'bg-amber-100 text-amber-700 border-amber-200',
+    'Upcoming': 'bg-blue-100 text-blue-700 border-blue-200',
+    'Compliant': 'bg-green-100 text-green-700 border-green-200',
   };
 
   return (

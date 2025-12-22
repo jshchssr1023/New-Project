@@ -418,7 +418,6 @@ export default function PlanCarsModal({
                             setSelectedShopId(shopId);
                             setSelectedMonth(month);
                           }}
-                          showCapacityNumbers
                         />
                       </div>
                     </div>

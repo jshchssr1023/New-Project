@@ -125,7 +125,7 @@ export default function CarCard({ car, isSelected, onSelect, onViewDetails }: Ca
             Qualification Status
           </span>
           {earliestQual && (
-            <span className={`text-xs ${shoppingStatus === 'urgent' ? 'text-red-600 font-semibold' : shoppingStatus === 'must_shop' ? 'text-amber-600 font-medium' : 'text-steel-500'}`}>
+            <span className={`text-xs ${shoppingStatus === 'Urgent' ? 'text-red-600 font-semibold' : shoppingStatus === 'Must Shop' ? 'text-amber-600 font-medium' : 'text-steel-500'}`}>
               Next: {earliestQual.field} ({formatDate(earliestQual.date.toISOString())})
             </span>
           )}
