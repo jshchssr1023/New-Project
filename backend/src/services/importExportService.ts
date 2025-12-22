@@ -10,6 +10,11 @@ import {
   analyzeHeaders,
   transformCarRecord,
 } from '../utils/importTransformers';
+import {
+  CSV_SHOP_COLUMN_MAPPING,
+  resolveShopCodeFromCSVColumn,
+  getNetworkForShopCode,
+} from '../constants/shopNetworks';
 
 // =============================================================================
 // INTERFACES
@@ -219,19 +224,105 @@ export async function importCars(
   // Get existing shops for assignment matching
   const existingShops = await prisma.shop.findMany({
     where: { companyId, isActive: true },
-    select: { id: true, name: true, code: true, location: true },
+    select: { id: true, name: true, code: true, location: true, city: true, state: true },
   });
 
-  // Build shop lookup map by name pattern
+  // Build comprehensive shop lookup map with multiple matching strategies
   const shopLookup = new Map<string, string>();
+  const shopLookupByCity = new Map<string, string>();
+  const shopLookupByCode = new Map<string, string>();
+
   for (const shop of existingShops) {
-    // Add multiple lookup keys for flexible matching
-    shopLookup.set(shop.name.toLowerCase(), shop.id);
-    shopLookup.set(shop.code.toLowerCase(), shop.id);
+    // Primary lookups
+    shopLookup.set(shop.name.toLowerCase().trim(), shop.id);
+    shopLookup.set(shop.code.toLowerCase().trim(), shop.id);
+
+    // By code (separate map for CSV column resolution)
+    shopLookupByCode.set(shop.code.toLowerCase().trim(), shop.id);
+
+    // With location
     if (shop.location) {
-      shopLookup.set(`${shop.name} (${shop.location})`.toLowerCase(), shop.id);
+      shopLookup.set(`${shop.name} (${shop.location})`.toLowerCase().trim(), shop.id);
+      shopLookup.set(shop.location.toLowerCase().trim(), shop.id);
+    }
+
+    // By city (for partial matching)
+    if (shop.city) {
+      shopLookupByCity.set(shop.city.toLowerCase().trim(), shop.id);
+    }
+
+    // Normalized versions (remove special chars)
+    const normalizedName = shop.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    shopLookup.set(normalizedName, shop.id);
+  }
+
+  // Add CSV column mappings to shop lookup
+  for (const [csvColumn, shopCode] of Object.entries(CSV_SHOP_COLUMN_MAPPING)) {
+    const shopId = shopLookupByCode.get(shopCode.toLowerCase());
+    if (shopId) {
+      shopLookup.set(csvColumn.toLowerCase().trim(), shopId);
+      // Also add normalized version
+      shopLookup.set(csvColumn.toLowerCase().replace(/\s+/g, ' ').trim(), shopId);
     }
   }
+
+  /**
+   * Enhanced shop matching function with fuzzy matching support
+   */
+  const findShopId = (shopName: string, shopLocation?: string, csvColumnHeader?: string): string | null => {
+    // Strategy 1: Direct CSV column header mapping
+    if (csvColumnHeader) {
+      const shopCode = resolveShopCodeFromCSVColumn(csvColumnHeader);
+      if (shopCode) {
+        const shopId = shopLookupByCode.get(shopCode.toLowerCase());
+        if (shopId) return shopId;
+      }
+      // Try direct lookup of CSV column header
+      const directMatch = shopLookup.get(csvColumnHeader.toLowerCase().trim());
+      if (directMatch) return directMatch;
+    }
+
+    // Strategy 2: Full name with location
+    if (shopLocation) {
+      const fullKey = `${shopName} (${shopLocation})`.toLowerCase().trim();
+      const shopId = shopLookup.get(fullKey);
+      if (shopId) return shopId;
+    }
+
+    // Strategy 3: Shop name only
+    const nameMatch = shopLookup.get(shopName.toLowerCase().trim());
+    if (nameMatch) return nameMatch;
+
+    // Strategy 4: Location/city only
+    if (shopLocation) {
+      const locationMatch = shopLookup.get(shopLocation.toLowerCase().trim());
+      if (locationMatch) return locationMatch;
+      const cityMatch = shopLookupByCity.get(shopLocation.toLowerCase().trim());
+      if (cityMatch) return cityMatch;
+    }
+
+    // Strategy 5: Normalized name (remove special chars)
+    const normalizedName = shopName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizedMatch = shopLookup.get(normalizedName);
+    if (normalizedMatch) return normalizedMatch;
+
+    // Strategy 6: Partial match - check if shop name contains or is contained by any key
+    for (const [key, shopId] of shopLookup.entries()) {
+      if (key.includes(shopName.toLowerCase()) || shopName.toLowerCase().includes(key)) {
+        return shopId;
+      }
+    }
+
+    // Strategy 7: Extract city from parentheses and try city match
+    const cityMatch = shopName.match(/\(([^)]+)\)$/);
+    if (cityMatch) {
+      const extractedCity = cityMatch[1].toLowerCase().trim();
+      const cityShopId = shopLookupByCity.get(extractedCity);
+      if (cityShopId) return cityShopId;
+    }
+
+    return null;
+  };
 
   for (let i = 0; i < objects.length; i++) {
     // Pass headers to transformCarRecord for shop column extraction
@@ -341,16 +432,12 @@ export async function importCars(
         for (const assignment of result.shopAssignments) {
           shopAssignmentsProcessed++;
 
-          // Try to find the shop
-          const shopKey = assignment.shopLocation
-            ? `${assignment.shopName} (${assignment.shopLocation})`.toLowerCase()
-            : assignment.shopName.toLowerCase();
-
-          let shopId = shopLookup.get(shopKey);
-          if (!shopId) {
-            // Try just the shop name
-            shopId = shopLookup.get(assignment.shopName.toLowerCase());
-          }
+          // Use enhanced shop matching with CSV column header
+          const shopId = findShopId(
+            assignment.shopName,
+            assignment.shopLocation,
+            assignment.csvColumnHeader
+          );
 
           if (shopId && carId !== 'dry-run-id') {
             // Parse month and year from scheduledMonth (YYYY-MM format)

@@ -28,11 +28,17 @@ import {
   UserGroupIcon,
   BuildingOffice2Icon,
   MapPinIcon,
+  ClipboardDocumentListIcon,
+  CubeIcon,
+  ArrowTrendingUpIcon,
 } from '@heroicons/react/24/outline';
 import { analyticsApi, carsApi, shopsApi } from '../services/api';
 import type { AnalyticsData, Car, Shop } from '../types';
 import { useCarUpdates, useDashboardUpdates } from '../contexts/WebSocketContext';
 import { useActiveMasterPlan, useMasterPlanSummary } from '../hooks/useQueryWithCompany';
+import { sopApi } from '../services/sopApi';
+import type { DemandRegister } from '../types/sop';
+import { ALL_NETWORKS, getSystemTotalCapacity } from '../constants/shopNetworks';
 
 const DAYS_IN_SHOP_THRESHOLD = 10;
 
@@ -63,6 +69,11 @@ export default function Dashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const navigate = useNavigate();
 
+  // S&OP Dashboard state
+  const [demandRegister, setDemandRegister] = useState<DemandRegister | null>(null);
+  const [sopLoading, setSopLoading] = useState(true);
+  const [sopError, setSopError] = useState<string | null>(null);
+
   // Dashboard filters state
   const [filters, setFilters] = useState<DashboardFilters>({
     year: currentYear,
@@ -92,9 +103,34 @@ export default function Dashboard() {
       const data = await analyticsApi.getDashboard();
       setAnalytics(data);
       loadMonthlyShoppings();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load analytics:', err);
-      setError('Failed to load dashboard data. Please try refreshing the page.');
+      // Check if we have partial data from the error response
+      const errorResponse = err as { response?: { data?: { partialData?: AnalyticsData; error?: string } } };
+      if (errorResponse?.response?.data?.partialData) {
+        setAnalytics(errorResponse.response.data.partialData);
+        setError(`Dashboard loaded with limited data: ${errorResponse.response.data.error || 'Some data unavailable'}`);
+      } else {
+        // Set default analytics data so the page still renders
+        setAnalytics({
+          totalCars: 0,
+          totalShops: 0,
+          activePlans: 0,
+          carsInService: 0,
+          carsInQueue: 0,
+          totalCarsInShop: 0,
+          shopsWithCars: 0,
+          activeScenarios: 0,
+          monthlyServiceCounts: [],
+          shopPerformance: [],
+          costBreakdown: [],
+          upcomingServices: [],
+          myQueue: [],
+          inShopStatus: [],
+          alerts: { overdueCars: 0, capacityAlerts: [], hasAlerts: false },
+        });
+        setError('Failed to load dashboard data. Please try refreshing the page. The S&OP section below may still show data.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -201,12 +237,28 @@ export default function Dashboard() {
     }
   };
 
+  // Load S&OP demand register data
+  const loadSOPData = useCallback(async () => {
+    try {
+      setSopError(null);
+      setSopLoading(true);
+      const register = await sopApi.demandRegistry.getDemandRegister(currentYear, true);
+      setDemandRegister(register);
+    } catch (err) {
+      console.error('Failed to load S&OP data:', err);
+      setSopError('Failed to load S&OP planning data.');
+    } finally {
+      setSopLoading(false);
+    }
+  }, [currentYear]);
+
   // Initial load
   useEffect(() => {
     loadAnalytics();
     loadShops();
     loadCustomers();
-  }, [loadAnalytics]);
+    loadSOPData();
+  }, [loadAnalytics, loadSOPData]);
 
   // Reload data when filters change
   useEffect(() => {
@@ -659,6 +711,173 @@ export default function Dashboard() {
             </div>
           </button>
         ))}
+      </div>
+
+      {/* S&OP Planning Summary Section */}
+      <div className="card p-4 border-l-4 border-l-indigo-500">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-100 rounded-lg p-2">
+              <ClipboardDocumentListIcon className="h-5 w-5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-steel-900">S&OP Planning Summary</h3>
+              <p className="text-xs text-steel-500">Cars planned vs not planned for {currentYear}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/sop-review')}
+            className="flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+          >
+            View Full S&OP Dashboard
+            <ChevronRightIcon className="h-4 w-4" />
+          </button>
+        </div>
+
+        {sopLoading ? (
+          <div className="flex justify-center py-6">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+          </div>
+        ) : sopError ? (
+          <div className="text-center py-4 text-sm text-red-600">
+            {sopError}
+            <button onClick={loadSOPData} className="ml-2 text-indigo-600 hover:underline">
+              Retry
+            </button>
+          </div>
+        ) : demandRegister ? (
+          <>
+            {/* Planning Status Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div
+                className="bg-red-50 border border-red-200 rounded-lg p-3 cursor-pointer hover:bg-red-100 transition-colors"
+                onClick={() => navigate('/demand-registry?filter=not_planned')}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <ExclamationTriangleIcon className="h-4 w-4 text-red-600" />
+                  <span className="text-xs font-medium text-red-700">Not Planned</span>
+                </div>
+                <p className="text-2xl font-bold text-red-900">{demandRegister.totalNotPlanned}</p>
+                <p className="text-xs text-red-600">Cars need scheduling</p>
+              </div>
+
+              <div
+                className="bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer hover:bg-amber-100 transition-colors"
+                onClick={() => navigate('/demand-registry?filter=overdue')}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <ClockIcon className="h-4 w-4 text-amber-600" />
+                  <span className="text-xs font-medium text-amber-700">Overdue</span>
+                </div>
+                <p className="text-2xl font-bold text-amber-900">{demandRegister.totalOverdue}</p>
+                <p className="text-xs text-amber-600">Past due date</p>
+              </div>
+
+              <div
+                className="bg-blue-50 border border-blue-200 rounded-lg p-3 cursor-pointer hover:bg-blue-100 transition-colors"
+                onClick={() => navigate('/demand-registry?filter=planned')}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <CubeIcon className="h-4 w-4 text-blue-600" />
+                  <span className="text-xs font-medium text-blue-700">Planned</span>
+                </div>
+                <p className="text-2xl font-bold text-blue-900">{demandRegister.totalPlanned}</p>
+                <p className="text-xs text-blue-600">Tentatively assigned</p>
+              </div>
+
+              <div
+                className="bg-green-50 border border-green-200 rounded-lg p-3 cursor-pointer hover:bg-green-100 transition-colors"
+                onClick={() => navigate('/demand-registry?filter=scheduled')}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircleIcon className="h-4 w-4 text-green-600" />
+                  <span className="text-xs font-medium text-green-700">Scheduled</span>
+                </div>
+                <p className="text-2xl font-bold text-green-900">{demandRegister.totalScheduled}</p>
+                <p className="text-xs text-green-600">Confirmed for shop</p>
+              </div>
+            </div>
+
+            {/* Demand by Work Type */}
+            {demandRegister.summaries && demandRegister.summaries.length > 0 && (
+              <div className="border-t border-steel-100 pt-4 mb-4">
+                <h4 className="text-sm font-medium text-steel-700 mb-3">Demand by Work Type</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {demandRegister.summaries.map((summary) => (
+                    <div key={summary.workType} className="bg-steel-50 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-steel-700">{summary.label}</span>
+                        <span className="text-lg font-bold text-steel-900">{summary.total}</span>
+                      </div>
+                      <div className="mt-2 flex gap-2 text-xs">
+                        <span className="text-red-600">{summary.notPlanned} not planned</span>
+                        <span className="text-steel-400">|</span>
+                        <span className="text-red-600">{summary.overdue} overdue</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* System Capacity Overview */}
+            {(() => {
+              const capacity = getSystemTotalCapacity();
+              const totalDemand = demandRegister.items.length;
+              const utilization = capacity.annual > 0 ? (totalDemand / capacity.annual) * 100 : 0;
+              return (
+                <div className="border-t border-steel-100 pt-4">
+                  <h4 className="text-sm font-medium text-steel-700 mb-3 flex items-center gap-2">
+                    <ArrowTrendingUpIcon className="h-4 w-4" />
+                    System Capacity Overview
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="text-center">
+                      <p className="text-xs text-steel-500">Total Demand</p>
+                      <p className="text-lg font-bold text-steel-900">{totalDemand}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-steel-500">Annual Capacity</p>
+                      <p className="text-lg font-bold text-steel-900">{capacity.annual.toLocaleString()}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-steel-500">Utilization</p>
+                      <p className={`text-lg font-bold ${utilization > 90 ? 'text-red-600' : utilization > 70 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {utilization.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-steel-500">AITX / 3P Split</p>
+                      <p className="text-lg font-bold text-steel-900">{capacity.aitxPercent}% / {capacity.thirdPartyPercent}%</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Quick Links */}
+            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-steel-100">
+              <button
+                onClick={() => navigate('/demand-registry')}
+                className="btn-secondary text-xs"
+              >
+                Demand Registry
+              </button>
+              <button
+                onClick={() => navigate('/sop-capacity')}
+                className="btn-secondary text-xs"
+              >
+                Supply Capacity
+              </button>
+              <button
+                onClick={() => navigate('/car-flow')}
+                className="btn-secondary text-xs"
+              >
+                Car Flow Planning
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {/* Team View Results (shown when team filter is active) */}

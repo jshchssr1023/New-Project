@@ -219,7 +219,30 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Get dashboard error:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    // Return partial data with error flag so dashboard can still show something
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({
+      message: 'Internal server error',
+      error: errorMessage,
+      // Return safe defaults so dashboard doesn't completely break
+      partialData: {
+        totalCars: 0,
+        totalShops: 0,
+        activePlans: 0,
+        carsInService: 0,
+        carsInQueue: 0,
+        totalCarsInShop: 0,
+        shopsWithCars: 0,
+        activeScenarios: 0,
+        monthlyServiceCounts: [],
+        shopPerformance: [],
+        costBreakdown: [],
+        upcomingServices: [],
+        myQueue: [],
+        inShopStatus: [],
+        alerts: { overdueCars: 0, capacityAlerts: [], hasAlerts: false },
+      }
+    });
   }
 });
 
