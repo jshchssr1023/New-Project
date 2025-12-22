@@ -56,19 +56,31 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       take: 10,
     });
 
-    // Get "In Shop Status" - cars currently in service or in shop
+    // Get "In Shop Status" - cars currently in service or arrived at shop
+    // Include various status formats: 'Arrived' (from CSV), 'arrived', 'in_shop', 'in_service'
     const inShopCars = await prisma.car.findMany({
       where: {
         companyId,
-        status: { in: ['in_service', 'in_shop'] },
+        OR: [
+          { status: { in: ['Arrived', 'arrived', 'in_service', 'in_shop', 'In Shop'] } },
+          // Also check if car has an active CarFlowPlan with 'In Progress' status
+          { carFlowPlan: { status: 'In Progress' } },
+        ],
       },
       include: {
         assignedShop: {
           select: { name: true, code: true },
         },
+        carFlowPlan: {
+          include: {
+            shop: {
+              select: { name: true, code: true },
+            },
+          },
+        },
       },
       orderBy: { daysInShop: 'desc' },
-      take: 10,
+      take: 20,
     });
 
     // Get overdue cars (nextServiceDue in the past and still available)
@@ -201,16 +213,34 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
           ? Math.ceil((new Date(car.nextServiceDue).getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24))
           : null,
       })),
-      inShopStatus: inShopCars.map(car => ({
-        id: car.id,
-        railcarNumber: car.railcarNumber || car.vehicleNumber,
-        customer: car.customer,
-        status: car.status,
-        shopName: car.assignedShop?.name || 'Unknown',
-        shopCode: car.assignedShop?.code || '',
-        daysInShop: car.daysInShop,
-        shopEntryDate: car.shopEntryDate,
-      })),
+      inShopStatus: inShopCars.map((car: any) => {
+        // Prefer CarFlowPlan shop over assignedShop (carFlowPlan is the active commitment)
+        const shopName = car.carFlowPlan?.shop?.name || car.assignedShop?.name || 'Unknown';
+        const shopCode = car.carFlowPlan?.shop?.code || car.assignedShop?.code || '';
+
+        // Calculate days in shop if not set
+        let daysInShop = car.daysInShop || 0;
+        if (!daysInShop && car.shopEntryDate) {
+          const entryDate = new Date(car.shopEntryDate);
+          const now = new Date();
+          daysInShop = Math.floor((now.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+        } else if (!daysInShop && car.arrivalDate) {
+          const entryDate = new Date(car.arrivalDate);
+          const now = new Date();
+          daysInShop = Math.floor((now.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+        }
+
+        return {
+          id: car.id,
+          railcarNumber: car.railcarNumber || car.vehicleNumber,
+          customer: car.customer,
+          status: car.status,
+          shopName,
+          shopCode,
+          daysInShop,
+          shopEntryDate: car.shopEntryDate || car.arrivalDate,
+        };
+      }),
       alerts: {
         overdueCars,
         capacityAlerts,
