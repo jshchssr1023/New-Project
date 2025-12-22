@@ -558,7 +558,38 @@ export default function ShopManagement() {
           case 'isaitxinternal':
           case 'aitxinternal':
           case 'internal':
+          case 'isaitxshop':
             shop.isAitxInternal = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'aitx';
+            break;
+          case 'shopstatus':
+            // Map shop status to isActive
+            shop.isActive = value.toLowerCase() !== 'inactive' && value.toLowerCase() !== 'closed';
+            break;
+          case 'address1':
+          case 'address':
+          case 'location':
+            shop.location = value;
+            break;
+          case 'scac':
+          case 'splc':
+            // Store railroad code
+            if (!shop.servingRailroad) shop.servingRailroad = value;
+            break;
+          case 'email':
+            shop.contactEmail = value;
+            break;
+          case 'phone':
+            shop.contactPhone = value;
+            break;
+          case 'comment':
+            shop.notes = value;
+            break;
+          case 'certifcationclass':
+          case 'certificationclass':
+            // Store certifications
+            if (value) {
+              shop.certifications = value;
+            }
             break;
           case 'networktier':
           case 'tier':
