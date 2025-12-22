@@ -493,7 +493,8 @@ export default function ShopManagement() {
     const lines = csvText.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+    // Normalize headers: lowercase, remove spaces/underscores/dashes
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[\s_-]+/g, ''));
     const shops: Partial<Shop>[] = [];
 
     for (let i = 1; i < lines.length; i++) {
@@ -502,74 +503,100 @@ export default function ShopManagement() {
 
       headers.forEach((header, index) => {
         const value = values[index] || '';
-        // Map common CSV headers to shop fields
+        // Map common CSV headers to shop fields (headers are normalized: lowercase, no spaces/underscores)
         switch (header) {
-          case 'shop_code':
+          case 'shopcode':
           case 'code':
+          case 'id':
+          case 'shopid':
             shop.code = value;
             break;
-          case 'shop_name':
+          case 'shopname':
           case 'name':
+          case 'shopnamedisplay':
+          case 'displayname':
             shop.name = value;
             break;
           case 'region':
             shop.region = value;
             break;
           case 'network':
+          case 'shopnetwork':
             shop.network = value;
             break;
           case 'city':
             shop.city = value;
             break;
           case 'state':
+          case 'st':
             shop.state = value;
             break;
+          case 'latitude':
+          case 'lat':
+            const lat = parseFloat(value);
+            if (!isNaN(lat) && lat >= -90 && lat <= 90) {
+              shop.latitude = lat;
+            }
+            break;
+          case 'longitude':
+          case 'lon':
+          case 'lng':
+          case 'long':
+            const lon = parseFloat(value);
+            if (!isNaN(lon) && lon >= -180 && lon <= 180) {
+              shop.longitude = lon;
+            }
+            break;
           case 'capacity':
-          case 'monthly_capacity':
+          case 'monthlycapacity':
             shop.capacity = parseInt(value) || 10;
             break;
-          case 'tank_qualified':
           case 'tankqualified':
+          case 'tankqual':
             shop.tankQualified = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
             break;
-          case 'is_aitx_internal':
-          case 'aitx_internal':
-            shop.isAitxInternal = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes';
+          case 'isaitxinternal':
+          case 'aitxinternal':
+          case 'internal':
+            shop.isAitxInternal = value.toLowerCase() === 'true' || value === '1' || value.toLowerCase() === 'yes' || value.toLowerCase() === 'aitx';
             break;
-          case 'network_tier':
+          case 'networktier':
+          case 'tier':
             shop.networkTier = parseInt(value) || 5;
             break;
-          case 'serving_railroad':
+          case 'servingrailroad':
           case 'railroad':
+          case 'rr':
             shop.servingRailroad = value;
             break;
-          case 'base_cost':
-          case 'base_cost_per_car':
+          case 'basecost':
+          case 'basecostpercar':
+          case 'costpercar':
             shop.baseCostPerCar = parseFloat(value) || 15000;
             break;
-          case 'labor_rate':
+          case 'laborrate':
             shop.laborRate = parseFloat(value) || 75;
             break;
-          case 'cost_index':
+          case 'costindex':
             shop.costIndex = parseFloat(value) || 1.0;
             break;
-          case 'base_turn_time':
-          case 'turn_time':
+          case 'baseturntime':
+          case 'turntime':
             shop.baseTurnTime = parseInt(value) || 14;
             break;
-          case 'contact_name':
+          case 'contactname':
             shop.contactName = value;
             break;
-          case 'contact_email':
+          case 'contactemail':
             shop.contactEmail = value;
             break;
-          case 'contact_phone':
+          case 'contactphone':
             shop.contactPhone = value;
             break;
           case 'notes':
             shop.notes = value;
             break;
-          case 'is_active':
+          case 'isactive':
           case 'active':
             shop.isActive = value.toLowerCase() !== 'false' && value !== '0' && value.toLowerCase() !== 'no';
             break;
