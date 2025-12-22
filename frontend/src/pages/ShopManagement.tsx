@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon, Squares2X2Icon, MagnifyingGlassIcon, TruckIcon, CalendarDaysIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, EyeIcon, XMarkIcon, CheckCircleIcon, ExclamationTriangleIcon, XCircleIcon, ListBulletIcon, BuildingOffice2Icon, ChevronDownIcon, ChevronRightIcon, Squares2X2Icon, MagnifyingGlassIcon, TruckIcon, CalendarDaysIcon, Cog6ToothIcon, MapPinIcon } from '@heroicons/react/24/outline';
+import ShopMap from '../components/shops/ShopMap';
 import { shopsApi } from '../services/api';
 import { capacityApi, carFlowPlanApi } from '../services/carFlowApi';
 import { Slicer, SlicerBar, ShopCard, ShopCardGrid } from '../components/ui';
@@ -7,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { Shop } from '../types';
 import type { CarFlowPlan } from '../types/carFlow';
 
-type ViewMode = 'cards' | 'list' | 'network';
+type ViewMode = 'cards' | 'list' | 'network' | 'map';
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
 const certificationOptions = ['DOT', 'AAR', 'FRA', 'TC (Transport Canada)', 'Hazmat'];
 const regions = ['Northeast', 'Southeast', 'Midwest', 'Southwest', 'West', 'Canada'];
@@ -774,6 +775,13 @@ export default function ShopManagement() {
                 <BuildingOffice2Icon className="h-4 w-4 mr-1" />
                 Network
               </button>
+              <button
+                onClick={() => setViewMode('map')}
+                className={`px-3 py-1.5 text-sm flex items-center ${viewMode === 'map' ? 'bg-crimson-600 text-white' : 'bg-white text-steel-700 hover:bg-steel-50'}`}
+              >
+                <MapPinIcon className="h-4 w-4 mr-1" />
+                Map
+              </button>
             </div>
           </div>
           <span className="text-sm text-steel-500">
@@ -781,7 +789,9 @@ export default function ShopManagement() {
               ? `${filteredShopsForCards.length} shops`
               : viewMode === 'list'
                 ? `${shops.length} shops`
-                : `${filteredNetworkGroups.length} networks, ${shops.length} shops`}
+                : viewMode === 'map'
+                  ? `${shops.filter(s => s.latitude && s.longitude).length} shops with locations`
+                  : `${filteredNetworkGroups.length} networks, ${shops.length} shops`}
           </span>
         </div>
 
@@ -1035,6 +1045,34 @@ export default function ShopManagement() {
             <div className="card text-center py-8">
               <p className="text-steel-500">No networks match your filters</p>
             </div>
+          )}
+        </div>
+      ) : viewMode === 'map' ? (
+        /* Map View */
+        <div className="card p-0 overflow-hidden" style={{ height: '600px' }}>
+          {shops.filter(s => s.latitude && s.longitude).length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <MapPinIcon className="h-12 w-12 text-steel-300 mx-auto mb-3" />
+                <p className="text-steel-500">No shops have location data</p>
+                <p className="text-sm text-steel-400 mt-1">Add latitude/longitude to shops to see them on the map</p>
+              </div>
+            </div>
+          ) : (
+            <ShopMap
+              shops={shops.filter(s =>
+                (!activeFilter || (activeFilter === 'active' ? s.isActive : !s.isActive)) &&
+                (!networkFilter || s.parentShopId === networkFilter) &&
+                (!searchQuery ||
+                  s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  s.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  s.city?.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+              )}
+              onShopClick={(shop) => handleViewShop(shop)}
+              height="100%"
+              showControls={true}
+            />
           )}
         </div>
       ) : (
