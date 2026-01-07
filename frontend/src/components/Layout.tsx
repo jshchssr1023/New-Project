@@ -30,7 +30,7 @@ import NotificationBell from './NotificationBell';
 
 // Operations & Planning - Core scheduling/logistics functions
 const operationsNavigation = [
-  { name: 'Dashboard', href: '/', icon: HomeIcon },
+  { name: 'Scheduling Master', href: '/', icon: HomeIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon },
   { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: '3P Networks', href: '/shop-networks', icon: BuildingOffice2Icon },
