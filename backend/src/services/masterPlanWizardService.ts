@@ -22,7 +22,7 @@ export interface WeeklyCapacityInput {
   weekStartDate: Date;
   qualCapacity?: number;
   assignCapacity?: number;
-  returnCapacity?: number;
+  releaseCapacity?: number;
   repairCapacity?: number;
 }
 
@@ -150,7 +150,7 @@ export async function getOrCreateWeeklyCapacity(
         weekStartDate: getWeekStartDate(weekKey),
         qualCapacity: Math.ceil((shop.qualCapacity || 0) / 4),
         assignCapacity: Math.ceil((shop.assignCapacity || 0) / 4),
-        returnCapacity: Math.ceil((shop.returnCapacity || 0) / 4),
+        releaseCapacity: Math.ceil((shop.releaseCapacity || 0) / 4),
         repairCapacity: Math.ceil((shop.repairCapacity || 0) / 4),
         totalCapacity: Math.ceil((shop.capacity || 0) / 4),
         companyId,
@@ -240,7 +240,7 @@ export async function updateWeeklyCapacity(
             ? input.newValue
             : current.qualCapacity +
               current.assignCapacity +
-              current.returnCapacity +
+              current.releaseCapacity +
               current.repairCapacity -
               previousValue +
               input.newValue,

@@ -123,7 +123,7 @@ const SHOP_FIELDS = {
     'laborRate', 'costIndex', 'baseTurnTime', 'turnTimeMultiplier',
     'capabilities', 'certifications', 'preferredCustomers',
     'contactName', 'contactEmail', 'contactPhone', 'notes', 'isActive',
-    'qualCapacity', 'assignCapacity', 'returnCapacity', 'repairCapacity',
+    'qualCapacity', 'assignCapacity', 'releaseCapacity', 'repairCapacity',
     'efficiencyRating'
   ],
   aliases: {
@@ -161,7 +161,7 @@ const SHOP_FIELDS = {
     'qualification_capacity': 'qualCapacity',
     'assign_capacity': 'assignCapacity',
     'assignment_capacity': 'assignCapacity',
-    'return_capacity': 'returnCapacity',
+    'release_capacity': 'releaseCapacity',
     'repair_capacity': 'repairCapacity',
     'efficiency': 'efficiencyRating',
   },
@@ -170,7 +170,7 @@ const SHOP_FIELDS = {
 const CAPACITY_FIELDS = {
   required: ['shopCode', 'weekKey'],
   optional: [
-    'qualCapacity', 'assignCapacity', 'returnCapacity', 'repairCapacity',
+    'qualCapacity', 'assignCapacity', 'releaseCapacity', 'repairCapacity',
     'totalCapacity', 'notes'
   ],
   aliases: {
@@ -182,7 +182,7 @@ const CAPACITY_FIELDS = {
     'qualification_capacity': 'qualCapacity',
     'assign_capacity': 'assignCapacity',
     'assignment_capacity': 'assignCapacity',
-    'return_capacity': 'returnCapacity',
+    'release_capacity': 'releaseCapacity',
     'repair_capacity': 'repairCapacity',
     'total_capacity': 'totalCapacity',
     'total': 'totalCapacity',
@@ -878,7 +878,7 @@ async function importCapacity(
           data: {
             qualCapacity: (capacityData.qualCapacity as number) || existing.qualCapacity,
             assignCapacity: (capacityData.assignCapacity as number) || existing.assignCapacity,
-            returnCapacity: (capacityData.returnCapacity as number) || existing.returnCapacity,
+            releaseCapacity: (capacityData.releaseCapacity as number) || existing.releaseCapacity,
             repairCapacity: (capacityData.repairCapacity as number) || existing.repairCapacity,
             totalCapacity: (capacityData.totalCapacity as number) || existing.totalCapacity,
             notes: (capacityData.notes as string) || existing.notes,
@@ -897,7 +897,7 @@ async function importCapacity(
             weekStartDate: weekStart,
             qualCapacity: (capacityData.qualCapacity as number) || 0,
             assignCapacity: (capacityData.assignCapacity as number) || 0,
-            returnCapacity: (capacityData.returnCapacity as number) || 0,
+            releaseCapacity: (capacityData.releaseCapacity as number) || 0,
             repairCapacity: (capacityData.repairCapacity as number) || 0,
             totalCapacity: (capacityData.totalCapacity as number) || 0,
             notes: (capacityData.notes as string) || '',
@@ -949,7 +949,7 @@ function transformValue(fieldName: string, value: unknown): unknown {
     'projectedCost', 'buildYear', 'capacity', 'currentLoad', 'networkTier',
     'utilizationTarget', 'baseCostPerCar', 'laborRate', 'costIndex',
     'baseTurnTime', 'turnTimeMultiplier', 'qualCapacity', 'assignCapacity',
-    'returnCapacity', 'repairCapacity', 'efficiencyRating', 'totalCapacity',
+    'releaseCapacity', 'repairCapacity', 'efficiencyRating', 'totalCapacity',
   ];
   if (numberFields.includes(fieldName)) {
     const num = parseFloat(strValue);

@@ -63,7 +63,7 @@ interface Shop {
   location: string;
   qualCapacity: number;
   assignCapacity: number;
-  returnCapacity: number;
+  releaseCapacity: number;
   repairCapacity: number;
   efficiencyRating: number;
   isActive: boolean;

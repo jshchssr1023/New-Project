@@ -43,7 +43,7 @@ interface Shop {
   capacity: number;
   qualCapacity: number;
   assignCapacity: number;
-  returnCapacity: number;
+  releaseCapacity: number;
   repairCapacity: number;
   efficiencyRating: number;
   capabilities: string;
@@ -117,7 +117,7 @@ function mapShopToCapacity(shop: Shop): ShopCapacity {
     location: shop.location,
     qualCapacity: shop.qualCapacity,
     assignCapacity: shop.assignCapacity,
-    returnCapacity: shop.returnCapacity,
+    releaseCapacity: shop.releaseCapacity,
     repairCapacity: shop.repairCapacity,
     supportedCarTypes: shop.capabilities ? JSON.parse(shop.capabilities) : Object.values(CarType),
     isActive: shop.isActive,
@@ -335,7 +335,7 @@ export class PrismaPlanningDataStore {
         capacity.monthlySlots[slot.monthKey] = {
           qualification: shop.qualCapacity,
           assignment: shop.assignCapacity,
-          return: shop.returnCapacity,
+          release: shop.releaseCapacity,
           repair: shop.repairCapacity,
           total: shop.qualCapacity + shop.assignCapacity,
         };
@@ -397,8 +397,8 @@ export class PrismaPlanningDataStore {
         return shop.qualCapacity;
       case 'assignment':
         return shop.assignCapacity;
-      case 'return':
-        return shop.returnCapacity;
+      case 'release':
+        return shop.releaseCapacity;
       case 'repair':
         return shop.repairCapacity;
       default:
@@ -501,8 +501,8 @@ export class PrismaPlanningDataStore {
         return shop.qualCapacity;
       case 'assignment':
         return shop.assignCapacity;
-      case 'return':
-        return shop.returnCapacity;
+      case 'release':
+        return shop.releaseCapacity;
       case 'repair':
         return shop.repairCapacity;
       default:

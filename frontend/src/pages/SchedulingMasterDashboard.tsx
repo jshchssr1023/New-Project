@@ -98,6 +98,8 @@ export default function SchedulingMasterDashboard() {
 
   // Fetch data
   useEffect(() => {
+    let isMounted = true;
+
     async function fetchData() {
       setIsLoading(true);
       setError(null);
@@ -107,17 +109,30 @@ export default function SchedulingMasterDashboard() {
           shopsApi.getAll(),
           sopDashboardApi.getDashboardData(selectedYear),
         ]);
-        setCars(carsData);
-        setShops(shopsData);
-        setDemandRegister(dashboardData.demandRegister);
+        // Only update state if component is still mounted
+        if (isMounted) {
+          setCars(carsData);
+          setShops(shopsData);
+          setDemandRegister(dashboardData.demandRegister);
+        }
       } catch (err: any) {
+        // Ignore cancellation errors from React StrictMode
+        if (err.name === 'CanceledError' || !isMounted) return;
         console.error('Error fetching dashboard data:', err);
-        setError(err.message || 'Failed to load dashboard data');
+        if (isMounted) {
+          setError(err.message || 'Failed to load dashboard data');
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     }
     fetchData();
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedYear]);
 
   // Calculate work type inventory from demand register

@@ -206,7 +206,7 @@ export class MultiYearPlanningService {
         capacity: true,
         qualCapacity: true,
         assignCapacity: true,
-        returnCapacity: true,
+        releaseCapacity: true,
         repairCapacity: true,
         baseCostPerCar: true,
       },

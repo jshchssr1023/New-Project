@@ -138,8 +138,8 @@ export interface ShopCapacity {
   /** Monthly assignment capacity (slots) */
   assignCapacity: number;
 
-  /** Monthly returns capacity (slots) */
-  returnCapacity: number;
+  /** Monthly release capacity (slots) */
+  releaseCapacity: number;
 
   /** Monthly repair capacity (slots) */
   repairCapacity: number;
@@ -516,7 +516,7 @@ export class MasterDataStore {
         location: 'Bossier City, LA',
         qualCapacity: 60,
         assignCapacity: 40,
-        returnCapacity: 50,
+        releaseCapacity: 50,
         repairCapacity: 25,
         supportedCarTypes: Object.values(CarType),
         isActive: true,
@@ -530,7 +530,7 @@ export class MasterDataStore {
         location: 'Houston, TX',
         qualCapacity: 55,
         assignCapacity: 35,
-        returnCapacity: 45,
+        releaseCapacity: 45,
         repairCapacity: 20,
         supportedCarTypes: Object.values(CarType),
         isActive: true,
@@ -544,7 +544,7 @@ export class MasterDataStore {
         location: 'Dallas, TX',
         qualCapacity: 40,
         assignCapacity: 25,
-        returnCapacity: 35,
+        releaseCapacity: 35,
         repairCapacity: 15,
         supportedCarTypes: Object.values(CarType),
         isActive: true,
@@ -572,7 +572,7 @@ export class MasterDataStore {
       shop.monthlySlots[monthKey] = {
         qualification: shop.qualCapacity,
         assignment: shop.assignCapacity,
-        return: shop.returnCapacity,
+        release: shop.releaseCapacity,
         repair: shop.repairCapacity,
         total: shop.qualCapacity + shop.assignCapacity,
       };
@@ -728,7 +728,7 @@ export class MasterDataStore {
       shop.monthlySlots[monthKey] = {
         qualification: shop.qualCapacity,
         assignment: shop.assignCapacity,
-        return: shop.returnCapacity,
+        release: shop.releaseCapacity,
         repair: shop.repairCapacity,
         total: shop.qualCapacity + shop.assignCapacity,
       };
@@ -939,7 +939,7 @@ export class ChronosEngine {
           shop.monthlySlots[currentMonth] = {
             qualification: shop.qualCapacity,
             assignment: shop.assignCapacity,
-            return: shop.returnCapacity,
+            release: shop.releaseCapacity,
             repair: shop.repairCapacity,
             total: shop.qualCapacity + shop.assignCapacity,
           };
