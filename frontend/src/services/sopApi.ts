@@ -399,6 +399,39 @@ export const sopPlanningApi = {
 };
 
 // =============================================================================
+// S&OP DASHBOARD API (for Scheduling Master Dashboard)
+// =============================================================================
+
+export const sopDashboardApi = {
+  /**
+   * Get dashboard data including demand register and summary metrics
+   * Used by SchedulingMasterDashboard for unified view
+   */
+  getDashboardData: async (planYear?: number): Promise<{ demandRegister: DemandRegister }> => {
+    const year = planYear || new Date().getFullYear();
+    const demandRegister = await demandRegistryApi.getDemandRegister(year, true);
+    return { demandRegister };
+  },
+
+  /**
+   * Get network commitments summary by shop
+   */
+  getNetworkCommitments: async (planYear?: number) => {
+    const year = planYear || new Date().getFullYear();
+    const [networks, planSummary] = await Promise.all([
+      supplyCapacityApi.getNetworkHierarchy(),
+      sopPlanningApi.getPlanSummary(year),
+    ]);
+
+    return {
+      networks,
+      allocations: planSummary.allocationsByNetwork,
+      systemMetrics: planSummary.systemMetrics,
+    };
+  },
+};
+
+// =============================================================================
 // COMBINED EXPORT
 // =============================================================================
 
@@ -406,6 +439,7 @@ export const sopApi = {
   demandRegistry: demandRegistryApi,
   supplyCapacity: supplyCapacityApi,
   planning: sopPlanningApi,
+  dashboard: sopDashboardApi,
 };
 
 export default sopApi;
