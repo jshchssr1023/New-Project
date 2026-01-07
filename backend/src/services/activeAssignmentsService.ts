@@ -267,12 +267,15 @@ export class ActiveAssignmentsService {
    * Check if a car already has an active assignment
    */
   async hasActiveAssignment(carId: string): Promise<boolean> {
-    const cfp = await this.prisma.carFlowPlan.findUnique({
-      where: { carId },
-      select: { status: true },
+    const cfp = await this.prisma.carFlowPlan.findFirst({
+      where: {
+        carId,
+        status: { in: ['Planned', 'In Progress'] },
+      },
+      select: { id: true },
     });
 
-    if (cfp && ['Planned', 'In Progress'].includes(cfp.status)) {
+    if (cfp) {
       return true;
     }
 

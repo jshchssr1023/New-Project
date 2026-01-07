@@ -471,6 +471,7 @@ router.post('/scenarios/:id/confirm', async (req: AuthenticatedRequest, res: Res
             shopReason: scenarioCar.shopReason,
             estimatedCost: scenarioCar.estimatedCost,
             status: 'Planned',
+            source: 'scenario',
             companyId: req.user!.companyId
           }
         });
@@ -712,6 +713,7 @@ router.post('/plans', async (req: AuthenticatedRequest, res: Response) => {
         shopReason: shopReason || '',
         notes: notes || '',
         status: 'Planned',
+        source: 'manual',
         companyId: req.user!.companyId
       },
       include: {
@@ -1031,6 +1033,7 @@ router.post('/plans/bulk', async (req: AuthenticatedRequest, res: Response) => {
             shopReason: assignment.shopReason || '',
             notes: assignment.notes || '',
             status: 'Planned',
+            source: 'manual',
             companyId: req.user!.companyId
           },
           include: {

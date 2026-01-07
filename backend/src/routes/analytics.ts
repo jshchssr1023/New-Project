@@ -64,14 +64,17 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         OR: [
           { status: { in: ['Arrived', 'arrived', 'in_service', 'in_shop', 'In Shop'] } },
           // Also check if car has an active CarFlowPlan with 'In Progress' status
-          { carFlowPlan: { status: 'In Progress' } },
+          { carFlowPlans: { some: { status: 'In Progress' } } },
         ],
       },
       include: {
         assignedShop: {
           select: { name: true, code: true },
         },
-        carFlowPlan: {
+        carFlowPlans: {
+          where: { status: { in: ['Planned', 'In Progress'] } },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
           include: {
             shop: {
               select: { name: true, code: true },
@@ -214,9 +217,11 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
           : null,
       })),
       inShopStatus: inShopCars.map((car: any) => {
+        // Get the active CarFlowPlan (first one in the filtered array)
+        const activeFlowPlan = car.carFlowPlans?.[0];
         // Prefer CarFlowPlan shop over assignedShop (carFlowPlan is the active commitment)
-        const shopName = car.carFlowPlan?.shop?.name || car.assignedShop?.name || 'Unknown';
-        const shopCode = car.carFlowPlan?.shop?.code || car.assignedShop?.code || '';
+        const shopName = activeFlowPlan?.shop?.name || car.assignedShop?.name || 'Unknown';
+        const shopCode = activeFlowPlan?.shop?.code || car.assignedShop?.code || '';
 
         // Calculate days in shop if not set
         let daysInShop = car.daysInShop || 0;

@@ -2,11 +2,22 @@
 -- Migration: 20260107000000_add_performance_indexes_and_source_field
 
 -- =============================================================================
+-- REMOVE UNIQUE CONSTRAINT ON CarFlowPlan.carId
+-- =============================================================================
+-- Allow multiple CarFlowPlan records per car (cancelled, completed history)
+-- Business logic enforces one active plan per car
+
+DROP INDEX IF EXISTS "CarFlowPlan_carId_key";
+
+-- =============================================================================
 -- ADD SOURCE FIELD TO CarFlowPlan
 -- =============================================================================
 -- Track where assignments come from: csv_import, scenario, manual, master_plan, migration
 
 ALTER TABLE "CarFlowPlan" ADD COLUMN "source" TEXT NOT NULL DEFAULT 'csv_import';
+
+-- Add index on carId (no longer unique, just for lookups)
+CREATE INDEX IF NOT EXISTS "CarFlowPlan_carId_idx" ON "CarFlowPlan"("carId");
 
 -- =============================================================================
 -- ADD COMPOSITE INDEXES FOR PERFORMANCE
