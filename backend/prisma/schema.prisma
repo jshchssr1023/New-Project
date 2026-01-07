@@ -317,6 +317,8 @@ model Car {
   // Composite indexes for common filter combinations
   @@index([companyId, shoppingStatus, status])
   @@index([customerId, shoppingStatus])
+  // Customer fleet filters (portfolio cars for a customer by shopping status)
+  @@index([customerId, portfolio, shoppingStatus])
 }
 
 model Shop {
@@ -409,6 +411,8 @@ model Shop {
   @@index([companyId])
   @@index([isActive])
   @@index([isParent])
+  // Composite index for shop search/recommendations
+  @@index([companyId, tankQualified, region])
 }
 
 // =============================================================================
@@ -744,6 +748,9 @@ model CarFlowPlan {
   // - Cancelled: Removed from plan (soft delete, capacity restored)
   status          String    @default("Planned")
 
+  // Source tracking - where did this assignment come from?
+  source          String    @default("csv_import") // csv_import, scenario, manual, master_plan, migration
+
   // Shop reason (why this car needs shopping)
   shopReason      String    @default("")
 
@@ -769,6 +776,10 @@ model CarFlowPlan {
   @@index([companyId])
   @@index([sourceScenarioId])
   @@index([plannedYear, plannedMonth])
+  // Composite index for monthly shop views (recommended)
+  @@index([companyId, status, plannedYear, plannedMonth])
+  // Source tracking index
+  @@index([source])
 }
 
 // =============================================================================
@@ -1756,6 +1767,8 @@ model MasterPlanCommitment {
   @@index([status])
   @@index([companyId])
   @@index([plannedYear, plannedMonth])
+  // Composite index for monthly shop views (recommended)
+  @@index([companyId, status, plannedYear, plannedMonth])
 }
 
 // =============================================================================

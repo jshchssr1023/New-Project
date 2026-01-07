@@ -29,9 +29,11 @@ import apiKeysRoutes from './routes/apiKeys';
 import carFlowRoutes from './routes/carFlow';
 import allocationRoutes from './routes/allocation';
 import shopNetworksRoutes from './routes/shopNetworks';
+import adminRoutes from './routes/admin';
 import publicApiV1 from './routes/api/v1';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
+import { initializeShoppingStatusJob, getShoppingStatusJob } from './jobs/shoppingStatusJob';
 
 const app = express();
 const httpServer = createServer(app);
@@ -94,6 +96,7 @@ app.use('/api/api-keys', apiRateLimit);
 app.use('/api/car-flow', apiRateLimit);
 app.use('/api/allocation', apiRateLimit);
 app.use('/api/shop-networks', apiRateLimit);
+app.use('/api/admin', apiRateLimit);
 app.use('/api/v1', apiRateLimit);
 
 // Routes
@@ -120,6 +123,7 @@ app.use('/api/api-keys', apiKeysRoutes);
 app.use('/api/car-flow', carFlowRoutes);
 app.use('/api/allocation', allocationRoutes);
 app.use('/api/shop-networks', shopNetworksRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);
@@ -171,6 +175,18 @@ httpServer.listen(PORT, async () => {
     logger.error('Failed to start scheduler service', error);
   }
 
+  // Initialize and start shopping status background job
+  try {
+    const shoppingStatusJob = initializeShoppingStatusJob(prisma, {
+      incrementalIntervalMs: 60 * 60 * 1000, // 1 hour
+      batchSize: 100,
+    });
+    shoppingStatusJob.start();
+    logger.info('Shopping status job started');
+  } catch (error) {
+    logger.error('Failed to start shopping status job', error);
+  }
+
   // Start cleanup jobs
   startCleanupJobs();
 });
@@ -179,6 +195,10 @@ httpServer.listen(PORT, async () => {
 process.on('SIGTERM', async () => {
   logger.info('Shutting down gracefully...');
   schedulerService.stop();
+  const shoppingJob = getShoppingStatusJob();
+  if (shoppingJob) {
+    shoppingJob.stop();
+  }
   await prisma.$disconnect();
   process.exit(0);
 });
