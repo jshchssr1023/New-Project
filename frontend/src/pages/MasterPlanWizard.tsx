@@ -43,7 +43,7 @@ import { useCarSelection } from '../contexts/CarSelectionContext';
 // =============================================================================
 
 type WizardStep = 1 | 2 | 3;
-type WorkType = 'qualification' | 'assignment' | 'return' | 'repair';
+type WorkType = 'full_qualification' | 'partial_qualification' | 'assignment' | 'release' | 'repair';
 
 interface DemandItem {
   carId: string;
@@ -234,8 +234,9 @@ export default function MasterPlanWizard() {
         // Determine work type from reasonShopped
         let workType: WorkType = 'assignment';
         const reason = (car.reasonShopped || '').toLowerCase();
-        if (reason.includes('qual')) workType = 'qualification';
-        else if (reason.includes('return') || reason.includes('release')) workType = 'return';
+        if (reason.includes('partial') && reason.includes('qual')) workType = 'partial_qualification';
+        else if (reason.includes('qual')) workType = 'full_qualification';
+        else if (reason.includes('return') || reason.includes('release')) workType = 'release';
         else if (reason.includes('repair')) workType = 'repair';
 
         // Calculate days until due
@@ -775,12 +776,16 @@ export default function MasterPlanWizard() {
                     </td>
                     <td className="px-3 py-2">
                       <span className={`px-1.5 py-0.5 rounded text-xs ${
-                        item.workType === 'qualification' ? 'bg-purple-100 text-purple-700' :
+                        item.workType === 'full_qualification' ? 'bg-purple-100 text-purple-700' :
+                        item.workType === 'partial_qualification' ? 'bg-indigo-100 text-indigo-700' :
                         item.workType === 'assignment' ? 'bg-blue-100 text-blue-700' :
-                        item.workType === 'return' ? 'bg-yellow-100 text-yellow-700' :
+                        item.workType === 'release' ? 'bg-yellow-100 text-yellow-700' :
                         'bg-gray-100 text-gray-700'
                       }`}>
-                        {item.workType.slice(0, 4)}
+                        {item.workType === 'full_qualification' ? 'FQUAL' :
+                         item.workType === 'partial_qualification' ? 'PQUAL' :
+                         item.workType === 'release' ? 'REL' :
+                         item.workType.slice(0, 4).toUpperCase()}
                       </span>
                     </td>
                     <td className="px-3 py-2">
@@ -1007,7 +1012,7 @@ export default function MasterPlanWizard() {
                             setBulkAllocationTarget({
                               shopId: shop.id,
                               weekKey,
-                              workType: 'qualification',
+                              workType: 'full_qualification',
                             });
                             setShowBulkAllocationModal(true);
                           }}
@@ -1065,7 +1070,7 @@ export default function MasterPlanWizard() {
                             setBulkAllocationTarget({
                               shopId: shop.id,
                               weekKey,
-                              workType: 'qualification',
+                              workType: 'full_qualification',
                             });
                             setShowBulkAllocationModal(true);
                           }}
@@ -1236,8 +1241,8 @@ export default function MasterPlanWizard() {
                 .filter(item => {
                   if (!item.assignedShopId) return false;
                   if (schedulingFilter === 'flow_in') return item.workType === 'assignment';
-                  if (schedulingFilter === 'returns') return item.workType === 'return';
-                  if (schedulingFilter === 'qualifications') return item.workType === 'qualification';
+                  if (schedulingFilter === 'returns') return item.workType === 'release';
+                  if (schedulingFilter === 'qualifications') return item.workType === 'full_qualification' || item.workType === 'partial_qualification';
                   return true;
                 })
                 .slice(0, 50)
@@ -1247,12 +1252,16 @@ export default function MasterPlanWizard() {
                     <td className="px-4 py-3">{item.customer}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        item.workType === 'qualification' ? 'bg-purple-100 text-purple-700' :
+                        item.workType === 'full_qualification' ? 'bg-purple-100 text-purple-700' :
+                        item.workType === 'partial_qualification' ? 'bg-indigo-100 text-indigo-700' :
                         item.workType === 'assignment' ? 'bg-blue-100 text-blue-700' :
-                        item.workType === 'return' ? 'bg-yellow-100 text-yellow-700' :
+                        item.workType === 'release' ? 'bg-yellow-100 text-yellow-700' :
                         'bg-gray-100 text-gray-700'
                       }`}>
-                        {item.workType}
+                        {item.workType === 'full_qualification' ? 'Full Qual' :
+                         item.workType === 'partial_qualification' ? 'Partial Qual' :
+                         item.workType === 'release' ? 'Release' :
+                         item.workType}
                       </span>
                     </td>
                     <td className="px-4 py-3">{item.assignedShopName || '-'}</td>
@@ -1642,13 +1651,14 @@ export default function MasterPlanWizard() {
                 </label>
                 <select
                   name="workType"
-                  defaultValue={bulkAllocationTarget?.workType || 'qualification'}
+                  defaultValue={bulkAllocationTarget?.workType || 'full_qualification'}
                   className="w-full px-3 py-2 border rounded-lg"
                   required
                 >
-                  <option value="qualification">Qualification</option>
+                  <option value="full_qualification">Full Qualification</option>
+                  <option value="partial_qualification">Partial Qualification</option>
                   <option value="assignment">Assignment</option>
-                  <option value="return">Return</option>
+                  <option value="release">Release</option>
                   <option value="repair">Repair</option>
                 </select>
               </div>

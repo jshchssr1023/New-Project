@@ -208,7 +208,7 @@ router.post('/scenarios/:id/assignments', async (req: AuthRequest, res: Response
 
     const service = getScenarioService(req);
     const assignment = await service.addAssignment(req.params.id, carId, shopId, {
-      workTypes: workTypes || ['qualification'],
+      workTypes: workTypes || ['full_qualification'],
       monthKey,
       estimatedCost,
       estimatedDays,
@@ -316,7 +316,7 @@ router.get('/shops', async (req: AuthRequest, res: Response) => {
         capacity: true,
         qualCapacity: true,
         assignCapacity: true,
-        returnCapacity: true,
+        releaseCapacity: true,
         repairCapacity: true,
         efficiencyRating: true,
         isAitxInternal: true,
@@ -383,10 +383,10 @@ router.get('/shops/:id/capacity', async (req: AuthRequest, res: Response) => {
         used: 0,
         available: shop.assignCapacity,
       },
-      return: {
-        total: shop.returnCapacity,
+      release: {
+        total: shop.releaseCapacity,
         used: 0,
-        available: shop.returnCapacity,
+        available: shop.releaseCapacity,
       },
       repair: {
         total: shop.repairCapacity,
@@ -707,7 +707,7 @@ router.post('/allocations', async (req: AuthRequest, res: Response) => {
                 scenarioId: baselineScenario.id,
                 carId: car.id,
                 shopId: shop.id,
-                workTypes: JSON.stringify(['qualification']),
+                workTypes: JSON.stringify(['full_qualification']),
                 status: 'PLANNED',
                 monthKey,
                 priority: DEFAULT_PRIORITY,
@@ -776,7 +776,7 @@ router.put('/allocations/capacity', async (req: AuthRequest, res: Response) => {
     for (const [shopId, updates] of Object.entries(shopCapacities as Record<string, {
       qualCapacity?: number;
       assignCapacity?: number;
-      returnCapacity?: number;
+      releaseCapacity?: number;
       repairCapacity?: number;
       utilizationTarget?: number;
     }>)) {
@@ -789,7 +789,7 @@ router.put('/allocations/capacity', async (req: AuthRequest, res: Response) => {
           data: {
             ...(updates.qualCapacity !== undefined && { qualCapacity: updates.qualCapacity }),
             ...(updates.assignCapacity !== undefined && { assignCapacity: updates.assignCapacity }),
-            ...(updates.returnCapacity !== undefined && { returnCapacity: updates.returnCapacity }),
+            ...(updates.releaseCapacity !== undefined && { releaseCapacity: updates.releaseCapacity }),
             ...(updates.repairCapacity !== undefined && { repairCapacity: updates.repairCapacity }),
             ...(updates.utilizationTarget !== undefined && { utilizationTarget: updates.utilizationTarget }),
           },
@@ -921,7 +921,7 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
           items.push({
             carId: car.id,
             railcarNumber: car.railcarNumber,
-            workType: 'qualification',
+            workType: 'full_qualification',
             dueDate: car.tankQualDueDate?.toISOString() || null,
             daysUntilDue: daysUntil,
             isOverdue,
@@ -948,7 +948,7 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
           items.push({
             carId: car.id,
             railcarNumber: car.railcarNumber,
-            workType: 'return',
+            workType: 'release',
             dueDate: car.contractExpiration?.toISOString() || null,
             daysUntilDue: daysUntil,
             isOverdue,

@@ -599,7 +599,7 @@ export default function ImportWorkflow({
                         <>
                           <option value="qualCapacity">qualCapacity</option>
                           <option value="assignCapacity">assignCapacity</option>
-                          <option value="returnCapacity">returnCapacity</option>
+                          <option value="releaseCapacity">releaseCapacity</option>
                           <option value="repairCapacity">repairCapacity</option>
                         </>
                       )}

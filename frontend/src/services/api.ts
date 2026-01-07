@@ -1301,7 +1301,7 @@ export const sopApi = {
   updateCapacities: async (shopCapacities: Record<string, {
     qualCapacity?: number;
     assignCapacity?: number;
-    returnCapacity?: number;
+    releaseCapacity?: number;
     repairCapacity?: number;
     utilizationTarget?: number;
   }>): Promise<{ success: boolean; message: string; updatedShops: string[] }> => {
@@ -1648,12 +1648,12 @@ export interface WeeklyCapacityData {
   weekStartDate: string;
   qualCapacity: number;
   assignCapacity: number;
-  returnCapacity: number;
+  releaseCapacity: number;
   repairCapacity: number;
   totalCapacity: number;
   qualUsed: number;
   assignUsed: number;
-  returnUsed: number;
+  releaseUsed: number;
   repairUsed: number;
   totalUsed: number;
   isLocked: boolean;
