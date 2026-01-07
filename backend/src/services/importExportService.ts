@@ -450,12 +450,15 @@ export async function importCars(
             const shouldCreatePlan = ['arrived', 'enroute', 'to be routed'].includes(statusLower);
 
             if (shouldCreatePlan) {
-              // Check for existing CarFlowPlan for this car
-              const existingPlan = await prisma.carFlowPlan.findUnique({
-                where: { carId },
+              // Check for existing ACTIVE CarFlowPlan for this car
+              const existingActivePlan = await prisma.carFlowPlan.findFirst({
+                where: {
+                  carId,
+                  status: { in: ['Planned', 'In Progress'] },
+                },
               });
 
-              if (!existingPlan) {
+              if (!existingActivePlan) {
                 await prisma.carFlowPlan.create({
                   data: {
                     carId,
@@ -468,6 +471,7 @@ export async function importCars(
                     priority: carData.shoppingStatus === 'Urgent' ? 1 :
                               carData.shoppingStatus === 'Must Shop' ? 2 : 3,
                     notes: `Imported from Qual Planner Master CSV`,
+                    source: 'csv_import',
                     committedById: userId,
                     companyId,
                   },

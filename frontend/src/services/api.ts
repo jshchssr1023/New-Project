@@ -1560,8 +1560,7 @@ export const masterPlanApi = {
   // Get shop work orders
   getShopWorkOrders: async (shopId: string, month: string): Promise<MasterPlanCommitment[]> => {
     const response = await apiClient.get<MasterPlanCommitment[]>(
-      `/masterplans/shop/${shopId}/workorders`,
-      { params: { month } }
+      `/masterplans/work-orders/${shopId}/${month}`
     );
     return response.data;
   },

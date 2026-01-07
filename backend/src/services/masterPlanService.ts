@@ -766,6 +766,10 @@ export class MasterPlanService {
   /**
    * Get commitments for a specific shop and month (for shop work orders)
    *
+   * This method checks two data sources:
+   * 1. MasterPlanCommitments (formal versioned plan)
+   * 2. CarFlowPlan entries (from CSV imports and manual assignments)
+   *
    * @param shopId - The shop to get work orders for
    * @param scheduledMonth - The month in YYYY-MM format
    * @returns Array of commitments for the shop/month
@@ -774,7 +778,12 @@ export class MasterPlanService {
     shopId: string,
     scheduledMonth: string
   ): Promise<MasterPlanCommitmentWithRelations[]> {
-    // Find the active plan that contains this month
+    // Parse the month to get year and month number
+    const [yearStr, monthStr] = scheduledMonth.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+
+    // First, try to get from active MasterPlan
     const plan = await this.prisma.masterPlan.findFirst({
       where: {
         status: 'active',
@@ -783,15 +792,56 @@ export class MasterPlanService {
       },
     });
 
-    if (!plan) {
-      return [];
+    let commitments: any[] = [];
+
+    if (plan) {
+      commitments = await this.prisma.masterPlanCommitment.findMany({
+        where: {
+          masterPlanId: plan.id,
+          shopId,
+          scheduledMonth,
+        },
+        include: {
+          car: {
+            select: {
+              id: true,
+              railcarNumber: true,
+              carType: true,
+              isTankCar: true,
+              commodity: true,
+              customer: true,
+              status: true,
+            },
+          },
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              location: true,
+              region: true,
+            },
+          },
+          customer: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+        },
+        orderBy: [{ priority: 'asc' }, { plannedArrival: 'asc' }],
+      });
     }
 
-    const commitments = await this.prisma.masterPlanCommitment.findMany({
+    // Also get CarFlowPlan entries (from CSV imports and manual assignments)
+    // These may not be in the formal MasterPlan yet
+    const carFlowPlans = await this.prisma.carFlowPlan.findMany({
       where: {
-        masterPlanId: plan.id,
         shopId,
-        scheduledMonth,
+        plannedYear: year,
+        plannedMonth: month,
+        status: { in: ['Planned', 'In Progress'] },
       },
       include: {
         car: {
@@ -802,6 +852,7 @@ export class MasterPlanService {
             isTankCar: true,
             commodity: true,
             customer: true,
+            status: true,
           },
         },
         shop: {
@@ -821,7 +872,50 @@ export class MasterPlanService {
           },
         },
       },
-      orderBy: [{ priority: 'asc' }, { plannedArrival: 'asc' }],
+      orderBy: [{ priority: 'asc' }, { committedAt: 'asc' }],
+    });
+
+    // Merge CarFlowPlan entries that aren't already in MasterPlanCommitments
+    const existingCarIds = new Set(commitments.map((c: any) => c.car?.id));
+
+    for (const cfp of carFlowPlans) {
+      if (!existingCarIds.has(cfp.car?.id)) {
+        // Map CarFlowPlan to MasterPlanCommitment-like structure
+        const carStatus = cfp.car?.status?.toLowerCase() || '';
+        let workOrderStatus = 'committed';
+        if (carStatus === 'arrived') {
+          workOrderStatus = 'arrived';
+        } else if (cfp.status === 'In Progress') {
+          workOrderStatus = 'in_progress';
+        } else if (cfp.status === 'Complete') {
+          workOrderStatus = 'released';
+        }
+
+        commitments.push({
+          id: cfp.id,
+          carId: cfp.carId,
+          shopId: cfp.shopId,
+          customerId: cfp.customerId,
+          scheduledMonth: scheduledMonth,
+          priority: cfp.priority,
+          status: workOrderStatus,
+          reasonsShopped: cfp.shopReason,
+          estimatedCost: cfp.estimatedCost,
+          plannedArrival: null,
+          notes: cfp.notes,
+          car: cfp.car,
+          shop: cfp.shop,
+          customer: cfp.customer,
+          // Source indicator for debugging
+          _source: 'CarFlowPlan',
+        });
+      }
+    }
+
+    // Sort by priority then by car number
+    commitments.sort((a: any, b: any) => {
+      if (a.priority !== b.priority) return (a.priority || 3) - (b.priority || 3);
+      return (a.car?.railcarNumber || '').localeCompare(b.car?.railcarNumber || '');
     });
 
     return commitments as MasterPlanCommitmentWithRelations[];

@@ -297,8 +297,8 @@ model Car {
   leaseContracts           LeaseContract[]
   qualificationEntries     LeaseQualificationEntry[]
 
-  // Car Flow Plan relations - one active commitment per car
-  carFlowPlan              CarFlowPlan?     @relation("CarFlowPlanCar")
+  // Car Flow Plan relations - multiple plans can exist but only one active at a time
+  carFlowPlans             CarFlowPlan[]    @relation("CarFlowPlanCar")
 
   // Master Plan relations - one car can have multiple commitments across plans
   masterPlanCommitments    MasterPlanCommitment[]
@@ -317,6 +317,8 @@ model Car {
   // Composite indexes for common filter combinations
   @@index([companyId, shoppingStatus, status])
   @@index([customerId, shoppingStatus])
+  // Customer fleet filters (portfolio cars for a customer by shopping status)
+  @@index([customerId, portfolio, shoppingStatus])
 }
 
 model Shop {
@@ -409,6 +411,8 @@ model Shop {
   @@index([companyId])
   @@index([isActive])
   @@index([isParent])
+  // Composite index for shop search/recommendations
+  @@index([companyId, tankQualified, region])
 }
 
 // =============================================================================
@@ -712,8 +716,9 @@ model ScenarioModification {
 model CarFlowPlan {
   id              String    @id @default(uuid())
 
-  // Car assignment (one active per car)
-  carId           String    @unique // One active commitment per car
+  // Car assignment - multiple plans can exist (cancelled, completed) but only one active at a time
+  // Business logic enforces one active plan per car (status = 'Planned' or 'In Progress')
+  carId           String
   car             Car       @relation("CarFlowPlanCar", fields: [carId], references: [id])
 
   // Shop where work will be performed
@@ -744,6 +749,9 @@ model CarFlowPlan {
   // - Cancelled: Removed from plan (soft delete, capacity restored)
   status          String    @default("Planned")
 
+  // Source tracking - where did this assignment come from?
+  source          String    @default("csv_import") // csv_import, scenario, manual, master_plan, migration
+
   // Shop reason (why this car needs shopping)
   shopReason      String    @default("")
 
@@ -763,12 +771,17 @@ model CarFlowPlan {
   cancelledAt     DateTime? // When the plan was cancelled (for soft delete)
 
   // Indexes for performance
+  @@index([carId]) // For car lookups (replaces removed unique constraint)
   @@index([shopId, plannedYear, plannedMonth])
   @@index([customerId])
   @@index([status])
   @@index([companyId])
   @@index([sourceScenarioId])
   @@index([plannedYear, plannedMonth])
+  // Composite index for monthly shop views (recommended)
+  @@index([companyId, status, plannedYear, plannedMonth])
+  // Source tracking index
+  @@index([source])
 }
 
 // =============================================================================
@@ -1756,6 +1769,8 @@ model MasterPlanCommitment {
   @@index([status])
   @@index([companyId])
   @@index([plannedYear, plannedMonth])
+  // Composite index for monthly shop views (recommended)
+  @@index([companyId, status, plannedYear, plannedMonth])
 }
 
 // =============================================================================
