@@ -377,7 +377,7 @@ model Shop {
   // S&OP capacity fields
   qualCapacity       Int              @default(50)  // Monthly qualification capacity
   assignCapacity     Int              @default(30)  // Monthly assignment capacity
-  returnCapacity     Int              @default(40)  // Monthly return capacity
+  releaseCapacity    Int              @default(40)  // Monthly release capacity
   repairCapacity     Int              @default(20)  // Monthly repair capacity
   efficiencyRating   Float            @default(0.9) // Shop efficiency (0.0 to 1.0)
 
@@ -961,7 +961,7 @@ model ShopCapacitySlot {
   shopId      String
   shop        Shop   @relation(fields: [shopId], references: [id])
   monthKey    String // "2026-03"
-  slotType    String // "qualification", "assignment", "return", "repair"
+  slotType    String // "full_qualification", "partial_qualification", "assignment", "release", "repair"
   capacity    Int    // Total capacity for this slot type
   used        Int    @default(0) // Currently used capacity
 
@@ -986,7 +986,7 @@ model LeaseContract {
   releaseDate         DateTime? // Actual or planned release date
   status              String    @default("active") // active, pending_release, released, renewed, terminated
   commodity           String    @default("") // What the car carries
-  releaseReason       String    @default("") // qualification, assignment, return, repair
+  releaseReason       String    @default("") // full_qualification, partial_qualification, assignment, release, repair
   nextCustomerId      String?   // New customer if immediate reassignment
   isReleaseConfirmed  Boolean   @default(false) // Customer confirmed release
   releaseDelayDays    Int       @default(0) // Delay from planned release
@@ -1021,7 +1021,7 @@ model LeaseQualificationEntry {
   targetQualMonth       String    // YYYY-MM target qualification month
 
   // Work bundling
-  workTypes             String    // JSON array: ["qualification", "assignment", "repair"]
+  workTypes             String    // JSON array: ["full_qualification", "partial_qualification", "assignment", "release", "repair"]
   isBundled             Boolean   @default(false) // Multiple work types bundled
   bundleReason          String    @default("") // Why bundled (immediate reassignment, etc.)
 
@@ -1291,14 +1291,14 @@ model WeeklyCapacity {
   // Capacity by work type
   qualCapacity    Int       @default(0)
   assignCapacity  Int       @default(0)
-  returnCapacity  Int       @default(0)
+  releaseCapacity Int       @default(0)
   repairCapacity  Int       @default(0)
   totalCapacity   Int       @default(0)
 
   // Used capacity tracking
   qualUsed        Int       @default(0)
   assignUsed      Int       @default(0)
-  returnUsed      Int       @default(0)
+  releaseUsed     Int       @default(0)
   repairUsed      Int       @default(0)
   totalUsed       Int       @default(0)
 
@@ -1523,7 +1523,7 @@ model AllocationOverride {
   // Allocation target
   shopId            String
   weekKey           String    // YYYY-Www format
-  workType          String    // qualification, assignment, return, repair
+  workType          String    // full_qualification, partial_qualification, assignment, release, repair
 
   // Override details
   originalValue     Int
@@ -1679,6 +1679,7 @@ model MasterPlan {
 enum CommitmentStatus {
   DRAFT         // Not yet committed, can be modified freely
   PLANNED       // Committed to the plan, awaiting execution
+  SCHEDULED     // Confirmed with shop and customer, specific arrival date set
   IN_PROGRESS   // Work has begun (car arrived at shop)
   COMPLETE      // Work finished successfully
   CANCELLED     // Removed from plan (soft delete)
@@ -1714,13 +1715,19 @@ model MasterPlanCommitment {
   // Commitment status workflow
   status                CommitmentStatus @default(DRAFT)
 
+  // Scheduling confirmation fields (populated when status = SCHEDULED)
+  scheduledAt           DateTime?        // When the commitment was confirmed/scheduled
+  confirmedByShop       Boolean          @default(false) // Shop has confirmed capacity
+  confirmedByCustomer   Boolean          @default(false) // Customer has confirmed release/timing
+
   // Link to qualification requirement this commitment satisfies
   // Critical: This ensures we know WHY this car is being sent to shop
   qualificationEntryId  String?
   qualificationEntry    LeaseQualificationEntry? @relation(fields: [qualificationEntryId], references: [id])
 
   // Work type and reason
-  workType              String           @default("qualification") // qualification, assignment, return, repair
+  // Valid workTypes: full_qualification, partial_qualification, assignment, release, repair
+  workType              String           @default("full_qualification")
   shopReason            String           @default("") // Detailed reason for shopping
 
   // Cost and duration estimates
@@ -1825,7 +1832,8 @@ model UnifiedAssignment {
   qualificationEntry    LeaseQualificationEntry? @relation(fields: [qualificationEntryId], references: [id])
 
   // Work details
-  workType              String           @default("qualification") // qualification, assignment, return, repair
+  // Valid workTypes: full_qualification, partial_qualification, assignment, release, repair
+  workType              String           @default("full_qualification")
   shopReason            String           @default("") // Why this car needs shopping
 
   // Cost and duration

@@ -113,7 +113,7 @@ export function buildDemandRegister(
         items.push({
           carId: car.id,
           railcarNumber: car.railcarNumber,
-          workType: 'qualification',
+          workType: 'full_qualification',
           dueDate: car.tankQualDueDate,
           dueMonth: formatMonthYear(qualDueDate),
           daysUntilDue: daysUntil,
@@ -148,12 +148,12 @@ export function buildDemandRegister(
         const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
 
         // Don't double-count if already added as qualification
-        const alreadyAdded = items.some(i => i.carId === car.id && i.workType === 'qualification');
+        const alreadyAdded = items.some(i => i.carId === car.id && (i.workType === 'full_qualification' || i.workType === 'partial_qualification'));
         if (!alreadyAdded) {
           items.push({
             carId: car.id,
             railcarNumber: car.railcarNumber,
-            workType: 'return',
+            workType: 'release',
             dueDate: car.contractExpiration,
             dueMonth: formatMonthYear(leaseEndDate),
             daysUntilDue: daysUntil,
@@ -317,26 +317,36 @@ export function calculateDemandFromCars(cars: Car[], shops: Shop[] = [], filterY
   const carsByReason = new Map<string, Car[]>();
 
   // Get the actual cars for each work type from the demand register
-  const qualCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'qualification'));
+  const fullQualCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'full_qualification'));
+  const partialQualCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'partial_qualification'));
   const assignCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'assignment'));
-  const returnCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'return'));
+  const releaseCars = cars.filter(c => demandRegister.items.some(i => i.carId === c.id && i.workType === 'release'));
 
-  carsByReason.set('qualification', qualCars);
+  carsByReason.set('full_qualification', fullQualCars);
+  carsByReason.set('partial_qualification', partialQualCars);
   carsByReason.set('assignment', assignCars);
-  carsByReason.set('release', returnCars);
+  carsByReason.set('release', releaseCars);
 
   // Build demand types from actual counts
   const demandTypes: DemandType[] = [
     {
-      id: 'qual',
-      name: 'Regulatory Qualifications',
-      annualVolume: qualCars.length, // Actual count, not annualized
+      id: 'full_qualification',
+      name: 'Full Qualifications',
+      annualVolume: fullQualCars.length, // Actual count, not annualized
       priority: 'HIGH',
       leadTime: 'Due by year-end',
-      notes: `${demandRegister.summaries.find(s => s.workType === 'qualification')?.overdue || 0} overdue`
+      notes: `${demandRegister.summaries.find(s => s.workType === 'full_qualification')?.overdue || 0} overdue`
     },
     {
-      id: 'assign',
+      id: 'partial_qualification',
+      name: 'Partial Qualifications',
+      annualVolume: partialQualCars.length,
+      priority: 'HIGH',
+      leadTime: 'Due by year-end',
+      notes: `${demandRegister.summaries.find(s => s.workType === 'partial_qualification')?.overdue || 0} overdue`
+    },
+    {
+      id: 'assignment',
       name: 'Assignments (Pre-Delivery)',
       annualVolume: assignCars.length,
       priority: 'MEDIUM',
@@ -344,9 +354,9 @@ export function calculateDemandFromCars(cars: Car[], shops: Shop[] = [], filterY
       notes: 'Pre-delivery prep work'
     },
     {
-      id: 'return',
-      name: 'Returns (Off-Lease)',
-      annualVolume: returnCars.length,
+      id: 'release',
+      name: 'Releases (Off-Lease)',
+      annualVolume: releaseCars.length,
       priority: 'MEDIUM',
       leadTime: '60+ day notice',
       notes: 'Lease expirations - 3-6 month horizon'
@@ -355,7 +365,7 @@ export function calculateDemandFromCars(cars: Car[], shops: Shop[] = [], filterY
 
   // Add other work types if they have items
   const otherTypes = demandRegister.summaries.filter(s =>
-    !['qualification', 'assignment', 'return'].includes(s.workType)
+    !['full_qualification', 'partial_qualification', 'assignment', 'release'].includes(s.workType)
   );
 
   otherTypes.forEach(summary => {

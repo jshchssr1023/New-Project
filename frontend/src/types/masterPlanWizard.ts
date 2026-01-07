@@ -41,12 +41,12 @@ export interface WeeklyCapacity {
   weekKey: string;
   qualCapacity: number;
   assignCapacity: number;
-  returnCapacity: number;
+  releaseCapacity: number;
   repairCapacity: number;
   totalCapacity: number;
   qualUsed: number;
   assignUsed: number;
-  returnUsed: number;
+  releaseUsed: number;
   repairUsed: number;
   totalUsed: number;
   isLocked: boolean;

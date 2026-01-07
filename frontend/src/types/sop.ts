@@ -17,7 +17,7 @@ export type PlanningState =
   | 'completed';            // Work finished
 
 // Work Type - what kind of work needs to be done
-export type WorkType = 'qualification' | 'assignment' | 'return' | 'repair' | 'maintenance' | 'project';
+export type WorkType = 'full_qualification' | 'partial_qualification' | 'assignment' | 'release' | 'repair';
 
 // Demand Register Item - individual car in the demand register
 export interface DemandRegisterItem {
@@ -198,10 +198,11 @@ export interface PlanningAssumptions {
 
 // Default Data
 export const DEFAULT_DEMAND_TYPES: DemandType[] = [
-  { id: 'qual', name: 'Regulatory Qualifications', annualVolume: 3500, priority: 'HIGH', leadTime: 'Due by year-end', notes: 'Commodity-based cycles (3-10yr)' },
-  { id: 'assign', name: 'Assignments (Pre-Delivery)', annualVolume: 3600, priority: 'MEDIUM', leadTime: '90-120 days', notes: '4,000 assignments × 90% need shop' },
-  { id: 'return', name: 'Returns (Off-Lease)', annualVolume: 4000, priority: 'MEDIUM', leadTime: '60-day notice', notes: 'Lease expirations, 75-120 day cycle' },
-  { id: 'external', name: 'External Customer Work', annualVolume: 0, priority: 'LOW', leadTime: 'Varies', notes: 'P&O pipeline - sold services (optional)' }
+  { id: 'full_qualification', name: 'Full Qualifications', annualVolume: 2500, priority: 'HIGH', leadTime: 'Due by year-end', notes: 'Complete tank qualification cycles (3-10yr)' },
+  { id: 'partial_qualification', name: 'Partial Qualifications', annualVolume: 1000, priority: 'HIGH', leadTime: 'Due by year-end', notes: 'Specific component qualifications' },
+  { id: 'assignment', name: 'Assignments (Pre-Delivery)', annualVolume: 3600, priority: 'MEDIUM', leadTime: '90-120 days', notes: '4,000 assignments × 90% need shop' },
+  { id: 'release', name: 'Releases (Off-Lease)', annualVolume: 4000, priority: 'MEDIUM', leadTime: '60-day notice', notes: 'Lease expirations, 75-120 day cycle' },
+  { id: 'repair', name: 'Repairs', annualVolume: 500, priority: 'LOW', leadTime: 'Varies', notes: 'General maintenance and repair work' }
 ];
 
 export const DEFAULT_AITX_SHOPS: AITXShop[] = [
