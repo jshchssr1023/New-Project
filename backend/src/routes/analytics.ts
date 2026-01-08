@@ -160,7 +160,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       .slice(-12);
 
     // Get shop performance
-    const shops = await prisma.shop.findMany({
+    const shopsWithAssignments = await prisma.shop.findMany({
       where: { companyId, isActive: true },
       include: {
         assignments: {
@@ -169,7 +169,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    const shopPerformance = shops.map((shop) => ({
+    const shopPerformance = shopsWithAssignments.map((shop) => ({
       shopId: shop.id,
       shopName: shop.name,
       utilization: Math.min(100, Math.round((shop.assignments.length / (shop.capacity * 12)) * 100)),
