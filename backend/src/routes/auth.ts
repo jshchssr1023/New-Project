@@ -1,11 +1,21 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import { authenticate, generateToken, invalidateToken, AuthRequest } from '../middleware/auth';
+import { authenticate, generateToken, invalidateToken, getTokenFromRequest, AuthRequest } from '../middleware/auth';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
 
 const router = Router();
+
+// Cookie configuration
+const COOKIE_NAME = 'auth_token';
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'strict' as const,
+  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  path: '/',
+};
 
 // Password validation schema - min 8 chars, 1 uppercase, 1 number, 1 special char
 const PasswordSchema = z
@@ -70,6 +80,9 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
 
     logger.info('User logged in', { userId: user.id, email: user.email });
 
+    // Set httpOnly cookie with the token
+    res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
+
     res.json({
       user: {
         id: user.id,
@@ -81,6 +94,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
+      // Still include token in response for backward compatibility during transition
       token,
     });
   } catch (error) {
@@ -91,17 +105,20 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
 
 router.post('/logout', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
+    const token = getTokenFromRequest(req);
+    if (token) {
       await invalidateToken(token, req.user!.id, 'logout');
     }
+
+    // Clear the httpOnly cookie
+    res.clearCookie(COOKIE_NAME, { path: '/' });
 
     logger.info('User logged out', { userId: req.user!.id });
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     logger.error('Logout error', error);
-    // Still return success to client even if blacklisting fails
+    // Still clear cookie and return success even if blacklisting fails
+    res.clearCookie(COOKIE_NAME, { path: '/' });
     res.json({ message: 'Logged out successfully' });
   }
 });
@@ -136,9 +153,8 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
 router.post('/refresh', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     // Invalidate the old token
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const oldToken = authHeader.split(' ')[1];
+    const oldToken = getTokenFromRequest(req);
+    if (oldToken) {
       await invalidateToken(oldToken, req.user!.id, 'token_refresh');
     }
 
@@ -150,6 +166,10 @@ router.post('/refresh', authenticate, async (req: AuthRequest, res: Response) =>
       companyId: req.user!.companyId,
     });
 
+    // Set new httpOnly cookie with the token
+    res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
+
+    // Include token in response for backward compatibility
     res.json({ token });
   } catch (error) {
     logger.error('Token refresh error', error);
@@ -199,11 +219,13 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
     });
 
     // Invalidate current token after password change
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
+    const token = getTokenFromRequest(req);
+    if (token) {
       await invalidateToken(token, req.user!.id, 'password_change');
     }
+
+    // Clear the httpOnly cookie
+    res.clearCookie(COOKIE_NAME, { path: '/' });
 
     logger.info('Password changed', { userId: req.user!.id });
     res.json({ message: 'Password changed successfully. Please log in again.' });

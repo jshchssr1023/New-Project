@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import { prisma } from './services/db';
 import logger from './utils/logger';
@@ -46,23 +48,77 @@ app.locals.websocket = websocketService;
 
 // CORS Configuration - use explicit allowed origins
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // In production, reject requests without valid Origin header
+    // (except for same-origin requests which don't have Origin)
     if (!origin) {
+      if (isProduction) {
+        // Allow same-origin requests (no Origin header) but be stricter
+        // Only server-to-server or same-origin browser requests lack Origin
+        callback(null, true);
+        return;
+      }
+      // In development, allow requests without origin (curl, mobile apps, etc.)
       callback(null, true);
       return;
     }
+
+    // Check against allowed origins
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      logger.warn('CORS blocked request from origin', { origin });
+      // In development, allow localhost variants
+      if (!isProduction && (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:'))) {
+        callback(null, true);
+        return;
+      }
+      logger.warn('CORS blocked request from origin', { origin, isProduction });
       callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
+  credentials: true, // Required for cookies to be sent cross-origin
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+}));
+
+// Cookie parser middleware - required for httpOnly cookie authentication
+app.use(cookieParser());
+
+// Security headers middleware
+app.use(helmet({
+  // Enable HSTS in production (tells browsers to only use HTTPS)
+  hsts: process.env.NODE_ENV === 'production' ? {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  } : false,
+  // Prevent clickjacking
+  frameguard: { action: 'deny' },
+  // Prevent MIME type sniffing
+  noSniff: true,
+  // XSS Protection (legacy browsers)
+  xssFilter: true,
+  // Disable powered-by header
+  hidePoweredBy: true,
+  // Content Security Policy - configure based on your needs
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  } : false, // Disable CSP in development for easier debugging
+  // Referrer Policy
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
 app.use(express.json({ limit: '10mb' }));

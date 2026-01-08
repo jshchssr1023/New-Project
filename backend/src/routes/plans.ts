@@ -9,23 +9,56 @@ const router = Router();
 
 router.use(authenticate);
 
-// Get all plans
+// Get all plans (list view - limited fields for performance)
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const { status } = req.query;
+  const { status, detailed } = req.query;
 
   try {
+    // Use select to limit returned fields for list views
+    // Full data is only fetched with detailed=true or via GET /:id
+    if (detailed === 'true') {
+      // Full data for detailed view (e.g., dashboard that needs assignment counts)
+      const plans = await prisma.plan.findMany({
+        where: {
+          companyId: req.user!.companyId,
+          ...(status && { status: status as string }),
+        },
+        include: {
+          assignments: {
+            include: {
+              car: true,
+              shop: true,
+            },
+          },
+          creator: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      res.json(plans);
+      return;
+    }
+
+    // Optimized list view with select fields and assignment count
     const plans = await prisma.plan.findMany({
       where: {
         companyId: req.user!.companyId,
         ...(status && { status: status as string }),
       },
-      include: {
-        assignments: {
-          include: {
-            car: true,
-            shop: true,
-          },
-        },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         creator: {
           select: {
             id: true,
@@ -33,11 +66,21 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             lastName: true,
           },
         },
+        _count: {
+          select: { assignments: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    res.json(plans);
+    // Transform to include assignmentCount for backward compatibility
+    const plansWithCount = plans.map(plan => ({
+      ...plan,
+      assignmentCount: plan._count.assignments,
+      _count: undefined,
+    }));
+
+    res.json(plansWithCount);
   } catch (error) {
     logger.error('Get plans error:', error);
     res.status(500).json({ message: 'Internal server error' });

@@ -97,30 +97,49 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Get shops over capacity
-    const shopsOverCapacity = await prisma.shop.findMany({
-      where: {
-        companyId,
-        isActive: true,
-      },
-      include: {
-        assignments: {
-          where: {
-            scheduledMonth: currentMonth,
-          },
+    // Get shops over capacity using groupBy aggregation (fixes N+1 query)
+    const [shops, assignmentCounts] = await Promise.all([
+      prisma.shop.findMany({
+        where: {
+          companyId,
+          isActive: true,
         },
-      },
-    });
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          capacity: true,
+        },
+      }),
+      prisma.planAssignment.groupBy({
+        by: ['shopId'],
+        where: {
+          scheduledMonth: currentMonth,
+          plan: { companyId },
+        },
+        _count: { id: true },
+      }),
+    ]);
 
-    const capacityAlerts = shopsOverCapacity
-      .filter(shop => shop.assignments.length > shop.capacity)
-      .map(shop => ({
-        shopName: shop.name,
-        shopCode: shop.code,
-        capacity: shop.capacity,
-        currentLoad: shop.assignments.length,
-        overloadPercent: Math.round(((shop.assignments.length - shop.capacity) / shop.capacity) * 100),
-      }));
+    // Build Map for O(1) lookup
+    const assignmentMap = new Map(
+      assignmentCounts.map(a => [a.shopId, a._count.id])
+    );
+
+    const capacityAlerts = shops
+      .map(shop => {
+        const currentLoad = assignmentMap.get(shop.id) || 0;
+        return {
+          shopName: shop.name,
+          shopCode: shop.code,
+          capacity: shop.capacity,
+          currentLoad,
+          overloadPercent: shop.capacity > 0
+            ? Math.round(((currentLoad - shop.capacity) / shop.capacity) * 100)
+            : 0,
+        };
+      })
+      .filter(shop => shop.currentLoad > shop.capacity);
 
     // Get monthly service counts
     const assignments = await prisma.planAssignment.findMany({

@@ -120,15 +120,36 @@ export async function cleanupExpiredTokens(): Promise<number> {
   }
 }
 
-export async function authenticate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const authHeader = req.headers.authorization;
+// Cookie name for auth token
+const AUTH_COOKIE_NAME = 'auth_token';
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+/**
+ * Extract token from request (cookie or Authorization header)
+ * Supports both methods for backward compatibility during transition
+ */
+export function getTokenFromRequest(req: Request): string | null {
+  // First, check for httpOnly cookie (preferred method)
+  const cookieToken = req.cookies?.[AUTH_COOKIE_NAME];
+  if (cookieToken) {
+    return cookieToken;
+  }
+
+  // Fall back to Authorization header for backward compatibility
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+
+  return null;
+}
+
+export async function authenticate(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const token = getTokenFromRequest(req);
+
+  if (!token) {
     res.status(401).json({ message: 'No token provided' });
     return;
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     // Check if token is blacklisted before verifying
