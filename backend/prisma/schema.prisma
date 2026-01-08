@@ -819,6 +819,7 @@ model SOPCommitment {
   updatedBy       User?    @relation("SOPCommitmentUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1607,68 +1608,18 @@ model FilterPreset {
 // =============================================================================
 
 // =============================================================================
-// STATUS ENUMS - Type-safe status fields
+// STATUS VALUES (SQLite uses String types, not enums)
 // =============================================================================
-
-enum CarStatus {
-  TO_BE_ROUTED
-  ARRIVED
-  COMPLETE
-  RELEASE
-  UP_MARKETED
-  ENROUTE
-  REASSIGNED
-  RELEASED
-  SCHEDULED
-  OTHER
-}
-
-enum ShoppingStatus {
-  URGENT
-  MUST_SHOP
-  UPCOMING
-  COMPLIANT
-  IN_SHOP
-  PLANNED
-  UNKNOWN
-}
-
-enum PlanStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  ARCHIVED
-}
-
-enum ScenarioStatus {
-  DRAFT
-  CONFIRMED
-  ARCHIVED
-}
-
-enum CarFlowPlanStatus {
-  PLANNED
-  IN_PROGRESS
-  COMPLETE
-  CANCELLED
-}
-
-enum LeaseContractStatus {
-  ACTIVE
-  PENDING_RELEASE
-  RELEASED
-  RENEWED
-  TERMINATED
-}
-
-enum MasterPlanStatus {
-  DRAFT      // Plan is being worked on, not yet approved
-  PENDING    // Awaiting approval
-  APPROVED   // Approved but not yet active
-  ACTIVE     // Currently active plan (only one can be active at a time)
-  SUPERSEDED // Replaced by a newer version
-  ARCHIVED   // Historical reference only
-}
+// CarStatus: TO_BE_ROUTED, ARRIVED, COMPLETE, RELEASE, UP_MARKETED, ENROUTE, REASSIGNED, RELEASED, SCHEDULED, OTHER
+// ShoppingStatus: URGENT, MUST_SHOP, UPCOMING, COMPLIANT, IN_SHOP, PLANNED, UNKNOWN
+// PlanStatus: DRAFT, ACTIVE, COMPLETED, ARCHIVED
+// ScenarioStatus: DRAFT, CONFIRMED, ARCHIVED
+// CarFlowPlanStatus: PLANNED, IN_PROGRESS, COMPLETE, CANCELLED
+// LeaseContractStatus: ACTIVE, PENDING_RELEASE, RELEASED, RENEWED, TERMINATED
+// MasterPlanStatus: DRAFT, PENDING, APPROVED, ACTIVE, SUPERSEDED, ARCHIVED
+// CommitmentStatus: DRAFT, PLANNED, SCHEDULED, IN_PROGRESS, COMPLETE, CANCELLED, DEFERRED, RESCHEDULED
+// AssignmentStatus: DRAFT, SCENARIO, PENDING_REVIEW, COMMITTED, IN_PROGRESS, COMPLETED, CANCELLED, SUPERSEDED
+// =============================================================================
 
 model MasterPlan {
   id              String           @id @default(uuid())
@@ -1687,7 +1638,7 @@ model MasterPlan {
   planningHorizonEnd   DateTime    // End of the planning window
 
   // Status workflow
-  status          MasterPlanStatus @default(DRAFT)
+  status          String           @default("draft")
 
   // Snapshot metadata
   snapshotTakenAt DateTime?        // When the snapshot was captured
@@ -1739,17 +1690,6 @@ model MasterPlan {
 // - Maintaining historical audit trail
 // =============================================================================
 
-enum CommitmentStatus {
-  DRAFT         // Not yet committed, can be modified freely
-  PLANNED       // Committed to the plan, awaiting execution
-  SCHEDULED     // Confirmed with shop and customer, specific arrival date set
-  IN_PROGRESS   // Work has begun (car arrived at shop)
-  COMPLETE      // Work finished successfully
-  CANCELLED     // Removed from plan (soft delete)
-  DEFERRED      // Pushed to a future plan
-  RESCHEDULED   // Moved to different shop/date within same plan
-}
-
 model MasterPlanCommitment {
   id                    String           @id @default(uuid())
 
@@ -1776,7 +1716,7 @@ model MasterPlanCommitment {
   scheduledCompletionDate DateTime?      // Expected completion date
 
   // Commitment status workflow
-  status                CommitmentStatus @default(DRAFT)
+  status                String           @default("draft")
 
   // Scheduling confirmation fields (populated when status = SCHEDULED)
   scheduledAt           DateTime?        // When the commitment was confirmed/scheduled
@@ -1855,17 +1795,6 @@ model MasterPlanCommitment {
 // - COMMITTED: Authoritative assignment, part of the Master Plan
 // =============================================================================
 
-enum AssignmentStatus {
-  DRAFT           // Initial draft, fully editable
-  SCENARIO        // Part of a what-if scenario
-  PENDING_REVIEW  // Awaiting review before commitment
-  COMMITTED       // Part of the authoritative Master Plan
-  IN_PROGRESS     // Execution started
-  COMPLETED       // Successfully completed
-  CANCELLED       // Removed/cancelled
-  SUPERSEDED      // Replaced by a newer assignment
-}
-
 model UnifiedAssignment {
   id                    String           @id @default(uuid())
 
@@ -1890,7 +1819,7 @@ model UnifiedAssignment {
   scheduledCompletionDate DateTime?
 
   // Assignment status - the key discriminator
-  status                AssignmentStatus @default(DRAFT)
+  status                String           @default("draft")
 
   // Link to qualification requirement this assignment addresses
   qualificationEntryId  String?
