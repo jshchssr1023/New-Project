@@ -8,6 +8,8 @@ import { prisma } from './services/db';
 import logger from './utils/logger';
 import { cleanupExpiredTokens } from './middleware/auth';
 import { cleanupRateLimitEntries, loginRateLimit, apiRateLimit, initializeRateLimiter } from './middleware/rateLimit';
+import { correlationIdMiddleware, CORRELATION_ID_HEADER } from './middleware/correlationId';
+import { errorHandler, notFoundHandler } from './utils/errors';
 import authRoutes from './routes/auth';
 import carsRoutes from './routes/cars';
 import shopsRoutes from './routes/shops';
@@ -81,11 +83,15 @@ app.use(cors({
   },
   credentials: true, // Required for cookies to be sent cross-origin
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', CORRELATION_ID_HEADER],
+  exposedHeaders: [CORRELATION_ID_HEADER], // Allow client to read correlation ID from responses
 }));
 
 // Cookie parser middleware - required for httpOnly cookie authentication
 app.use(cookieParser());
+
+// Correlation ID middleware - generates/propagates X-Correlation-ID for request tracing
+app.use(correlationIdMiddleware);
 
 // Security headers middleware
 app.use(helmet({
@@ -185,15 +191,19 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/v1', publicApiV1);
 
 // Health check
-app.get('/api/health', (_, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    correlationId: req.correlationId,
+  });
 });
 
-// Error handler
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  logger.error('Unhandled error', err);
-  res.status(500).json({ message: 'Internal server error' });
-});
+// 404 handler for unknown routes
+app.use(notFoundHandler);
+
+// Centralized error handler - formats all errors consistently
+app.use(errorHandler);
 
 // Cleanup jobs - run every hour
 const CLEANUP_INTERVAL = 60 * 60 * 1000; // 1 hour
