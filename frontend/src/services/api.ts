@@ -129,11 +129,15 @@ const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 30000, // 30 second default timeout
+  withCredentials: true, // Send cookies with every request for httpOnly cookie auth
 });
 
-// Request interceptor to add auth token and handle cancellation
+// Request interceptor to handle cancellation
+// Note: Auth token is now sent via httpOnly cookie (withCredentials: true)
+// The Authorization header is kept as fallback during transition period
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Keep Authorization header as fallback during transition (can be removed later)
     const token = localStorage.getItem('authToken');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -227,16 +231,23 @@ apiClient.interceptors.response.use(
 );
 
 // Auth API
+// Note: Token is now stored in httpOnly cookie, managed by backend
+// localStorage is kept for backward compatibility during transition
 export const authApi = {
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
-    localStorage.setItem('authToken', response.data.token);
+    // Keep localStorage for backward compatibility during transition
+    // The httpOnly cookie is set by the backend automatically
+    if (response.data.token) {
+      localStorage.setItem('authToken', response.data.token);
+    }
     localStorage.setItem('user', JSON.stringify(response.data.user));
     return response.data;
   },
 
   logout: async (): Promise<void> => {
     await apiClient.post('/auth/logout');
+    // Clear localStorage (httpOnly cookie cleared by backend)
     localStorage.removeItem('authToken');
     localStorage.removeItem('user');
   },
@@ -248,7 +259,10 @@ export const authApi = {
 
   refreshToken: async (): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/auth/refresh');
-    localStorage.setItem('authToken', response.data.token);
+    // Keep localStorage for backward compatibility
+    if (response.data.token) {
+      localStorage.setItem('authToken', response.data.token);
+    }
     return response.data;
   },
 };

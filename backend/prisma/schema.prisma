@@ -41,6 +41,10 @@ model User {
   // Unified Assignment relations
   committedUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCommitter")
   cancelledUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCanceller")
+
+  // Performance indexes
+  @@index([email])
+  @@index([companyId])
 }
 
 model Company {
@@ -543,7 +547,7 @@ model Plan {
   companyId   String
   company     Company          @relation(fields: [companyId], references: [id])
   createdBy   String
-  creator     User             @relation("PlanCreator", fields: [createdBy], references: [id])
+  creator     User             @relation("PlanCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   assignments PlanAssignment[]
   scenarios   Scenario[]
   createdAt   DateTime         @default(now())
@@ -613,7 +617,7 @@ model Scenario {
   companyId      String
   company        Company                @relation(fields: [companyId], references: [id])
   createdBy      String
-  creator        User                   @relation("ScenarioCreator", fields: [createdBy], references: [id])
+  creator        User                   @relation("ScenarioCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
@@ -740,7 +744,7 @@ model CarFlowPlan {
   // Commitment tracking
   committedAt     DateTime  @default(now())
   committedById   String
-  committedBy     User      @relation("CarFlowPlanCommitter", fields: [committedById], references: [id])
+  committedBy     User      @relation("CarFlowPlanCommitter", fields: [committedById], references: [id], onDelete: Cascade)
 
   // Status workflow: Planned → In Progress → Complete, Cancelled
   // - Planned: Committed to the plan, not yet started
@@ -810,9 +814,9 @@ model SOPCommitment {
 
   // Audit fields
   createdById     String
-  createdBy       User     @relation("SOPCommitmentCreator", fields: [createdById], references: [id])
+  createdBy       User     @relation("SOPCommitmentCreator", fields: [createdById], references: [id], onDelete: Cascade)
   updatedById     String?
-  updatedBy       User?    @relation("SOPCommitmentUpdater", fields: [updatedById], references: [id])
+  updatedBy       User?    @relation("SOPCommitmentUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   companyId       String
 
@@ -1061,6 +1065,8 @@ model LeaseQualificationEntry {
   @@index([targetQualMonth])
   @@index([carId])
   @@index([customerId])
+  @@index([carId, queueStatus])
+  @@index([customerId, plannedReleaseDate])
 }
 
 // Scheduled events for qualification planning
@@ -1598,6 +1604,61 @@ model FilterPreset {
 // that contains commitments for one or many cars across the planning horizon.
 // =============================================================================
 
+// =============================================================================
+// STATUS ENUMS - Type-safe status fields
+// =============================================================================
+
+enum CarStatus {
+  TO_BE_ROUTED
+  ARRIVED
+  COMPLETE
+  RELEASE
+  UP_MARKETED
+  ENROUTE
+  REASSIGNED
+  RELEASED
+  SCHEDULED
+  OTHER
+}
+
+enum ShoppingStatus {
+  URGENT
+  MUST_SHOP
+  UPCOMING
+  COMPLIANT
+  IN_SHOP
+  PLANNED
+  UNKNOWN
+}
+
+enum PlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum ScenarioStatus {
+  DRAFT
+  CONFIRMED
+  ARCHIVED
+}
+
+enum CarFlowPlanStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETE
+  CANCELLED
+}
+
+enum LeaseContractStatus {
+  ACTIVE
+  PENDING_RELEASE
+  RELEASED
+  RENEWED
+  TERMINATED
+}
+
 enum MasterPlanStatus {
   DRAFT      // Plan is being worked on, not yet approved
   PENDING    // Awaiting approval
@@ -1639,15 +1700,15 @@ model MasterPlan {
   // Approval workflow
   submittedAt     DateTime?
   submittedById   String?
-  submittedBy     User?            @relation("MasterPlanSubmitter", fields: [submittedById], references: [id])
+  submittedBy     User?            @relation("MasterPlanSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
   approvedAt      DateTime?
   approvedById    String?
-  approvedBy      User?            @relation("MasterPlanApprover", fields: [approvedById], references: [id])
+  approvedBy      User?            @relation("MasterPlanApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   rejectionReason String           @default("")
 
   // Audit fields
   createdById     String
-  createdBy       User             @relation("MasterPlanCreator", fields: [createdById], references: [id])
+  createdBy       User             @relation("MasterPlanCreator", fields: [createdById], references: [id], onDelete: Cascade)
   companyId       String
   company         Company          @relation(fields: [companyId], references: [id])
 
@@ -1752,10 +1813,10 @@ model MasterPlanCommitment {
   // Audit fields
   committedAt           DateTime?
   committedById         String?
-  committedBy           User?            @relation("MasterPlanCommitmentCommitter", fields: [committedById], references: [id])
+  committedBy           User?            @relation("MasterPlanCommitmentCommitter", fields: [committedById], references: [id], onDelete: SetNull)
   cancelledAt           DateTime?
   cancelledById         String?
-  cancelledBy           User?            @relation("MasterPlanCommitmentCanceller", fields: [cancelledById], references: [id])
+  cancelledBy           User?            @relation("MasterPlanCommitmentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
   cancellationReason    String           @default("")
 
   notes                 String           @default("")
@@ -1778,6 +1839,8 @@ model MasterPlanCommitment {
   @@index([plannedYear, plannedMonth])
   // Composite index for monthly shop views (recommended)
   @@index([companyId, status, plannedYear, plannedMonth])
+  // Additional indexes for common queries
+  @@index([carId, status])
 }
 
 // =============================================================================
@@ -1866,7 +1929,7 @@ model UnifiedAssignment {
   // Commitment tracking (when status = COMMITTED)
   committedAt           DateTime?
   committedById         String?
-  committedBy           User?            @relation("UnifiedAssignmentCommitter", fields: [committedById], references: [id])
+  committedBy           User?            @relation("UnifiedAssignmentCommitter", fields: [committedById], references: [id], onDelete: SetNull)
 
   // Execution tracking
   actualArrivalDate     DateTime?
@@ -1875,7 +1938,7 @@ model UnifiedAssignment {
   // Cancellation tracking
   cancelledAt           DateTime?
   cancelledById         String?
-  cancelledBy           User?            @relation("UnifiedAssignmentCanceller", fields: [cancelledById], references: [id])
+  cancelledBy           User?            @relation("UnifiedAssignmentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
   cancellationReason    String           @default("")
 
   notes                 String           @default("")
@@ -1897,4 +1960,6 @@ model UnifiedAssignment {
   @@index([plannedYear, plannedMonth])
   @@index([companyId, status])
   @@index([shopId, plannedYear, plannedMonth])
+  @@index([carId, status])
+  @@index([customerId, status, plannedYear])
 }

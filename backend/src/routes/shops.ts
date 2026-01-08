@@ -83,14 +83,19 @@ router.post('/capacity/batch', async (req: AuthRequest, res: Response) => {
       _count: { id: true },
     });
 
+    // Build Map for O(1) lookups (fixes O(N²) query)
+    const assignmentMap = new Map<string, number>();
+    assignments.forEach(a => {
+      assignmentMap.set(`${a.shopId}-${a.scheduledMonth}`, a._count.id);
+    });
+
     // Build capacity map
     const capacityData: Record<string, Record<string, { capacity: number; used: number; available: number }>> = {};
 
     shops.forEach(shop => {
       capacityData[shop.id] = {};
       months.forEach(month => {
-        const assignment = assignments.find(a => a.shopId === shop.id && a.scheduledMonth === month);
-        const used = assignment?._count.id || 0;
+        const used = assignmentMap.get(`${shop.id}-${month}`) || 0;
         capacityData[shop.id][month] = {
           capacity: shop.capacity,
           used,
@@ -247,17 +252,25 @@ router.get('/capacity/summary', async (req: AuthRequest, res: Response) => {
       _count: { id: true },
     });
 
+    // Build Map<shopId, Map<month, count>> for O(1) lookups (fixes O(N²) query)
+    const shopMonthMap = new Map<string, Map<string, number>>();
+    assignments.forEach(a => {
+      if (!shopMonthMap.has(a.shopId)) {
+        shopMonthMap.set(a.shopId, new Map());
+      }
+      shopMonthMap.get(a.shopId)!.set(a.scheduledMonth, a._count.id);
+    });
+
     const summary = shops.map(shop => {
-      const shopAssignments = assignments.filter(a => a.shopId === shop.id);
       const monthlyData: Record<string, { used: number; available: number; percent: number }> = {};
+      const shopMonths = shopMonthMap.get(shop.id);
 
       months.forEach(month => {
-        const assignment = shopAssignments.find(a => a.scheduledMonth === month);
-        const used = assignment?._count.id || 0;
+        const used = shopMonths?.get(month) || 0;
         monthlyData[month] = {
           used,
           available: shop.capacity - used,
-          percent: Math.round((used / shop.capacity) * 100),
+          percent: shop.capacity > 0 ? Math.round((used / shop.capacity) * 100) : 0,
         };
       });
 
