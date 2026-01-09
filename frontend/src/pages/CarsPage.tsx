@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useCars } from '../hooks/useCars';
 import { useCarSelection } from '../contexts/CarSelectionContext';
+import { useToast } from '../contexts/ToastContext';
 import BulkActionsBar from '../components/cars/BulkActionsBar';
 import HierarchicalFilter from '../components/cars/HierarchicalFilter';
 import ShoppingStatusBadge, { getShoppingStatus } from '../components/cars/ShoppingStatusBadge';
@@ -49,6 +50,7 @@ export default function CarsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { selectMultiple } = useCarSelection();
+  const { showToast } = useToast();
 
   // View mode: 'cards' or 'table'
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -137,8 +139,10 @@ export default function CarsPage() {
         customer: filters.customer,
         carType: filters.carType,
       });
+      showToast('Export started successfully', 'success');
     } catch (error) {
-      console.error('Export failed:', error);
+      const message = error instanceof Error ? error.message : 'Export failed';
+      showToast(`Export failed: ${message}`, 'error');
     }
   };
 

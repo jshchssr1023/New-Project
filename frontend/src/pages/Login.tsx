@@ -15,14 +15,19 @@ export default function Login() {
     setError('');
     setIsLoading(true);
 
-    try {
-      await login(email, password);
-      navigate('/');
-    } catch {
-      setError('Invalid email or password');
-    } finally {
-      setIsLoading(false);
+    const result = await login(email, password);
+
+    if (result.success) {
+      // Check for redirect after login
+      const redirect = sessionStorage.getItem('redirectAfterLogin');
+      const safePath = redirect && redirect.startsWith('/') && !redirect.includes('//') ? redirect : '/';
+      sessionStorage.removeItem('redirectAfterLogin');
+      navigate(safePath);
+    } else {
+      setError(result.error || 'Invalid email or password');
     }
+
+    setIsLoading(false);
   };
 
   return (
