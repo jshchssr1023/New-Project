@@ -307,6 +307,17 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
     });
     const existingCarIds = new Set(existingScenarioCars.map(sc => sc.carId));
 
+    // Parse scheduledMonth (YYYY-MM format) to get plannedYear and plannedMonth
+    let plannedYear = new Date().getFullYear();
+    let plannedMonth = new Date().getMonth() + 1;
+    if (scheduledMonth && typeof scheduledMonth === 'string') {
+      const parts = scheduledMonth.split('-');
+      if (parts.length >= 2) {
+        plannedYear = parseInt(parts[0], 10) || plannedYear;
+        plannedMonth = parseInt(parts[1], 10) || plannedMonth;
+      }
+    }
+
     // Filter out cars that already exist and prepare batch insert data
     const newCarsData = cars
       .filter(car => !existingCarIds.has(car.id))
@@ -315,7 +326,9 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
         return {
           scenarioId: req.params.id,
           carId: car.id,
-          scheduledMonth,
+          scheduledMonth: scheduledMonth || '',
+          plannedMonth,
+          plannedYear,
           suggestedShopId: recommendation?.suggestedShopId || null,
           estimatedCost: recommendation?.allScores?.[0]?.estimatedCost || DEFAULT_ESTIMATED_COST,
           estimatedDays: recommendation?.allScores?.[0]?.estimatedDays || DEFAULT_ESTIMATED_DAYS,
