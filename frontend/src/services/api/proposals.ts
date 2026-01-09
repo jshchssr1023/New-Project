@@ -5,7 +5,7 @@
  * Supports: Create Plan → Send to Customer → Get Approval → Schedule
  */
 
-import { apiClient } from './client';
+import apiClient from './client';
 import type {
   PlanProposal,
   ProposalStatus,
