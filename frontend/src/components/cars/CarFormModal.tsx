@@ -7,9 +7,9 @@ interface CarFormModalProps {
   onClose: () => void;
   onSubmit: (data: Partial<Car>) => Promise<void>;
   editingCar?: Car | null;
-  carTypeOptions: string[];
-  reasonOptions: string[];
-  liningTypeOptions?: string[];
+  carTypeOptions: readonly string[];
+  reasonOptions: readonly string[];
+  liningTypeOptions?: readonly string[];
 }
 
 const defaultLiningTypes = ['None', 'Rubber', 'Epoxy', 'Glass', 'Stainless Steel', 'Polyurethane'];

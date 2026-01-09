@@ -55,6 +55,16 @@ const WORK_TYPE_CONFIG: Record<
     icon: CheckCircleIcon,
     color: 'blue',
   },
+  full_qualification: {
+    label: 'Full Qualifications',
+    icon: CheckCircleIcon,
+    color: 'blue',
+  },
+  partial_qualification: {
+    label: 'Partial Qualifications',
+    icon: CheckCircleIcon,
+    color: 'indigo',
+  },
   assignment: {
     label: 'Assignments',
     icon: TruckIcon,
@@ -62,6 +72,11 @@ const WORK_TYPE_CONFIG: Record<
   },
   return: {
     label: 'Returns',
+    icon: ArrowUturnLeftIcon,
+    color: 'amber',
+  },
+  release: {
+    label: 'Releases',
     icon: ArrowUturnLeftIcon,
     color: 'amber',
   },

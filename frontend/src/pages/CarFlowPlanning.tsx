@@ -1748,16 +1748,17 @@ function DemandRegister({
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        item.workType === 'full_qualification' ? 'bg-blue-100 text-blue-700' :
-                        item.workType === 'partial_qualification' ? 'bg-indigo-100 text-indigo-700' :
+                        item.workType === 'qualification' ? 'bg-blue-100 text-blue-700' :
                         item.workType === 'assignment' ? 'bg-green-100 text-green-700' :
-                        item.workType === 'release' ? 'bg-purple-100 text-purple-700' :
+                        item.workType === 'return' ? 'bg-purple-100 text-purple-700' :
+                        item.workType === 'repair' ? 'bg-orange-100 text-orange-700' :
+                        item.workType === 'maintenance' ? 'bg-indigo-100 text-indigo-700' :
                         'bg-steel-100 text-steel-700'
                       }`}>
-                        {item.workType === 'full_qualification' ? 'FULL QUAL' :
-                         item.workType === 'partial_qualification' ? 'PART QUAL' :
+                        {item.workType === 'qualification' ? 'QUAL' :
                          item.workType === 'assignment' ? 'ASSIGN' :
-                         item.workType === 'release' ? 'RELEASE' : item.workType.toUpperCase()}
+                         item.workType === 'return' ? 'RETURN' :
+                         item.workType === 'repair' ? 'REPAIR' : item.workType.toUpperCase()}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">
@@ -1998,16 +1999,17 @@ function DemandRegister({
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-sm">
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                            item.workType === 'full_qualification' ? 'bg-blue-100 text-blue-700' :
-                            item.workType === 'partial_qualification' ? 'bg-indigo-100 text-indigo-700' :
+                            item.workType === 'qualification' ? 'bg-blue-100 text-blue-700' :
                             item.workType === 'assignment' ? 'bg-green-100 text-green-700' :
-                            item.workType === 'release' ? 'bg-purple-100 text-purple-700' :
+                            item.workType === 'return' ? 'bg-purple-100 text-purple-700' :
+                            item.workType === 'repair' ? 'bg-orange-100 text-orange-700' :
+                            item.workType === 'maintenance' ? 'bg-indigo-100 text-indigo-700' :
                             'bg-steel-100 text-steel-700'
                           }`}>
-                            {item.workType === 'full_qualification' ? 'FULL QUAL' :
-                             item.workType === 'partial_qualification' ? 'PART QUAL' :
+                            {item.workType === 'qualification' ? 'QUAL' :
                              item.workType === 'assignment' ? 'ASSIGN' :
-                             item.workType === 'release' ? 'RELEASE' : item.workType.toUpperCase()}
+                             item.workType === 'return' ? 'RETURN' :
+                             item.workType === 'repair' ? 'REPAIR' : item.workType.toUpperCase()}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-sm text-steel-700">

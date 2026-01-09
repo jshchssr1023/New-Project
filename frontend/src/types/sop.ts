@@ -17,7 +17,8 @@ export type PlanningState =
   | 'completed';            // Work finished
 
 // Work Type - what kind of work needs to be done
-export type WorkType = 'full_qualification' | 'partial_qualification' | 'assignment' | 'release' | 'repair';
+// Includes both simple (qualification, return) and detailed (full_qualification, partial_qualification, release) variants
+export type WorkType = 'qualification' | 'full_qualification' | 'partial_qualification' | 'assignment' | 'return' | 'release' | 'repair' | 'maintenance' | 'project';
 
 // Demand Register Item - individual car in the demand register
 export interface DemandRegisterItem {

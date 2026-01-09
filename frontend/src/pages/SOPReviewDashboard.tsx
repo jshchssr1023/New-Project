@@ -65,11 +65,15 @@ function getUtilizationStatus(percent: number): 'good' | 'warning' | 'danger' | 
 
 // Work type labels
 const WORK_TYPE_LABELS: Record<WorkType, string> = {
+  qualification: 'Qualifications',
   full_qualification: 'Full Qualifications',
   partial_qualification: 'Partial Qualifications',
   assignment: 'Assignments',
+  return: 'Returns',
   release: 'Releases',
   repair: 'Repairs',
+  maintenance: 'Maintenance',
+  project: 'Projects',
 };
 
 export default function SOPReviewDashboard() {

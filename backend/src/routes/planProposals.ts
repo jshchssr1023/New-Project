@@ -235,7 +235,10 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
 
     const proposal = await planProposalService.recordApproval({
       proposalId: id,
-      ...validationResult.data,
+      approvedBy: validationResult.data.approvedBy,
+      approverEmail: validationResult.data.approverEmail,
+      approverTitle: validationResult.data.approverTitle,
+      responseNotes: validationResult.data.responseNotes,
     });
 
     res.json(proposal);
@@ -264,7 +267,8 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
 
     const proposal = await planProposalService.recordRejection({
       proposalId: id,
-      ...validationResult.data,
+      rejectionReason: validationResult.data.rejectionReason,
+      responseNotes: validationResult.data.responseNotes,
     });
 
     res.json(proposal);

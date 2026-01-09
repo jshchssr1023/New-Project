@@ -503,7 +503,7 @@ export interface ReportData {
 
 export type MasterPlanStatus = 'draft' | 'under_review' | 'approved' | 'active' | 'archived';
 export type CommitmentStatus = 'committed' | 'scheduled' | 'in_transit' | 'arrived' | 'in_progress' | 'released';
-export type WorkType = 'qualification' | 'assignment' | 'return' | 'repair' | 'maintenance';
+export type WorkType = 'qualification' | 'full_qualification' | 'partial_qualification' | 'assignment' | 'return' | 'release' | 'repair' | 'maintenance' | 'project';
 
 export interface MasterPlan {
   id: string;
