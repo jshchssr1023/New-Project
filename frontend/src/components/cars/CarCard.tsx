@@ -1,6 +1,7 @@
 import { CheckIcon } from '@heroicons/react/24/outline';
 import ShoppingStatusBadge, { getShoppingStatus, getEarliestQualDate } from './ShoppingStatusBadge';
 import type { Car } from '../../types';
+import { STATUS_COLORS } from '../../constants/carOptions';
 
 // Extended Car type - all qualification fields are now in Car
 // This type alias adds only extra fields that may come from extended queries
@@ -16,18 +17,9 @@ interface CarCardProps {
   onViewDetails?: (car: ExtendedCar) => void;
 }
 
-// Status badge colors
-const statusColors: Record<string, string> = {
-  available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  in_service: 'bg-amber-50 text-amber-700 border-amber-200',
-  in_shop: 'bg-violet-50 text-violet-700 border-violet-200',
-  scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
-  planned: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  release: 'bg-orange-50 text-orange-700 border-orange-200',
-  assignment: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  arrived: 'bg-green-50 text-green-700 border-green-200',
-  retired: 'bg-steel-100 text-steel-600 border-steel-200',
-};
+// Status badge colors - use centralized colors from carOptions
+// Includes both legacy statuses and Column AK (Current Status) values
+const statusColors: Record<string, string> = STATUS_COLORS;
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '-';
@@ -90,7 +82,9 @@ export default function CarCard({ car, isSelected, onSelect, onViewDetails }: Ca
         </div>
         <div>
           <span className="text-steel-500">Portfolio:</span>
-          <span className="ml-1 text-steel-800">{car.portfolio || '-'}</span>
+          <span className={`ml-1 font-medium ${car.portfolio ? 'text-green-700' : 'text-steel-500'}`}>
+            {car.portfolio ? 'On Lease' : 'Not Active'}
+          </span>
         </div>
         <div>
           <span className="text-steel-500">Qual Type:</span>

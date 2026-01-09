@@ -548,16 +548,23 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     });
 
     // Apply planning status filter after transformation
+    // Planning is determined by:
+    // - Column AJ (performScheduled): "Planned Shopping" = already planned
+    // - hasActivePlan: car has a date in a shop (CarFlowPlan)
+    // - Needs Planning = car available to be planned (no plan, needs shopping)
     let filteredCars = transformedCars;
     if (planningStatus === 'needs_planning') {
-      // Cars that need planning: have shopping status but no active plan
+      // Cars that need planning: have shopping status but no active plan and not marked as scheduled
       filteredCars = transformedCars.filter(car =>
         !car.hasActivePlan &&
+        !(car as any).performScheduled &&
         ['Urgent', 'Must Shop', 'Upcoming'].includes(car.shoppingStatus)
       );
     } else if (planningStatus === 'already_planned') {
-      // Cars that are already planned
-      filteredCars = transformedCars.filter(car => car.hasActivePlan);
+      // Cars that are already planned: have active plan OR performScheduled is true
+      filteredCars = transformedCars.filter(car =>
+        car.hasActivePlan || (car as any).performScheduled
+      );
     }
 
     res.json({

@@ -680,8 +680,32 @@ const STATUS_VARIATIONS: Record<string, string> = {
   'scrapped': 'retired',
 };
 
-// Valid normalized status values
-export const VALID_STATUSES = ['available', 'in_service', 'in_shop', 'scheduled', 'retired'];
+// Valid normalized status values - includes both legacy and Column AK (Current Status) values
+export const VALID_STATUSES = [
+  // Legacy statuses
+  'available',
+  'in_service',
+  'in_shop',
+  'scheduled',
+  'planned',
+  'retired',
+  // Column AK (Current Status) values from car data
+  'Complete',
+  'Arrived',
+  'To Be Routed',
+  'Enroute',
+  'Release',
+  'Reassigned',
+  'Up Marketed',
+  // Aliases (lowercase)
+  'complete',
+  'arrived',
+  'to be routed',
+  'enroute',
+  'release',
+  'reassigned',
+  'up marketed',
+];
 
 /**
  * Normalizes a status value to one of the valid system statuses.
