@@ -32,6 +32,10 @@ const VALID_COLUMN_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const TABLES_WITHOUT_UPDATED_AT = new Set([
   'AuditLog',
   'InvalidatedToken',
+]);
+
+// Tables that have no timestamp columns at all
+const TABLES_WITHOUT_TIMESTAMPS = new Set([
   'RateLimitEntry',
 ]);
 
@@ -468,13 +472,13 @@ function createTableHandler(tableName: string) {
         data.id = uuidv4();
       }
 
-      // Add timestamps if not provided
+      // Add timestamps if not provided (skip for tables without timestamp columns)
       const now = new Date().toISOString();
-      if (!data.createdAt) {
+      if (!data.createdAt && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
         data.createdAt = now;
       }
       // Only add updatedAt for tables that have this column
-      if (!data.updatedAt && !TABLES_WITHOUT_UPDATED_AT.has(tableName)) {
+      if (!data.updatedAt && !TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
         data.updatedAt = now;
       }
 
@@ -519,7 +523,11 @@ function createTableHandler(tableName: string) {
 
     update: async (options: { where: WhereClause; data: any; include?: any }) => {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
-      const data = { ...options.data, updatedAt: new Date().toISOString() };
+      const data = { ...options.data };
+      // Only add updatedAt for tables that have this column
+      if (!TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+        data.updatedAt = new Date().toISOString();
+      }
 
       const keys = Object.keys(data);
       // SECURITY: Validate all column names
@@ -570,7 +578,11 @@ function createTableHandler(tableName: string) {
 
     updateMany: async (options: { where?: WhereClause; data: any }) => {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
-      const data = { ...options.data, updatedAt: new Date().toISOString() };
+      const data = { ...options.data };
+      // Only add updatedAt for tables that have this column
+      if (!TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+        data.updatedAt = new Date().toISOString();
+      }
 
       const keys = Object.keys(data);
       // SECURITY: Validate all column names
