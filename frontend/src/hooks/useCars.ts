@@ -56,6 +56,13 @@ export function useCars(options: UseCarsOptions = {}) {
     staleTime: 30000, // 30 seconds
   });
 
+  // Fetch filter options from the entire database (not just current page)
+  const { data: filterOptionsData } = useQuery({
+    queryKey: ['cars', 'filter-options'],
+    queryFn: () => carsApi.getFilterOptions(),
+    staleTime: 60000, // 1 minute
+  });
+
   // Mutations with optimistic updates
   const createCarMutation = useMutation({
     mutationFn: (data: Partial<Car>) => carsApi.create(data),
@@ -285,15 +292,15 @@ export function useCars(options: UseCarsOptions = {}) {
     return result;
   }, [carsResponse?.data, filters.search, filters.shoppingStatus]);
 
-  // Unique values for filter dropdowns
+  // Unique values for filter dropdowns (from API - entire database)
   const filterOptions = useMemo(() => {
-    const allCars = carsResponse?.data || [];
     return {
-      customers: [...new Set(allCars.map(c => c.customer).filter(Boolean))].sort(),
-      carTypes: [...new Set(allCars.map(c => c.carType).filter(Boolean))].sort(),
-      reasons: [...new Set(allCars.map(c => c.reasonsShopped).filter(Boolean))].sort(),
+      customers: filterOptionsData?.customers || [],
+      carTypes: filterOptionsData?.carTypes || [],
+      reasons: filterOptionsData?.reasons || [],
+      statuses: filterOptionsData?.statuses || [],
     };
-  }, [carsResponse?.data]);
+  }, [filterOptionsData]);
 
   return {
     // Data
