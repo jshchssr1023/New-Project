@@ -35,8 +35,8 @@ const TABLES_WITHOUT_UPDATED_AT = new Set([
 ]);
 
 // Tables that have no timestamp columns at all
-const TABLES_WITHOUT_TIMESTAMPS = new Set([
-  'RateLimitEntry',
+const TABLES_WITHOUT_TIMESTAMPS = new Set<string>([
+  // Currently empty - all tables now have timestamps
 ]);
 
 /**
