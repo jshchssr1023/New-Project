@@ -460,3 +460,132 @@ export interface RuleTestResult {
   }[];
   ruleNotes: string;
 }
+
+// =============================================================================
+// Plan Proposal Types - Customer Approval Workflow
+// =============================================================================
+
+export type ProposalStatus =
+  | 'DRAFT'
+  | 'SENT'
+  | 'CUSTOMER_APPROVED'
+  | 'CUSTOMER_REJECTED'
+  | 'REVISION_REQUESTED'
+  | 'SCHEDULED'
+  | 'EXPIRED'
+  | 'CANCELLED';
+
+export interface PlanProposal {
+  id: string;
+  proposalNumber: string;
+  name: string;
+  description: string;
+  customerId: string;
+  sourceScenarioId: string;
+  status: ProposalStatus;
+  version: number;
+  parentProposalId: string | null;
+
+  // Communication tracking
+  sentAt: string | null;
+  sentById: string | null;
+  sentToEmail: string;
+  sentToName: string;
+
+  // Customer response
+  respondedAt: string | null;
+  approvedBy: string;
+  approverEmail: string;
+  approverTitle: string;
+  responseNotes: string;
+  rejectionReason: string;
+
+  // Scheduling
+  scheduledAt: string | null;
+  scheduledById: string | null;
+
+  // Metrics
+  carCount: number;
+  totalEstimatedCost: number;
+  planningHorizonStart: string | null;
+  planningHorizonEnd: string | null;
+  shopCount: number;
+
+  // Content
+  proposalSnapshot: string;
+  proposalPdfUrl: string;
+  proposalPdfGeneratedAt: string | null;
+
+  // Expiration
+  expiresAt: string | null;
+
+  // Audit
+  createdById: string;
+  companyId: string;
+  createdAt: string;
+  updatedAt: string;
+
+  // Relations
+  customer?: {
+    id: string;
+    name: string;
+    code: string;
+    contactEmail: string;
+    contactName: string;
+  };
+  sourceScenario?: {
+    id: string;
+    name: string;
+    status: string;
+  };
+  parentProposal?: PlanProposal | null;
+  childProposals?: PlanProposal[];
+}
+
+export interface CreateProposalInput {
+  scenarioId: string;
+  customerId: string;
+  name: string;
+  description?: string;
+  expiresAt?: string;
+}
+
+export interface SendProposalInput {
+  sentToEmail: string;
+  sentToName: string;
+}
+
+export interface RecordApprovalInput {
+  approvedBy: string;
+  approverEmail?: string;
+  approverTitle?: string;
+  responseNotes?: string;
+}
+
+export interface RecordRejectionInput {
+  rejectionReason: string;
+  responseNotes?: string;
+}
+
+export interface RequestRevisionInput {
+  responseNotes: string;
+}
+
+export interface ProposalStats {
+  total: number;
+  draft: number;
+  sent: number;
+  approved: number;
+  rejected: number;
+  revisionRequested: number;
+  scheduled: number;
+  expired: number;
+  cancelled: number;
+  awaitingResponse: number;
+  awaitingScheduling: number;
+}
+
+export interface ScheduleProposalResult {
+  proposal: PlanProposal;
+  carFlowPlansCreated: number;
+}

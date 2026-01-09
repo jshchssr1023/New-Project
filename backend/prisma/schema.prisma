@@ -79,6 +79,9 @@ model Company {
 
   // Shop Network relations
   shopNetworks            ShopNetwork[]
+
+  // Plan Proposal relations
+  planProposals           PlanProposal[]
 }
 
 // =============================================================================
@@ -212,6 +215,9 @@ model Customer {
   // Master Plan relations
   masterPlanCommitments MasterPlanCommitment[]
   unifiedAssignments    UnifiedAssignment[]
+
+  // Plan Proposal relations
+  planProposals         PlanProposal[]
 
   @@unique([code, companyId])
 }
@@ -638,6 +644,9 @@ model Scenario {
 
   // Car Flow Plan relation - scenarios that created car flow plans
   carFlowPlans   CarFlowPlan[]
+
+  // Plan Proposal relation - proposals generated from this scenario
+  planProposals  PlanProposal[]
 
   @@index([projectNumber, companyId])
   // Performance indexes for frequently filtered fields
@@ -1596,6 +1605,111 @@ model FilterPreset {
 
   @@index([companyId, pageType])
   @@index([createdById])
+}
+
+// =============================================================================
+// PLAN PROPOSAL - Customer Approval Workflow
+// =============================================================================
+// Tracks plan proposals sent to customers for approval. This is the bridge
+// between the planning team (creates drafts) and the scheduling team (executes
+// approved plans). The workflow is:
+//   1. Planner creates Scenario (draft)
+//   2. Planner generates PlanProposal from Scenario
+//   3. PlanProposal sent to customer (status = SENT)
+//   4. Customer approves/rejects/requests changes
+//   5. Approved proposals appear in Scheduling Queue
+//   6. Scheduler converts approved proposals to CarFlowPlans
+// =============================================================================
+
+enum ProposalStatus {
+  DRAFT              // Being prepared, not yet sent
+  SENT               // Sent to customer, awaiting response
+  CUSTOMER_APPROVED  // Customer accepted the proposal
+  CUSTOMER_REJECTED  // Customer rejected the proposal
+  REVISION_REQUESTED // Customer requested changes
+  SCHEDULED          // Converted to CarFlowPlans by scheduler
+  EXPIRED            // Proposal expired without response
+  CANCELLED          // Cancelled by planner
+}
+
+model PlanProposal {
+  id                    String         @id @default(uuid())
+
+  // Proposal identification
+  proposalNumber        String         // Human-readable proposal number (e.g., "PROP-2026-001")
+  name                  String         // Display name (e.g., "Shell Q1 2026 Qualification Plan")
+  description           String         @default("")
+
+  // Customer this proposal is for
+  customerId            String
+  customer              Customer       @relation(fields: [customerId], references: [id])
+
+  // Source scenario (the draft plan)
+  sourceScenarioId      String
+  sourceScenario        Scenario       @relation(fields: [sourceScenarioId], references: [id])
+
+  // Proposal status workflow
+  status                ProposalStatus @default(DRAFT)
+
+  // Version tracking (for revision requests)
+  version               Int            @default(1)
+  parentProposalId      String?        // Previous version if this is a revision
+  parentProposal        PlanProposal?  @relation("ProposalVersions", fields: [parentProposalId], references: [id])
+  childProposals        PlanProposal[] @relation("ProposalVersions")
+
+  // Communication tracking
+  sentAt                DateTime?      // When proposal was sent to customer
+  sentById              String?        // User who sent the proposal
+  sentToEmail           String         @default("") // Customer email sent to
+  sentToName            String         @default("") // Customer contact name
+
+  // Customer response
+  respondedAt           DateTime?      // When customer responded
+  approvedBy            String         @default("") // Customer contact who approved (name)
+  approverEmail         String         @default("") // Customer contact email
+  approverTitle         String         @default("") // Customer contact title
+  responseNotes         String         @default("") // Customer's notes/comments
+  rejectionReason       String         @default("") // If rejected, why
+
+  // Scheduling (when approved and scheduled)
+  scheduledAt           DateTime?      // When scheduler converted to CarFlowPlans
+  scheduledById         String?        // User who scheduled
+
+  // Summary metrics (snapshot at time of proposal)
+  carCount              Int            @default(0)
+  totalEstimatedCost    Float          @default(0)
+  planningHorizonStart  DateTime?      // First month of plan
+  planningHorizonEnd    DateTime?      // Last month of plan
+  shopCount             Int            @default(0)
+
+  // Proposal content (JSON snapshot of cars/assignments at time of send)
+  // This allows us to track exactly what was proposed even if scenario changes
+  proposalSnapshot      String         @default("{}") // JSON: { cars: [...], shops: [...], assignments: [...] }
+
+  // PDF generation
+  proposalPdfUrl        String         @default("") // Path to generated PDF
+  proposalPdfGeneratedAt DateTime?
+
+  // Expiration
+  expiresAt             DateTime?      // When proposal expires if no response
+
+  // Audit fields
+  createdById           String
+  companyId             String
+  company               Company        @relation(fields: [companyId], references: [id])
+
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  // Indexes
+  @@unique([proposalNumber, companyId])
+  @@index([customerId])
+  @@index([sourceScenarioId])
+  @@index([status])
+  @@index([companyId, status])
+  @@index([companyId, customerId, status])
+  @@index([sentAt])
+  @@index([expiresAt])
 }
 
 // =============================================================================

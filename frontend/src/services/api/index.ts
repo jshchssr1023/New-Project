@@ -28,6 +28,9 @@ export { reportsApi } from './reports';
 export { masterPlanApi, masterPlanWizardApi } from './masterPlans';
 export { sopApi, leaseQualificationApi, shopRulesApi } from './sop';
 
+// Proposal & Scheduling Queue API
+export { default as proposalsApi } from './proposals';
+
 // Re-export all types
 export type {
   CarImportStatus,
@@ -66,4 +69,14 @@ export type {
   ShopRuleSchema,
   ShopRule,
   RuleTestResult,
+  // Plan Proposal types
+  ProposalStatus,
+  PlanProposal,
+  CreateProposalInput,
+  SendProposalInput,
+  RecordApprovalInput,
+  RecordRejectionInput,
+  RequestRevisionInput,
+  ProposalStats,
+  ScheduleProposalResult,
 } from './types';

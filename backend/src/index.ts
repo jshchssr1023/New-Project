@@ -35,6 +35,7 @@ import allocationRoutes from './routes/allocation';
 import shopNetworksRoutes from './routes/shopNetworks';
 import adminRoutes from './routes/admin';
 import publicApiV1 from './routes/api/v1';
+import planProposalsRoutes from './routes/planProposals';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 import { initializeShoppingStatusJob, getShoppingStatusJob } from './jobs/shoppingStatusJob';
@@ -159,6 +160,7 @@ app.use('/api/car-flow', apiRateLimit);
 app.use('/api/allocation', apiRateLimit);
 app.use('/api/shop-networks', apiRateLimit);
 app.use('/api/admin', apiRateLimit);
+app.use('/api/proposals', apiRateLimit);
 app.use('/api/v1', apiRateLimit);
 
 // Routes
@@ -186,6 +188,7 @@ app.use('/api/car-flow', carFlowRoutes);
 app.use('/api/allocation', allocationRoutes);
 app.use('/api/shop-networks', shopNetworksRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/proposals', planProposalsRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);

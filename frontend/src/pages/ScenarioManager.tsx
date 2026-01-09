@@ -15,8 +15,12 @@ import {
   AdjustmentsHorizontalIcon,
   RocketLaunchIcon,
   TruckIcon,
+  EnvelopeIcon,
+  PaperAirplaneIcon,
 } from '@heroicons/react/24/outline';
 import { scenariosApi, plansApi, carsApi, shopsApi } from '../services/api';
+import proposalsApi from '../services/api/proposals';
+import type { PlanProposal, CreateProposalInput, SendProposalInput } from '../services/api/types';
 import type { Scenario, Plan, Car, Shop, ScenarioCar, ShopRecommendation, OverloadedShop } from '../types';
 import { EmptyState } from '../components/ui';
 import { BeakerIcon } from '@heroicons/react/24/outline';
@@ -84,6 +88,19 @@ export default function ScenarioManager() {
   const [isApproving, setIsApproving] = useState(false);
   const [approvePlanName, setApprovePlanName] = useState('');
   const [activateOnApprove, setActivateOnApprove] = useState(true);
+
+  // Send to Customer (Proposal) state
+  const [isSendToCustomerModalOpen, setIsSendToCustomerModalOpen] = useState(false);
+  const [isSendingProposal, setIsSendingProposal] = useState(false);
+  const [proposalForm, setProposalForm] = useState({
+    name: '',
+    description: '',
+    customerId: '',
+    customerEmail: '',
+    customerContactName: '',
+  });
+  const [createdProposal, setCreatedProposal] = useState<PlanProposal | null>(null);
+
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [selectedScenarioCar, setSelectedScenarioCar] = useState<ScenarioCar | null>(null);
   const [recommendations, setRecommendations] = useState<ShopRecommendation[]>([]);
@@ -528,6 +545,103 @@ export default function ScenarioManager() {
       alert(error.response?.data?.message || 'Failed to approve scenario. Please try again.');
     } finally {
       setIsApproving(false);
+    }
+  };
+
+  // ============================================================================
+  // Send to Customer (Proposal) Handlers
+  // ============================================================================
+
+  const handleOpenSendToCustomerModal = () => {
+    if (!selectedScenario) return;
+
+    // Check if scenario has cars with assignments
+    const hasCarsWithShops = selectedScenario.cars?.some(
+      (sc) => sc.assignedShopId || sc.suggestedShopId
+    );
+
+    if (!selectedScenario.cars || selectedScenario.cars.length === 0) {
+      alert('Please add cars to the scenario before sending to customer.');
+      return;
+    }
+
+    if (!hasCarsWithShops) {
+      alert('Please assign shops to cars before sending to customer.');
+      return;
+    }
+
+    // Get customer from first car or scenario
+    const firstCar = selectedScenario.cars[0]?.car;
+    const customerId = firstCar?.customerId || '';
+    const customerName = firstCar?.customer || selectedScenario.customerFilter || '';
+
+    setProposalForm({
+      name: `${customerName} - ${selectedScenario.name}`,
+      description: selectedScenario.description || '',
+      customerId: customerId,
+      customerEmail: '',
+      customerContactName: '',
+    });
+    setCreatedProposal(null);
+    setIsSendToCustomerModalOpen(true);
+  };
+
+  const handleCreateAndSendProposal = async () => {
+    if (!selectedScenario) return;
+
+    setIsSendingProposal(true);
+    try {
+      // Step 1: Create the proposal
+      const createInput: CreateProposalInput = {
+        scenarioId: selectedScenario.id,
+        customerId: proposalForm.customerId,
+        name: proposalForm.name,
+        description: proposalForm.description,
+      };
+
+      const proposal = await proposalsApi.createProposal(createInput);
+      setCreatedProposal(proposal);
+
+      // Step 2: Send the proposal if email is provided
+      if (proposalForm.customerEmail && proposalForm.customerContactName) {
+        const sendInput: SendProposalInput = {
+          sentToEmail: proposalForm.customerEmail,
+          sentToName: proposalForm.customerContactName,
+        };
+
+        const sentProposal = await proposalsApi.sendProposal(proposal.id, sendInput);
+        setCreatedProposal(sentProposal);
+
+        alert(
+          `Proposal sent successfully!\n\n` +
+          `Proposal #: ${sentProposal.proposalNumber}\n` +
+          `Sent to: ${proposalForm.customerContactName} (${proposalForm.customerEmail})\n` +
+          `Cars: ${sentProposal.carCount}\n\n` +
+          `The customer will review and approve the proposal.`
+        );
+      } else {
+        alert(
+          `Proposal created as draft!\n\n` +
+          `Proposal #: ${proposal.proposalNumber}\n` +
+          `Cars: ${proposal.carCount}\n\n` +
+          `You can send it to the customer later from the Proposals page.`
+        );
+      }
+
+      setIsSendToCustomerModalOpen(false);
+      setProposalForm({
+        name: '',
+        description: '',
+        customerId: '',
+        customerEmail: '',
+        customerContactName: '',
+      });
+
+    } catch (error: any) {
+      console.error('Failed to create/send proposal:', error);
+      alert(error.response?.data?.error || 'Failed to create proposal. Please try again.');
+    } finally {
+      setIsSendingProposal(false);
     }
   };
 
@@ -981,14 +1095,25 @@ export default function ScenarioManager() {
                             <PlayIcon className="mr-1 h-4 w-4" />
                             Verify Capacity
                           </button>
-                          {/* ONE-STEP: Allow approval directly from draft if cars have shops */}
+                          {/* Send to Customer - new workflow */}
+                          {selectedScenario.cars?.some(c => c.assignedShopId || c.suggestedShopId) && (
+                            <button
+                              onClick={handleOpenSendToCustomerModal}
+                              className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-blue-600 hover:bg-blue-700"
+                            >
+                              <EnvelopeIcon className="mr-2 h-4 w-4" />
+                              Send to Customer
+                            </button>
+                          )}
+                          {/* Direct approval (legacy) - still available if cars have shops */}
                           {selectedScenario.cars?.some(c => c.assignedShopId || c.suggestedShopId) && (
                             <button
                               onClick={handleOpenApproveModal}
-                              className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-green-600 hover:bg-green-700"
+                              className="btn-secondary py-2 px-4 text-sm flex items-center font-medium"
+                              title="Skip customer approval and schedule directly"
                             >
                               <RocketLaunchIcon className="mr-2 h-4 w-4" />
-                              Approve Scenario
+                              Direct Schedule
                             </button>
                           )}
                         </>
@@ -1000,13 +1125,23 @@ export default function ScenarioManager() {
                         </button>
                       )}
                       {selectedScenario.status === 'completed' && (
-                        <button
-                          onClick={handleOpenApproveModal}
-                          className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-green-600 hover:bg-green-700"
-                        >
-                          <RocketLaunchIcon className="mr-2 h-4 w-4" />
-                          Approve Scenario
-                        </button>
+                        <>
+                          <button
+                            onClick={handleOpenSendToCustomerModal}
+                            className="btn-primary py-2 px-4 text-sm flex items-center font-medium bg-blue-600 hover:bg-blue-700"
+                          >
+                            <EnvelopeIcon className="mr-2 h-4 w-4" />
+                            Send to Customer
+                          </button>
+                          <button
+                            onClick={handleOpenApproveModal}
+                            className="btn-secondary py-2 px-4 text-sm flex items-center font-medium"
+                            title="Skip customer approval and schedule directly"
+                          >
+                            <RocketLaunchIcon className="mr-2 h-4 w-4" />
+                            Direct Schedule
+                          </button>
+                        </>
                       )}
                       {selectedScenario.status === 'approved' && (
                         <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-lg">
@@ -2240,6 +2375,147 @@ export default function ScenarioManager() {
                     <>
                       <RocketLaunchIcon className="mr-2 h-4 w-4" />
                       Approve & Create Master Plan
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send to Customer Modal */}
+      {isSendToCustomerModalOpen && selectedScenario && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center p-4">
+            <div className="fixed inset-0 bg-steel-900/50" onClick={() => setIsSendToCustomerModalOpen(false)} />
+            <div className="relative w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-blue-100 rounded-full">
+                  <EnvelopeIcon className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold text-steel-900">Send to Customer</h2>
+                  <p className="text-sm text-steel-500">Create proposal for customer approval</p>
+                </div>
+              </div>
+
+              {/* Summary */}
+              <div className="mb-4 p-4 bg-steel-50 rounded-lg">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-bold text-steel-900">
+                      {selectedScenario.cars?.length || 0}
+                    </div>
+                    <div className="text-xs text-steel-500">Cars</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-steel-900">
+                      {new Set(selectedScenario.cars?.map(c => c.assignedShopId || c.suggestedShopId).filter(Boolean)).size}
+                    </div>
+                    <div className="text-xs text-steel-500">Shops</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-steel-900">
+                      ${Math.round((selectedScenario.cars?.reduce((sum, c) => sum + (c.estimatedCost || 0), 0) || 0) / 1000)}k
+                    </div>
+                    <div className="text-xs text-steel-500">Est. Cost</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-steel-700 mb-1">
+                    Proposal Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={proposalForm.name}
+                    onChange={(e) => setProposalForm(prev => ({ ...prev, name: e.target.value }))}
+                    className="input"
+                    placeholder="e.g., Shell Q1 2026 Qualification Plan"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-steel-700 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={proposalForm.description}
+                    onChange={(e) => setProposalForm(prev => ({ ...prev, description: e.target.value }))}
+                    className="input"
+                    rows={2}
+                    placeholder="Optional notes for the customer..."
+                  />
+                </div>
+
+                <div className="border-t border-steel-200 pt-4">
+                  <h3 className="text-sm font-medium text-steel-900 mb-3">
+                    Customer Contact (optional)
+                  </h3>
+                  <p className="text-xs text-steel-500 mb-3">
+                    Provide contact details to send the proposal immediately, or leave blank to save as draft.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-steel-600 mb-1">
+                        Contact Name
+                      </label>
+                      <input
+                        type="text"
+                        value={proposalForm.customerContactName}
+                        onChange={(e) => setProposalForm(prev => ({ ...prev, customerContactName: e.target.value }))}
+                        className="input text-sm"
+                        placeholder="John Smith"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-steel-600 mb-1">
+                        Contact Email
+                      </label>
+                      <input
+                        type="email"
+                        value={proposalForm.customerEmail}
+                        onChange={(e) => setProposalForm(prev => ({ ...prev, customerEmail: e.target.value }))}
+                        className="input text-sm"
+                        placeholder="john@example.com"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setIsSendToCustomerModalOpen(false)}
+                  className="btn-secondary"
+                  disabled={isSendingProposal}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateAndSendProposal}
+                  disabled={isSendingProposal || !proposalForm.name}
+                  className="btn-primary bg-blue-600 hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                >
+                  {isSendingProposal ? (
+                    <>
+                      <ArrowPathIcon className="mr-2 h-4 w-4 animate-spin" />
+                      Creating...
+                    </>
+                  ) : proposalForm.customerEmail && proposalForm.customerContactName ? (
+                    <>
+                      <PaperAirplaneIcon className="mr-2 h-4 w-4" />
+                      Create & Send Proposal
+                    </>
+                  ) : (
+                    <>
+                      <EnvelopeIcon className="mr-2 h-4 w-4" />
+                      Create Draft Proposal
                     </>
                   )}
                 </button>
