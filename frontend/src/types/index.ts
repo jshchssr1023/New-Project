@@ -100,11 +100,18 @@ export interface Car {
 // Shopping status for regulatory qualification
 export type ShoppingStatus = 'Urgent' | 'Must Shop' | 'Upcoming' | 'Compliant' | 'In Shop' | 'Planned' | 'Unknown';
 
+// Type guard for ShoppingStatus
+const SHOPPING_STATUS_VALUES: readonly ShoppingStatus[] = ['Urgent', 'Must Shop', 'Upcoming', 'Compliant', 'In Shop', 'Planned', 'Unknown'] as const;
+
+function isShoppingStatus(value: string): value is ShoppingStatus {
+  return SHOPPING_STATUS_VALUES.includes(value as ShoppingStatus);
+}
+
 // Helper function to calculate shopping status from car qualification dates
 export function calculateShoppingStatus(car: Car): ShoppingStatus {
-  // If shoppingStatus is already set, return it
-  if (car.shoppingStatus) {
-    return car.shoppingStatus as ShoppingStatus;
+  // If shoppingStatus is already set and valid, return it
+  if (car.shoppingStatus && isShoppingStatus(car.shoppingStatus)) {
+    return car.shoppingStatus;
   }
 
   const currentYear = new Date().getFullYear();
