@@ -86,16 +86,10 @@ const apiClient: AxiosInstance = axios.create({
 });
 
 // Request interceptor to handle cancellation
-// Note: Auth token is now sent via httpOnly cookie (withCredentials: true)
-// The Authorization header is kept as fallback during transition period
+// Note: Auth token is sent via httpOnly cookie (withCredentials: true)
+// No need for Authorization header - cookies are automatically included
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // Keep Authorization header as fallback during transition (can be removed later)
-    const token = localStorage.getItem('authToken');
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-
     // Set up request cancellation for duplicate requests
     const requestKey = getRequestKey(config);
 
@@ -141,9 +135,8 @@ apiClient.interceptors.response.use(
         sessionStorage.setItem('redirectAfterLogin', currentPath);
       }
 
-      // Clear auth state
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('user');
+      // Note: Auth cookie is httpOnly and cleared by backend on logout
+      // No localStorage cleanup needed - token is managed via cookies
 
       // Only redirect if not already on login page
       if (currentPath !== '/login') {

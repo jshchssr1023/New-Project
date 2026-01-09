@@ -7,37 +7,35 @@
  * - Qualification dates
  * - Car Flow Plan commitments
  *
- * Shopping Status Values:
- * - "In Shop" - Car is currently at a shop (status = Arrived)
+ * Shopping Status Values (enum without spaces):
+ * - "InShop" - Car is currently at a shop (status = Arrived)
  * - "Compliant" - Car is compliant, no shopping needed
  * - "Planned" - Car is committed in the Car Flow Plan
  * - "Urgent" - Qualification due date is past (before Jan 1 of current year)
- * - "Must Shop" - Qualification due this year
+ * - "MustShop" - Qualification due this year
  * - "Upcoming" - Qualification due next year
  * - "Unknown" - Data gap, needs review
  */
 
 import { PrismaClient, Prisma } from '@prisma/client';
 import logger from '../utils/logger';
+import {
+  CarStatus,
+  ShoppingStatus as ShoppingStatusEnum,
+  CarFlowPlanStatus
+} from '../types/prismaTypes';
 
-// Shopping status enum matching the spec
-export type ShoppingStatus =
-  | 'In Shop'
-  | 'Compliant'
-  | 'Planned'
-  | 'Urgent'
-  | 'Must Shop'
-  | 'Upcoming'
-  | 'Unknown';
+// Re-export ShoppingStatus type for backward compatibility
+export type ShoppingStatus = ShoppingStatusEnum;
 
 // Car statuses that require qualification date evaluation
-const QUALIFICATION_EVAL_STATUSES = [
-  'To Be Routed',
-  'Release',
-  'Up Marketed',
-  'Enroute',
-  'Reassigned',
-  'Released'
+const QUALIFICATION_EVAL_STATUSES: CarStatus[] = [
+  CarStatus.ToBeRouted,
+  CarStatus.Release,
+  CarStatus.UpMarketed,
+  CarStatus.Enroute,
+  CarStatus.Reassigned,
+  CarStatus.Released
 ];
 
 // Qualification date field names on the Car model
@@ -109,53 +107,53 @@ export function calculateShoppingStatus(
   const endOfCurrentYear = new Date(currentYear, 11, 31, 23, 59, 59); // Dec 31 of current year
   const endOfNextYear = new Date(currentYear + 1, 11, 31, 23, 59, 59); // Dec 31 of next year
 
-  // Step 1: IF current_status = 'Arrived' → "In Shop"
-  if (car.status === 'Arrived') {
-    return { status: 'In Shop', earliestQualDue: null, qualificationType: null };
+  // Step 1: IF current_status = 'Arrived' → "InShop"
+  if (car.status === CarStatus.Arrived) {
+    return { status: ShoppingStatusEnum.InShop, earliestQualDue: null, qualificationType: null };
   }
 
   // Step 2: IF current_status = 'Complete' AND portfolio = TRUE → "Compliant"
-  if (car.status === 'Complete' && car.portfolio === true) {
-    return { status: 'Compliant', earliestQualDue: null, qualificationType: null };
+  if (car.status === CarStatus.Complete && car.portfolio === true) {
+    return { status: ShoppingStatusEnum.Compliant, earliestQualDue: null, qualificationType: null };
   }
 
   // Step 3: IF car_id EXISTS IN car_flow_plan WHERE status = 'Planned' → "Planned"
   if (hasCarFlowPlan) {
-    return { status: 'Planned', earliestQualDue: null, qualificationType: null };
+    return { status: ShoppingStatusEnum.Planned, earliestQualDue: null, qualificationType: null };
   }
 
   // Step 4: IF current_status IN qualification eval statuses
-  if (QUALIFICATION_EVAL_STATUSES.includes(car.status)) {
+  if (QUALIFICATION_EVAL_STATUSES.includes(car.status as CarStatus)) {
     const { date: earliestQualDue, field: qualField } = getEarliestQualificationDate(car);
 
     if (earliestQualDue) {
       // Step 4a: IF earliest_qual_due < January 1 of CURRENT_YEAR → "Urgent"
       if (earliestQualDue < startOfCurrentYear) {
-        return { status: 'Urgent', earliestQualDue, qualificationType: qualField };
+        return { status: ShoppingStatusEnum.Urgent, earliestQualDue, qualificationType: qualField };
       }
 
-      // Step 4b: IF earliest_qual_due <= December 31 of CURRENT_YEAR → "Must Shop"
+      // Step 4b: IF earliest_qual_due <= December 31 of CURRENT_YEAR → "MustShop"
       if (earliestQualDue <= endOfCurrentYear) {
-        return { status: 'Must Shop', earliestQualDue, qualificationType: qualField };
+        return { status: ShoppingStatusEnum.MustShop, earliestQualDue, qualificationType: qualField };
       }
 
       // Step 4c: IF earliest_qual_due <= December 31 of NEXT_YEAR → "Upcoming"
       if (earliestQualDue <= endOfNextYear) {
-        return { status: 'Upcoming', earliestQualDue, qualificationType: qualField };
+        return { status: ShoppingStatusEnum.Upcoming, earliestQualDue, qualificationType: qualField };
       }
 
       // Step 4d: ELSE → "Compliant"
-      return { status: 'Compliant', earliestQualDue, qualificationType: qualField };
+      return { status: ShoppingStatusEnum.Compliant, earliestQualDue, qualificationType: qualField };
     }
   }
 
-  // Step 5: IF portfolio = TRUE AND performed_tank_qual = TRUE → "Must Shop"
+  // Step 5: IF portfolio = TRUE AND performed_tank_qual = TRUE → "MustShop"
   if (car.portfolio === true && car.performedTankQual === true) {
-    return { status: 'Must Shop', earliestQualDue: null, qualificationType: null };
+    return { status: ShoppingStatusEnum.MustShop, earliestQualDue: null, qualificationType: null };
   }
 
   // Step 6: ELSE → "Unknown" (data gap — flag for review)
-  return { status: 'Unknown', earliestQualDue: null, qualificationType: null };
+  return { status: ShoppingStatusEnum.Unknown, earliestQualDue: null, qualificationType: null };
 }
 
 /**
@@ -200,7 +198,7 @@ export class ShoppingStatusService {
     const hasCarFlowPlan = await this.prisma.carFlowPlan.findFirst({
       where: {
         carId,
-        status: 'Planned'
+        status: CarFlowPlanStatus.Planned
       }
     }) !== null;
 
@@ -248,7 +246,7 @@ export class ShoppingStatusService {
     const carsWithPlans = await this.prisma.carFlowPlan.findMany({
       where: {
         carId: { in: carIds },
-        status: 'Planned'
+        status: CarFlowPlanStatus.Planned
       },
       select: { carId: true }
     });
@@ -330,7 +328,7 @@ export class ShoppingStatusService {
       const carsWithPlans = await this.prisma.carFlowPlan.findMany({
         where: {
           carId: { in: carIds },
-          status: 'Planned'
+          status: CarFlowPlanStatus.Planned
         },
         select: { carId: true }
       });
@@ -391,13 +389,13 @@ export class ShoppingStatusService {
     });
 
     const result: Record<string, number> = {
-      'In Shop': 0,
-      'Compliant': 0,
-      'Planned': 0,
-      'Urgent': 0,
-      'Must Shop': 0,
-      'Upcoming': 0,
-      'Unknown': 0
+      [ShoppingStatusEnum.InShop]: 0,
+      [ShoppingStatusEnum.Compliant]: 0,
+      [ShoppingStatusEnum.Planned]: 0,
+      [ShoppingStatusEnum.Urgent]: 0,
+      [ShoppingStatusEnum.MustShop]: 0,
+      [ShoppingStatusEnum.Upcoming]: 0,
+      [ShoppingStatusEnum.Unknown]: 0
     };
 
     for (const stat of stats) {
@@ -414,30 +412,30 @@ export class ShoppingStatusService {
    * Called by car update hooks
    */
   async onCarStatusChange(carId: string, newStatus: string): Promise<void> {
-    // If car status changes to Arrived, In Progress status should be reflected
+    // If car status changes to Arrived, InProgress status should be reflected
     // in the Car Flow Plan as well
-    if (newStatus === 'Arrived') {
-      // Update any Planned Car Flow Plan to In Progress
+    if (newStatus === CarStatus.Arrived) {
+      // Update any Planned Car Flow Plan to InProgress
       await this.prisma.carFlowPlan.updateMany({
         where: {
           carId,
-          status: 'Planned'
+          status: CarFlowPlanStatus.Planned
         },
         data: {
-          status: 'In Progress'
+          status: CarFlowPlanStatus.InProgress
         }
       });
     }
 
     // If car status changes to Complete, mark Car Flow Plan as Complete
-    if (newStatus === 'Complete') {
+    if (newStatus === CarStatus.Complete) {
       await this.prisma.carFlowPlan.updateMany({
         where: {
           carId,
-          status: { in: ['Planned', 'In Progress'] }
+          status: { in: [CarFlowPlanStatus.Planned, CarFlowPlanStatus.InProgress] }
         },
         data: {
-          status: 'Complete'
+          status: CarFlowPlanStatus.Complete
         }
       });
     }

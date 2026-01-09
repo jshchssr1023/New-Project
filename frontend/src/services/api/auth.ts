@@ -2,25 +2,19 @@ import apiClient from './client';
 import type { User, AuthResponse, LoginCredentials } from '../../types';
 
 // Auth API
-// Note: Token is now stored in httpOnly cookie, managed by backend
-// localStorage is kept for backward compatibility during transition
+// Token is managed via httpOnly cookie - backend sets/clears the cookie automatically
+// No localStorage needed for token storage (more secure)
 export const authApi = {
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
-    // Keep localStorage for backward compatibility during transition
-    // The httpOnly cookie is set by the backend automatically
-    if (response.data.token) {
-      localStorage.setItem('authToken', response.data.token);
-    }
-    localStorage.setItem('user', JSON.stringify(response.data.user));
+    // httpOnly cookie is set by the backend automatically
+    // Return user data for AuthContext to store in state
     return response.data;
   },
 
   logout: async (): Promise<void> => {
     await apiClient.post('/auth/logout');
-    // Clear localStorage (httpOnly cookie cleared by backend)
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('user');
+    // httpOnly cookie is cleared by the backend
   },
 
   getCurrentUser: async (): Promise<User> => {
@@ -30,10 +24,7 @@ export const authApi = {
 
   refreshToken: async (): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/auth/refresh');
-    // Keep localStorage for backward compatibility
-    if (response.data.token) {
-      localStorage.setItem('authToken', response.data.token);
-    }
+    // httpOnly cookie is refreshed by the backend
     return response.data;
   },
 };

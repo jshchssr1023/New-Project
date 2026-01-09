@@ -9,7 +9,6 @@ import {
   ArrowPathIcon,
   DocumentArrowDownIcon,
 } from '@heroicons/react/24/outline';
-import { useAuth } from '../contexts/AuthContext';
 
 interface ImportPreview {
   totalRows: number;
@@ -36,7 +35,6 @@ type EntityType = 'cars' | 'shops';
 type Tab = 'import' | 'export';
 
 export default function ImportExport() {
-  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('import');
   const [entityType, setEntityType] = useState<EntityType>('cars');
   const [csvContent, setCsvContent] = useState('');
@@ -87,9 +85,9 @@ export default function ImportExport() {
       const res = await fetch(`/api/import-export/${entityType}/preview`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ csvContent }),
       });
 
@@ -117,9 +115,9 @@ export default function ImportExport() {
       const res = await fetch(`/api/import-export/${entityType}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           csvContent,
           updateExisting,
@@ -147,7 +145,7 @@ export default function ImportExport() {
 
     try {
       const res = await fetch(`/api/import-export/${type}/export`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       if (res.ok) {
@@ -169,7 +167,7 @@ export default function ImportExport() {
   const downloadTemplate = async (type: EntityType) => {
     try {
       const res = await fetch(`/api/import-export/template/${type}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       if (res.ok) {
