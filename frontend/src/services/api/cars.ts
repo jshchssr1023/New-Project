@@ -4,6 +4,17 @@ import type { CarImportResult, HeaderAnalysisResult } from './types';
 
 // Cars API
 export const carsApi = {
+  // Get all unique filter options for slicers (from entire database)
+  getFilterOptions: async (): Promise<{
+    carTypes: string[];
+    customers: string[];
+    reasons: string[];
+    statuses: string[];
+  }> => {
+    const response = await apiClient.get('/cars/filter-options');
+    return response.data;
+  },
+
   getAll: async (params?: {
     page?: number;
     pageSize?: number;

@@ -580,6 +580,47 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Get all unique filter options for slicers
+router.get('/filter-options', async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = req.user!.companyId;
+
+    // Get all unique values for each filter field
+    const [carTypes, customers, reasons, statuses] = await Promise.all([
+      prisma.car.findMany({
+        where: { companyId, carType: { not: '' } },
+        select: { carType: true },
+        distinct: ['carType'],
+      }),
+      prisma.car.findMany({
+        where: { companyId, customer: { not: '' } },
+        select: { customer: true },
+        distinct: ['customer'],
+      }),
+      prisma.car.findMany({
+        where: { companyId, reasonsShopped: { not: '' } },
+        select: { reasonsShopped: true },
+        distinct: ['reasonsShopped'],
+      }),
+      prisma.car.findMany({
+        where: { companyId, status: { not: '' } },
+        select: { status: true },
+        distinct: ['status'],
+      }),
+    ]);
+
+    res.json({
+      carTypes: carTypes.map(c => c.carType).filter(Boolean).sort(),
+      customers: customers.map(c => c.customer).filter(Boolean).sort(),
+      reasons: reasons.map(c => c.reasonsShopped).filter(Boolean).sort(),
+      statuses: statuses.map(c => c.status).filter(Boolean).sort(),
+    });
+  } catch (error) {
+    logger.error('Get filter options error', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Export railcars to CSV
 router.get('/export', async (req: AuthRequest, res: Response) => {
   const { ids, status, customer, reasonShopped, carType, format = 'umler' } = req.query;
