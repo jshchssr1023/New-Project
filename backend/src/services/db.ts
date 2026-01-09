@@ -22,7 +22,7 @@ const ALLOWED_TABLES = new Set([
   'MasterPlanCommitment', 'Notification', 'WeeklyCapacity', 'CapacityAudit',
   'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
-  'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig',
+  'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -675,6 +675,123 @@ function createTableHandler(tableName: string) {
       } else {
         return await createTableHandler(tableName).create({ data: options.create });
       }
+    },
+
+    groupBy: async (options: { by: string[]; where?: WhereClause; _count?: { [key: string]: boolean }; _sum?: { [key: string]: boolean }; _avg?: { [key: string]: boolean }; _min?: { [key: string]: boolean }; _max?: { [key: string]: boolean } }) => {
+      // Validate group by columns
+      options.by.forEach(validateColumnName);
+
+      const { sql: whereClause, params } = buildWhereClause(options.where);
+
+      // Build SELECT clause with aggregations
+      const selectParts: string[] = options.by.map(col => `"${col}"`);
+
+      // Handle _count aggregation
+      if (options._count) {
+        for (const [field, enabled] of Object.entries(options._count)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`COUNT("${field}") as "_count_${field}"`);
+          }
+        }
+      }
+
+      // Handle _sum aggregation
+      if (options._sum) {
+        for (const [field, enabled] of Object.entries(options._sum)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`SUM("${field}") as "_sum_${field}"`);
+          }
+        }
+      }
+
+      // Handle _avg aggregation
+      if (options._avg) {
+        for (const [field, enabled] of Object.entries(options._avg)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`AVG("${field}") as "_avg_${field}"`);
+          }
+        }
+      }
+
+      // Handle _min aggregation
+      if (options._min) {
+        for (const [field, enabled] of Object.entries(options._min)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MIN("${field}") as "_min_${field}"`);
+          }
+        }
+      }
+
+      // Handle _max aggregation
+      if (options._max) {
+        for (const [field, enabled] of Object.entries(options._max)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MAX("${field}") as "_max_${field}"`);
+          }
+        }
+      }
+
+      const groupByClause = `GROUP BY ${options.by.map(col => `"${col}"`).join(', ')}`;
+      const query = `SELECT ${selectParts.join(', ')} FROM "${tableName}" ${whereClause} ${groupByClause}`;
+
+      const rows = db.prepare(query).all(...params);
+
+      // Transform results to match Prisma's groupBy output format
+      return rows.map((row: any) => {
+        const result: any = {};
+
+        // Add grouped columns
+        for (const col of options.by) {
+          result[col] = row[col];
+        }
+
+        // Add _count results
+        if (options._count) {
+          result._count = {};
+          for (const field of Object.keys(options._count)) {
+            result._count[field] = row[`_count_${field}`] || 0;
+          }
+        }
+
+        // Add _sum results
+        if (options._sum) {
+          result._sum = {};
+          for (const field of Object.keys(options._sum)) {
+            result._sum[field] = row[`_sum_${field}`] || 0;
+          }
+        }
+
+        // Add _avg results
+        if (options._avg) {
+          result._avg = {};
+          for (const field of Object.keys(options._avg)) {
+            result._avg[field] = row[`_avg_${field}`] || null;
+          }
+        }
+
+        // Add _min results
+        if (options._min) {
+          result._min = {};
+          for (const field of Object.keys(options._min)) {
+            result._min[field] = row[`_min_${field}`] || null;
+          }
+        }
+
+        // Add _max results
+        if (options._max) {
+          result._max = {};
+          for (const field of Object.keys(options._max)) {
+            result._max[field] = row[`_max_${field}`] || null;
+          }
+        }
+
+        return result;
+      });
     }
   };
 }
@@ -744,6 +861,9 @@ export const prisma = {
 
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),
+
+  // Shop Network table
+  shopNetwork: createTableHandler('ShopNetwork'),
 
   // Raw query support - SECURITY: Use parameterized queries only
   // WARNING: These functions should be used sparingly and only with parameterized queries
