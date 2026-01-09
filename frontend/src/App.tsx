@@ -34,6 +34,9 @@ const MasterPlannerDashboard = lazy(() => import('./pages/MasterPlannerDashboard
 const SOPReviewDashboard = lazy(() => import('./pages/SOPReviewDashboard'));
 const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 
+// New Workflow - Proposal & Scheduling Queue
+const SchedulingQueue = lazy(() => import('./pages/SchedulingQueue'));
+
 // Page loading fallback with accessibility support
 function PageLoader({ message = 'Loading...' }: { message?: string }) {
   return (
@@ -122,6 +125,9 @@ export default function App() {
             <Route path="sop-plan" element={<SOPPlanningPage />} />
             <Route path="demand-registry" element={<DemandRegistryPage />} />
             <Route path="master-planner" element={<MasterPlannerDashboard />} />
+
+            {/* New Workflow Routes */}
+            <Route path="scheduling-queue" element={<SchedulingQueue />} />
 
             {/* S&OP Supply Settings - admin only */}
             <Route

@@ -97,6 +97,89 @@ export enum AssignmentStatus {
 }
 
 // =============================================================================
+// ENUMS - Plan Proposal Status Types
+// =============================================================================
+
+export enum ProposalStatus {
+  DRAFT = 'DRAFT',
+  SENT = 'SENT',
+  CUSTOMER_APPROVED = 'CUSTOMER_APPROVED',
+  CUSTOMER_REJECTED = 'CUSTOMER_REJECTED',
+  REVISION_REQUESTED = 'REVISION_REQUESTED',
+  SCHEDULED = 'SCHEDULED',
+  EXPIRED = 'EXPIRED',
+  CANCELLED = 'CANCELLED',
+}
+
+// =============================================================================
+// PLAN PROPOSAL - Customer Approval Workflow
+// =============================================================================
+
+export interface PlanProposal {
+  id: string;
+  proposalNumber: string;
+  name: string;
+  description: string;
+
+  // References
+  customerId: string;
+  sourceScenarioId: string;
+
+  // Status
+  status: ProposalStatus;
+
+  // Versioning
+  version: number;
+  parentProposalId: string | null;
+
+  // Communication tracking
+  sentAt: Date | null;
+  sentById: string | null;
+  sentToEmail: string;
+  sentToName: string;
+
+  // Customer response
+  respondedAt: Date | null;
+  approvedBy: string;
+  approverEmail: string;
+  approverTitle: string;
+  responseNotes: string;
+  rejectionReason: string;
+
+  // Scheduling
+  scheduledAt: Date | null;
+  scheduledById: string | null;
+
+  // Metrics
+  carCount: number;
+  totalEstimatedCost: number;
+  planningHorizonStart: Date | null;
+  planningHorizonEnd: Date | null;
+  shopCount: number;
+
+  // Content
+  proposalSnapshot: string;
+  proposalPdfUrl: string;
+  proposalPdfGeneratedAt: Date | null;
+
+  // Expiration
+  expiresAt: Date | null;
+
+  // Audit
+  createdById: string;
+  companyId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PlanProposalWithRelations extends PlanProposal {
+  customer?: { id: string; name: string; code: string; contactEmail: string; contactName: string };
+  sourceScenario?: { id: string; name: string; status: string };
+  parentProposal?: PlanProposal | null;
+  childProposals?: PlanProposal[];
+}
+
+// =============================================================================
 // MASTER PLAN - Versioned Container for Fleet Schedule Snapshots
 // =============================================================================
 

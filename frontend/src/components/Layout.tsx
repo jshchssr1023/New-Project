@@ -20,6 +20,8 @@ import {
   KeyIcon,
   XMarkIcon,
   CalendarDaysIcon,
+  ClipboardDocumentCheckIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,15 +30,25 @@ import { useCarSelection } from '../contexts/CarSelectionContext';
 import NotificationBell from './NotificationBell';
 
 
-// Operations & Planning - Core scheduling/logistics functions
-const operationsNavigation = [
+// Core Workflow - Primary planning sequence
+const workflowNavigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Railcars', href: '/cars', icon: TruckIcon },
+  { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
+  { name: 'Plan Editor', href: '/scenarios', icon: BeakerIcon, description: 'Create Plans' },
+  { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentCheckIcon, description: 'Approved Plans' },
+];
+
+// Shops & Capacity - Shop management
+const shopsNavigation = [
   { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
   { name: '3P Networks', href: '/shop-networks', icon: BuildingOffice2Icon },
-  { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
+];
+
+// Planning Tools - Additional planning views
+const planningNavigation = [
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
-  { name: 'Scenarios', href: '/scenarios', icon: BeakerIcon },
+  { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
+  { name: 'S&OP Review', href: '/sop-review', icon: DocumentTextIcon },
 ];
 
 // Reporting & Rules - Data review and configuration
@@ -88,8 +100,10 @@ export default function Layout() {
 
   // Build navigation sections based on user role
   const navSections = [
-    { title: 'Operations & Planning', items: operationsNavigation },
-    { title: 'Reporting & Rules', items: reportingNavigation },
+    { title: 'Workflow', items: workflowNavigation },
+    { title: 'Shops', items: shopsNavigation },
+    { title: 'Planning Tools', items: planningNavigation },
+    { title: 'Reports', items: reportingNavigation },
     ...(user?.role === 'admin' ? [{ title: 'Administration', items: adminNavigation }] : []),
   ];
 
