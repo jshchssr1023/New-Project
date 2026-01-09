@@ -37,6 +37,10 @@ const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 // New Workflow - Proposal & Scheduling Queue
 const SchedulingQueue = lazy(() => import('./pages/SchedulingQueue'));
 
+// Scheduling Visibility - New UX Components
+const SchedulingDashboard = lazy(() => import('./pages/SchedulingDashboard'));
+const PlanOverviewDashboard = lazy(() => import('./pages/PlanOverviewDashboard'));
+
 // Page loading fallback with accessibility support
 function PageLoader({ message = 'Loading...' }: { message?: string }) {
   return (
@@ -128,6 +132,8 @@ export default function App() {
 
             {/* New Workflow Routes */}
             <Route path="scheduling-queue" element={<SchedulingQueue />} />
+            <Route path="scheduling-dashboard" element={<SchedulingDashboard />} />
+            <Route path="plan-overview" element={<PlanOverviewDashboard />} />
 
             {/* S&OP Supply Settings - admin only */}
             <Route

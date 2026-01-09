@@ -10,6 +10,7 @@ import {
   ArrowsRightLeftIcon,
   BeakerIcon,
   ChartBarIcon,
+  ChartPieIcon,
   UsersIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
@@ -21,6 +22,7 @@ import {
   XMarkIcon,
   CalendarDaysIcon,
   ClipboardDocumentCheckIcon,
+  ClipboardDocumentListIcon,
   DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
@@ -35,6 +37,7 @@ const workflowNavigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
   { name: 'Plan Editor', href: '/scenarios', icon: BeakerIcon, description: 'Create Plans' },
+  { name: 'Scheduling Status', href: '/scheduling-dashboard', icon: ClipboardDocumentListIcon, description: 'See What\'s Scheduled' },
   { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentCheckIcon, description: 'Approved Plans' },
 ];
 
@@ -46,6 +49,7 @@ const shopsNavigation = [
 
 // Planning Tools - Additional planning views
 const planningNavigation = [
+  { name: 'Plan Overview', href: '/plan-overview', icon: ChartPieIcon, description: 'Visual Reports' },
   { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
   { name: 'S&OP Review', href: '/sop-review', icon: DocumentTextIcon },
