@@ -133,13 +133,14 @@ const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA
 async function main() {
   console.log('Starting seed...');
 
-  // Clear existing data
+  // Clear existing data (preserve User and Company for auth)
   const tablesToClear = [
     'QualificationPlanDocument', 'QualificationPlanAssignment', 'QualificationScenario',
     'QualificationPlanEvent', 'LeaseQualificationEntry', 'LeaseContract',
     'SOPAssignment', 'ShopCapacitySlot', 'CarShopEligibility',
-    'ScenarioModification', 'ScenarioCar', 'Scenario',
-    'PlanAssignment', 'Plan', 'Car', 'Shop', 'ShopRule', 'Customer', 'User', 'Company'
+    'ScenarioModification', 'ScenarioCar', 'Scenario', 'CarFlowPlan',
+    'PlanAssignment', 'Plan', 'Car', 'Shop', 'ShopRule', 'Customer'
+    // Note: User and Company NOT cleared to preserve auth from init-db.js
   ];
 
   for (const table of tablesToClear) {
@@ -149,26 +150,33 @@ async function main() {
       // Table might not exist
     }
   }
-  console.log('Cleared existing data');
+  console.log('Cleared existing data (preserved User/Company)');
 
-  // Create company
-  const companyId = uuidv4();
-  db.prepare(`INSERT INTO Company (id, name, code) VALUES (?, ?, ?)`).run(companyId, 'AITX Rail Services', 'AITX');
-  console.log('Created company: AITX Rail Services');
+  // Get existing company ID from init-db.js, or create if not exists
+  let companyId;
+  const existingCompany = db.prepare('SELECT id FROM Company LIMIT 1').get();
+  if (existingCompany) {
+    companyId = existingCompany.id;
+    console.log('Using existing company');
+  } else {
+    companyId = uuidv4();
+    db.prepare(`INSERT INTO Company (id, name, code) VALUES (?, ?, ?)`).run(companyId, 'AITX Rail Services', 'AITX');
+    console.log('Created company: AITX Rail Services');
 
-  // Create users
-  const adminPassword = bcrypt.hashSync('password123', 10);
-  const adminId = uuidv4();
-  const plannerId = uuidv4();
-  const viewerId = uuidv4();
+    // Create users only if company was created
+    const adminPassword = bcrypt.hashSync('admin123', 10);
+    const adminId = uuidv4();
+    const plannerId = uuidv4();
+    const viewerId = uuidv4();
 
-  db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
-  db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
-  db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
-  console.log('Created users: admin, planner, viewer');
+    db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(adminId, 'admin@demo.com', adminPassword, 'Admin', 'User', 'admin', companyId);
+    db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(plannerId, 'planner@demo.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
+    db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(viewerId, 'viewer@demo.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
+    console.log('Created users: admin, planner, viewer');
+  }
 
   // Create shops
   const insertShop = db.prepare(`
