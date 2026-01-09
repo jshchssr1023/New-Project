@@ -44,21 +44,37 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    // List view with assignment count
+    // List view with assignment count - optimized with select and _count
     const plans = await prisma.plan.findMany({
       where: {
         companyId: req.user!.companyId,
         ...(status && { status: status as string }),
       },
-      include: {
-        creator: true,
-        assignments: true,
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        creator: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        _count: {
+          select: { assignments: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    // Transform to include assignmentCount
-    const plansWithCount = plans.map((plan: any) => ({
+    // Transform to include assignmentCount (from _count)
+    const plansWithCount = plans.map((plan) => ({
       id: plan.id,
       name: plan.name,
       description: plan.description,
@@ -67,12 +83,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       status: plan.status,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
-      creator: plan.creator ? {
-        id: plan.creator.id,
-        firstName: plan.creator.firstName,
-        lastName: plan.creator.lastName,
-      } : null,
-      assignmentCount: plan.assignments?.length || 0,
+      creator: plan.creator,
+      assignmentCount: plan._count.assignments,
     }));
 
     res.json(plansWithCount);
