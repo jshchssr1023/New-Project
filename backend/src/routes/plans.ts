@@ -84,7 +84,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
       creator: plan.creator,
-      assignmentCount: plan._count.assignments,
+      assignmentCount: plan._count?.assignments ?? 0,
     }));
 
     res.json(plansWithCount);
