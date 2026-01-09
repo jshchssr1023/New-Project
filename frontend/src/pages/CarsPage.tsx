@@ -13,42 +13,29 @@ import {
 } from '@heroicons/react/24/outline';
 import { useCars } from '../hooks/useCars';
 import { useCarSelection } from '../contexts/CarSelectionContext';
+import { useToast } from '../contexts/ToastContext';
 import BulkActionsBar from '../components/cars/BulkActionsBar';
 import HierarchicalFilter from '../components/cars/HierarchicalFilter';
 import ShoppingStatusBadge, { getShoppingStatus } from '../components/cars/ShoppingStatusBadge';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CarCardGridSkeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
-import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal } from '../components/ui';
+import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal, EmptyState } from '../components/ui';
+import { TruckIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../types';
 import { carsApi } from '../services/api';
+import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS } from '../constants/carOptions';
 
 // Lazy load modals
 const ImportModal = lazy(() => import('../components/cars/ImportModal'));
 const CarFormModal = lazy(() => import('../components/cars/CarFormModal'));
 const PlanCarsModal = lazy(() => import('../components/carflow/PlanCarsModal'));
 
-// Constants
-const CAR_TYPE_OPTIONS = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
-const REASON_OPTIONS = ['Annual Inspection', 'Wheel Repair', 'Tank Cleaning', 'Valve Replacement', 'Frame Repair', 'Safety Retrofit', 'DOT Compliance', 'Corrosion Repair', 'Coupler Replacement', 'Brake System'];
-
-// Status colors for table view
-const statusColors: Record<string, string> = {
-  available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  in_service: 'bg-amber-50 text-amber-700 border-amber-200',
-  in_shop: 'bg-violet-50 text-violet-700 border-violet-200',
-  scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
-  planned: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  release: 'bg-orange-50 text-orange-700 border-orange-200',
-  assignment: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  arrived: 'bg-green-50 text-green-700 border-green-200',
-  retired: 'bg-steel-100 text-steel-600 border-steel-200',
-};
-
 export default function CarsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { selectMultiple } = useCarSelection();
+  const { showToast } = useToast();
 
   // View mode: 'cards' or 'table'
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -137,8 +124,10 @@ export default function CarsPage() {
         customer: filters.customer,
         carType: filters.carType,
       });
+      showToast('Export started successfully', 'success');
     } catch (error) {
-      console.error('Export failed:', error);
+      const message = error instanceof Error ? error.message : 'Export failed';
+      showToast(`Export failed: ${message}`, 'error');
     }
   };
 
@@ -409,15 +398,15 @@ export default function CarsPage() {
               <TableSkeleton rows={10} columns={10} />
             )
           ) : displayedCars.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-steel-500">No cars found matching your filters.</p>
-              <button
-                onClick={handleClearAllFilters}
-                className="mt-2 text-rail-600 hover:text-rail-800 font-medium"
-              >
-                Clear all filters
-              </button>
-            </div>
+            <EmptyState
+              icon={TruckIcon}
+              title="No cars found"
+              description="No railcars match your current filters. Try adjusting your search or filters."
+              action={{
+                label: 'Clear all filters',
+                onClick: handleClearAllFilters,
+              }}
+            />
           ) : viewMode === 'cards' ? (
             <CompactCarCardGrid columns={5}>
               {displayedCars.map((car) => (
@@ -666,7 +655,7 @@ function TableView({
                   {car.projectNumber || '-'}
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap">
-                  <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium border ${statusColors[car.status] || statusColors.available}`}>
+                  <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium border ${STATUS_COLORS[car.status as keyof typeof STATUS_COLORS] || STATUS_COLORS.available}`}>
                     {car.status.replace('_', ' ')}
                   </span>
                 </td>

@@ -1,4 +1,4 @@
-import { Fragment, useState, useCallback } from 'react';
+import { Fragment, useState, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { Dialog, Menu, Transition } from '@headlessui/react';
 import {
@@ -72,14 +72,19 @@ export default function Layout() {
     navigate('/login');
   };
 
+  // Use ref to avoid recreating callback on every keystroke
+  const globalSearchRef = useRef(globalSearch);
+  globalSearchRef.current = globalSearch;
+
   // Global search handler - searches across Railcar Number, Customer, Project Number
   const handleGlobalSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (globalSearch.trim()) {
-      navigate(`/cars?search=${encodeURIComponent(globalSearch.trim())}`);
+    const searchValue = globalSearchRef.current.trim();
+    if (searchValue) {
+      navigate(`/cars?search=${encodeURIComponent(searchValue)}`);
       setGlobalSearch('');
     }
-  }, [globalSearch, navigate]);
+  }, [navigate]);
 
   // Build navigation sections based on user role
   const navSections = [
@@ -90,6 +95,17 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-steel-50">
+      {/* Skip to main content link for keyboard/screen reader users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-rail-600 focus:text-white focus:rounded"
+      >
+        Skip to main content
+      </a>
+
+      {/* Announcer for screen readers */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only" id="announcer" />
+
       {/* Mobile sidebar */}
       <Transition.Root show={sidebarOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50 lg:hidden" onClose={setSidebarOpen}>
@@ -340,7 +356,7 @@ export default function Layout() {
         )}
 
         {/* Page content - reduced padding for more real estate */}
-        <main className="py-4">
+        <main id="main-content" className="py-4">
           <div className="px-4 sm:px-5 lg:px-6">
             <Outlet />
           </div>

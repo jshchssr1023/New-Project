@@ -18,6 +18,8 @@ import {
 } from '@heroicons/react/24/outline';
 import { scenariosApi, plansApi, carsApi, shopsApi } from '../services/api';
 import type { Scenario, Plan, Car, Shop, ScenarioCar, ShopRecommendation, OverloadedShop } from '../types';
+import { EmptyState } from '../components/ui';
+import { BeakerIcon } from '@heroicons/react/24/outline';
 import { useWebSocket, useAssignmentUpdates } from '../contexts/WebSocketContext';
 import { useCarSelection } from '../contexts/CarSelectionContext';
 
@@ -893,7 +895,15 @@ export default function ScenarioManager() {
             <h2 className="text-lg font-medium text-steel-900">Scenarios</h2>
             {scenarios.length === 0 ? (
               <div className="card">
-                <p className="text-steel-500">No scenarios created yet.</p>
+                <EmptyState
+                  icon={BeakerIcon}
+                  title="No scenarios yet"
+                  description="Create your first scenario to start planning railcar service assignments."
+                  action={{
+                    label: 'Create Scenario',
+                    onClick: () => setIsModalOpen(true),
+                  }}
+                />
               </div>
             ) : (
               scenarios.map((scenario) => (

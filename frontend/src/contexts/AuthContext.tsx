@@ -7,7 +7,7 @@ interface AuthContextType {
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -37,11 +37,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const response = await authApi.login({ email, password });
-    // Use token directly from response, not from localStorage (fixes race condition)
-    setUser(response.user);
-    setToken(response.token);
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const response = await authApi.login({ email, password });
+      // Use token directly from response, not from localStorage (fixes race condition)
+      setUser(response.user);
+      setToken(response.token);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed';
+      return { success: false, error: message };
+    }
   };
 
   const logout = async () => {

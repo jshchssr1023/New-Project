@@ -24,3 +24,6 @@ export { default as CarDetailModal } from './CarDetailModal';
 
 // Shop Components
 export { default as ShopCard, ShopCardGrid } from './ShopCard';
+
+// Empty States
+export { default as EmptyState } from './EmptyState';

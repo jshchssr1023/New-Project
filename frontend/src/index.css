@@ -253,6 +253,22 @@ body {
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
+/* Toast slide-in animation */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
 /* Input field alias for form styling */
 @layer components {
   .input-field {
