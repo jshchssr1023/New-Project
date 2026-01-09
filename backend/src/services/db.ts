@@ -153,19 +153,19 @@ function buildWhereClause(where: WhereClause | undefined): { sql: string; params
       // Handle operators like { gte, lte, contains, etc. }
       if ('gte' in value) {
         conditions.push(`"${key}" >= ?`);
-        params.push(value.gte);
+        params.push(value.gte instanceof Date ? value.gte.toISOString() : value.gte);
       }
       if ('lte' in value) {
         conditions.push(`"${key}" <= ?`);
-        params.push(value.lte);
+        params.push(value.lte instanceof Date ? value.lte.toISOString() : value.lte);
       }
       if ('gt' in value) {
         conditions.push(`"${key}" > ?`);
-        params.push(value.gt);
+        params.push(value.gt instanceof Date ? value.gt.toISOString() : value.gt);
       }
       if ('lt' in value) {
         conditions.push(`"${key}" < ?`);
-        params.push(value.lt);
+        params.push(value.lt instanceof Date ? value.lt.toISOString() : value.lt);
       }
       if ('contains' in value) {
         conditions.push(`"${key}" LIKE ?`);
