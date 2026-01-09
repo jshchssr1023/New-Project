@@ -389,10 +389,11 @@ router.get('/backup', authenticateToken, async (req: Request, res: Response) => 
 
     // Audit the backup
     await auditService.logAudit({
-      action: 'backup_export',
-      entityType: 'System',
+      action: 'export',
+      entityType: 'Plan',
       details: {
         counts: backup.metadata.counts,
+        backupType: 'full_system_backup',
       },
       userId,
       companyId,

@@ -33,11 +33,12 @@ import { z } from 'zod';
  * Workflow: draft -> under_review -> approved -> active -> archived
  */
 export const MasterPlanStatusSchema = z.enum([
-  'draft',
-  'under_review',
-  'approved',
-  'active',
-  'archived',
+  'DRAFT',
+  'PENDING',
+  'APPROVED',
+  'ACTIVE',
+  'SUPERSEDED',
+  'ARCHIVED',
 ]);
 
 export type MasterPlanStatus = z.infer<typeof MasterPlanStatusSchema>;

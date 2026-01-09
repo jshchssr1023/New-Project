@@ -306,7 +306,7 @@ export default function MasterPlanWizard() {
   }, [demandItems, selectedWorkType, demandSearchTerm]);
 
   const demandSummary = useMemo(() => {
-    const byWorkType = { qualification: 0, assignment: 0, return: 0, repair: 0 };
+    const byWorkType = { full_qualification: 0, partial_qualification: 0, assignment: 0, release: 0, repair: 0 };
     const byPriority = { critical: 0, high: 0, medium: 0, low: 0 };
     let overdue = 0;
 
@@ -686,7 +686,7 @@ export default function MasterPlanWizard() {
         </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-500">
           <div className="text-sm text-gray-500">Qualifications</div>
-          <div className="text-2xl font-bold">{demandSummary.byWorkType.qualification}</div>
+          <div className="text-2xl font-bold">{demandSummary.byWorkType.full_qualification + demandSummary.byWorkType.partial_qualification}</div>
         </div>
       </div>
 

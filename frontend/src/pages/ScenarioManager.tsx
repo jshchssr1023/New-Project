@@ -594,7 +594,7 @@ export default function ScenarioManager() {
 
     // Get customer from first car or scenario
     const firstCar = selectedScenario.cars[0]?.car;
-    const customerId = firstCar?.customerId || '';
+    const customerId = ''; // Car type doesn't have customerId, will be filled from customer lookup
     const customerName = firstCar?.customer || selectedScenario.customerFilter || '';
 
     setProposalForm({

@@ -22,7 +22,7 @@ router.use(authenticate);
  * POST /api/admin/shopping-status/backfill
  * Trigger a full shopping status recalculation
  */
-router.post('/shopping-status/backfill', requireRole(['admin']), async (req: AuthRequest, res: Response) => {
+router.post('/shopping-status/backfill', requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const job = getShoppingStatusJob();
     if (!job) {
@@ -62,7 +62,7 @@ router.post('/shopping-status/backfill', requireRole(['admin']), async (req: Aut
  * GET /api/admin/shopping-status/status
  * Get the status of the shopping status background job
  */
-router.get('/shopping-status/status', requireRole(['admin', 'planner']), async (req: AuthRequest, res: Response) => {
+router.get('/shopping-status/status', requireRole('admin', 'planner'), async (req: AuthRequest, res: Response) => {
   try {
     const job = getShoppingStatusJob();
     if (!job) {
@@ -82,7 +82,7 @@ router.get('/shopping-status/status', requireRole(['admin', 'planner']), async (
  * GET /api/admin/assignments/stats
  * Get statistics about active assignments
  */
-router.get('/assignments/stats', requireRole(['admin', 'planner']), async (req: AuthRequest, res: Response) => {
+router.get('/assignments/stats', requireRole('admin', 'planner'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = req.app.locals.prisma;
     const service = createActiveAssignmentsService(prisma);
@@ -98,7 +98,7 @@ router.get('/assignments/stats', requireRole(['admin', 'planner']), async (req: 
  * GET /api/admin/assignments
  * Get all active assignments (unified view)
  */
-router.get('/assignments', requireRole(['admin', 'planner']), async (req: AuthRequest, res: Response) => {
+router.get('/assignments', requireRole('admin', 'planner'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = req.app.locals.prisma;
     const service = createActiveAssignmentsService(prisma);
@@ -126,7 +126,7 @@ router.get('/assignments', requireRole(['admin', 'planner']), async (req: AuthRe
  * GET /api/admin/database/health
  * Check database health and connection
  */
-router.get('/database/health', requireRole(['admin']), async (req: AuthRequest, res: Response) => {
+router.get('/database/health', requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const prisma = req.app.locals.prisma;
 

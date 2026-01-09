@@ -4,7 +4,8 @@
 // =============================================================================
 
 import { ShopSummaryDTO } from './shop.dto';
-import { CustomerSummaryDTO, CarAssignmentSummaryDTO } from './car.dto';
+import { CustomerSummaryDTO } from './car.dto';
+import { CarAssignmentSummaryDTO } from './plan.dto';
 
 /**
  * Minimal scenario representation for list views
