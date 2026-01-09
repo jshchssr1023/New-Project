@@ -12,7 +12,6 @@ import Dashboard from './pages/Dashboard';
 const ShopManagement = lazy(() => import('./pages/ShopManagement'));
 const ShopNetworks = lazy(() => import('./pages/ShopNetworks'));
 const CarsPage = lazy(() => import('./pages/CarsPage'));
-const CarManagement = lazy(() => import('./pages/CarManagement')); // Keep old for fallback
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
 const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
 const ScenarioManager = lazy(() => import('./pages/ScenarioManager'));
@@ -23,7 +22,6 @@ const RuleBuilder = lazy(() => import('./pages/RuleBuilder'));
 const ImportExport = lazy(() => import('./pages/ImportExport'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
-// REMOVED: MasterPlanView - replaced by Car Flow Planning module
 const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
 const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
 const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
@@ -34,10 +32,6 @@ const SOPPlanningPage = lazy(() => import('./pages/SOPPlanningPage'));
 const DemandRegistryPage = lazy(() => import('./pages/DemandRegistryPage'));
 const MasterPlannerDashboard = lazy(() => import('./pages/MasterPlannerDashboard'));
 const SOPReviewDashboard = lazy(() => import('./pages/SOPReviewDashboard'));
-
-// REMOVED: Master Plan Wizard components - replaced by Car Flow Planning module
-// const MasterPlanWizard = lazy(() => import('./pages/MasterPlanWizard'));
-// const MasterPlanAuditLog = lazy(() => import('./components/MasterPlanAuditLog'));
 const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 
 // Page loading fallback with accessibility support
@@ -112,19 +106,10 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="shops" element={<ShopManagement />} />
             <Route path="shop-networks" element={<ShopNetworks />} />
-            {/* New redesigned cars page with card view */}
             <Route path="cars" element={<CarsPage />} />
-            {/* Legacy table-only cars page (accessible via /cars-legacy) */}
-            <Route path="cars-legacy" element={<CarManagement />} />
             <Route path="planning" element={<PlanningGrid />} />
             <Route path="car-flow" element={<CarFlowPlanning />} />
             <Route path="scenarios" element={<ScenarioManager />} />
-            {/* REMOVED: Master Plan routes - replaced by Car Flow Planning module */}
-            {/* <Route path="masterplan" element={<MasterPlanView />} /> */}
-            {/* <Route path="masterplan/:id" element={<MasterPlanView />} /> */}
-            {/* <Route path="master-plan-wizard" element={<MasterPlanWizard />} /> */}
-            {/* <Route path="master-plan-wizard/:masterPlanId" element={<MasterPlanWizard />} /> */}
-            {/* <Route path="master-plan-audit" element={<MasterPlanAuditLog />} /> */}
             <Route path="import-workflow" element={<ImportWorkflowPage />} />
             <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
             <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
