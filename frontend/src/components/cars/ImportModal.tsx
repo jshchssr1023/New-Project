@@ -17,9 +17,13 @@ interface ImportModalProps {
   onImport: (cars: Partial<Car>[]) => Promise<ImportResults>;
 }
 
-// CSV header mapping for new qualification fields
+// CSV header mapping for qualification fields
+// Maps normalized CSV headers to Car field names
+// Headers are normalized: lowercase, spaces→underscores, special chars removed
 const HEADER_MAPPINGS: Record<string, keyof Car> = {
-  // Railcar number variations
+  // =============================================================================
+  // RAILCAR NUMBER (Column Q in master CSV: "Number", combined with Mark)
+  // =============================================================================
   'railcar_number': 'railcarNumber',
   'railcarnumber': 'railcarNumber',
   'railcar': 'railcarNumber',
@@ -27,31 +31,86 @@ const HEADER_MAPPINGS: Record<string, keyof Car> = {
   'vehiclenumber': 'railcarNumber',
   'car_no': 'railcarNumber',
   'carno': 'railcarNumber',
+  'car_id': 'railcarNumber',
+  'carid': 'railcarNumber',
+  'number': 'railcarNumber',
+  'mark2': 'railcarNumber', // Combined mark+number field
 
-  // Car type
+  // =============================================================================
+  // CAR TYPE (Column S in master CSV: "Car Type Level 2")
+  // =============================================================================
   'car_type': 'carType',
   'cartype': 'carType',
   'type': 'carType',
+  'car_type_level_2': 'carType',
+  'cartypelevel2': 'carType',
+  'car_typ': 'carType',
+  'equipment_type': 'carType',
+  'equipmenttype': 'carType',
 
-  // Customer
+  // =============================================================================
+  // CUSTOMER (Column A in master CSV: "Lessee Name")
+  // =============================================================================
   'customer': 'customer',
   'lessee': 'customer',
+  'lessee_name': 'customer',
+  'lesseename': 'customer',
+  'cust_nm': 'customer',
+  'custnm': 'customer',
 
-  // Status
+  // =============================================================================
+  // STATUS (Column AK in master CSV: "Current Status")
+  // Values: Complete, Arrived, To Be Routed, Enroute, Release, etc.
+  // =============================================================================
   'status': 'status',
-  'current_status': 'currentStatusNote',
+  'current_status': 'status',
+  'currentstatus': 'status',
+  'car_status': 'status',
+  'carstatus': 'status',
 
-  // Project
-  'project_number': 'projectNumber',
-  'projectnumber': 'projectNumber',
-  'project': 'projectNumber',
-
-  // Reason shopped
+  // =============================================================================
+  // REASON SHOPPED (Column AH in master CSV: "Reason Shopped")
+  // =============================================================================
   'reason_shopped': 'reasonsShopped',
   'reasonshopped': 'reasonsShopped',
   'reason': 'reasonsShopped',
+  'reasons_shopped': 'reasonsShopped',
+  'shop_reason': 'reasonsShopped',
+  'shopreason': 'reasonsShopped',
+  'service_reason': 'reasonsShopped',
+  'servicereason': 'reasonsShopped',
 
-  // Contract
+  // =============================================================================
+  // PORTFOLIO (Column AC in master CSV: "Portfolio")
+  // Values: "On Lease", "Active" = true; otherwise false
+  // =============================================================================
+  'portfolio': 'portfolio',
+  'on_lease': 'portfolio',
+  'onlease': 'portfolio',
+
+  // =============================================================================
+  // SCHEDULED / PLANNING (Column AJ in master CSV: "Scheduled")
+  // Values: "Planned Shopping" = performScheduled true
+  // =============================================================================
+  'scheduled': 'scheduled',
+  'perform_scheduled': 'performScheduled',
+  'performscheduled': 'performScheduled',
+  'planning': 'performScheduled',
+  'plan_status': 'planStatus',
+  'planstatus': 'planStatus',
+
+  // =============================================================================
+  // PROJECT NUMBER
+  // =============================================================================
+  'project_number': 'projectNumber',
+  'projectnumber': 'projectNumber',
+  'project': 'projectNumber',
+  'proj_no': 'projectNumber',
+  'projno': 'projectNumber',
+
+  // =============================================================================
+  // CONTRACT FIELDS
+  // =============================================================================
   'contract': 'contractNumber',
   'contract_number': 'contractNumber',
   'contractnumber': 'contractNumber',
@@ -60,12 +119,18 @@ const HEADER_MAPPINGS: Record<string, keyof Car> = {
   'cont_exp': 'contractExpiration',
   'contexp': 'contractExpiration',
 
-  // Lining fields
+  // =============================================================================
+  // LINING FIELDS (Columns L-N in master CSV)
+  // =============================================================================
   'lined': 'lined',
+  'lining': 'lined',
   'lining_type': 'liningType',
   'liningtype': 'liningType',
+  'jacketed': 'isJacketed',
 
-  // Qualification date fields (exact column names from CSV)
+  // =============================================================================
+  // QUALIFICATION DATE FIELDS (Columns T-AB in master CSV)
+  // =============================================================================
   'min_(no_lining)': 'minNoLining',
   'min(nolining)': 'minNoLining',
   'minnolining': 'minNoLining',
@@ -79,12 +144,14 @@ const HEADER_MAPPINGS: Record<string, keyof Car> = {
 
   'rule_88b': 'rule88B',
   'rule88b': 'rule88B',
+  'rule_88b_': 'rule88B',
 
   'safety_relief': 'safetyRelief',
   'safetyrelief': 'safetyRelief',
 
   'service_equipment': 'serviceEquipment',
   'serviceequipment': 'serviceEquipment',
+  'service_equipment_': 'serviceEquipment',
 
   'stub_sill': 'stubSill',
   'stubsill': 'stubSill',
@@ -95,9 +162,9 @@ const HEADER_MAPPINGS: Record<string, keyof Car> = {
   'tank_qualification': 'tankQualification',
   'tankqualification': 'tankQualification',
 
-  // Additional qualification fields
-  'portfolio': 'portfolio',
-
+  // =============================================================================
+  // ADDITIONAL QUALIFICATION FIELDS
+  // =============================================================================
   'full/partial_qual': 'fullPartialQual',
   'fullpartialqual': 'fullPartialQual',
   'full_partial_qual': 'fullPartialQual',
@@ -105,9 +172,6 @@ const HEADER_MAPPINGS: Record<string, keyof Car> = {
   'perform_tank_qual': 'performTankQual',
   'performtankqual': 'performTankQual',
 
-  'scheduled': 'scheduled',
-
-  // Existing qualification fields
   'tank_qual': 'tankQualified',
   'tankqual': 'tankQualified',
   'tank_qualified': 'tankQualified',
@@ -123,15 +187,50 @@ const HEADER_MAPPINGS: Record<string, keyof Car> = {
   'qualification_type': 'qualificationType',
   'qualificationtype': 'qualificationType',
 
-  // Other fields
+  // =============================================================================
+  // OTHER FIELDS
+  // =============================================================================
   'commodity': 'commodity',
+  'primary_commodity': 'commodity',
+  'primarycommodity': 'commodity',
+  'commod': 'commodity',
+
   'location': 'currentLocation',
   'current_location': 'currentLocation',
+  'currentlocation': 'currentLocation',
+
   'home_region': 'homeRegion',
   'homeregion': 'homeRegion',
+
   'origin_region': 'originRegion',
   'originregion': 'originRegion',
+
+  'past_region': 'pastRegion',
+  'pastregion': 'pastRegion',
+
+  '2026_region': 'region2026',
+  'region_2026': 'region2026',
+  'region2026': 'region2026',
+
   'notes': 'notes',
+
+  // Contact fields
+  'csr': 'csr',
+  'csl': 'csl',
+  'commercial': 'commercial',
+  'commericial': 'commercial', // Common typo in CSV
+
+  // FMS fields
+  'fms_lessee_number': 'fmsLesseeNumber',
+  'fmslesseenumber': 'fmsLesseeNumber',
+  'fms_lessee': 'fmsLesseeNumber',
+
+  // Car age/build year
+  'car_age': 'buildYear',
+  'carage': 'buildYear',
+  'build_year': 'buildYear',
+  'buildyear': 'buildYear',
+  'year_built': 'buildYear',
 };
 
 // Parse CSV with support for new qualification fields
@@ -170,6 +269,7 @@ function parseCSV(csvText: string): Partial<Car>[] {
     const carObj: Record<string, unknown> = {};
     let carInit = '';
     let carNo = '';
+    let carMark = '';
 
     normalizedHeaders.forEach((header, index) => {
       const value = values[index] || '';
@@ -184,34 +284,87 @@ function parseCSV(csvText: string): Partial<Car>[] {
         carNo = value;
         return;
       }
+      // Handle Mark column (Column P in master CSV)
+      if (header === 'mark' || header === 'car_mark' || header === 'carmark') {
+        carMark = value;
+        return;
+      }
+      // Handle Number column (Column Q in master CSV)
+      if (header === 'number' && !carObj.railcarNumber) {
+        carNo = value;
+        return;
+      }
 
       // Map header to Car field
       const fieldName = HEADER_MAPPINGS[header];
       if (!fieldName) return;
 
-      // Handle different value types
-      if (fieldName === 'lined' || fieldName === 'tankQualified' || fieldName === 'performTankQual' || fieldName === 'isTankCar') {
-        carObj[fieldName] = value.toLowerCase() === 'true' ||
-                            value.toLowerCase() === 'yes' ||
-                            value.toLowerCase() === 'y' ||
+      // Handle different value types based on field
+      const valueLower = value.toLowerCase().trim();
+
+      // Boolean fields
+      if (fieldName === 'lined' || fieldName === 'tankQualified' || fieldName === 'performTankQual' || fieldName === 'isTankCar' || fieldName === 'isJacketed') {
+        carObj[fieldName] = valueLower === 'true' ||
+                            valueLower === 'yes' ||
+                            valueLower === 'y' ||
+                            valueLower === 'jacketed' ||
+                            valueLower === 'lined' ||
                             value === '1';
-      } else if (fieldName === 'projectedCost' || fieldName === 'daysInShop') {
+      }
+      // Portfolio field - "On Lease" or "Active" = true
+      else if (fieldName === 'portfolio') {
+        carObj[fieldName] = valueLower === 'on lease' ||
+                            valueLower === 'active' ||
+                            valueLower === 'yes' ||
+                            valueLower === 'true' ||
+                            value === '1';
+      }
+      // performScheduled field - "Planned Shopping" or "Planned" = true
+      else if (fieldName === 'performScheduled' || fieldName === 'scheduled') {
+        carObj.performScheduled = valueLower.includes('planned') ||
+                                   valueLower === 'yes' ||
+                                   valueLower === 'true' ||
+                                   value === '1';
+      }
+      // Numeric fields
+      else if (fieldName === 'projectedCost' || fieldName === 'daysInShop') {
         carObj[fieldName] = parseFloat(value) || 0;
-      } else {
+      }
+      // Build year - extract year number
+      else if (fieldName === 'buildYear') {
+        const yearNum = parseInt(value);
+        if (!isNaN(yearNum) && yearNum > 1900 && yearNum < 2100) {
+          carObj[fieldName] = yearNum;
+        }
+      }
+      // All other fields - pass through as string
+      else {
         carObj[fieldName] = value;
       }
     });
 
-    // Combine Car Init + Car No if railcarNumber not directly set
-    if (!carObj.railcarNumber && carInit && carNo) {
-      carObj.railcarNumber = `${carInit}${carNo}`;
-    } else if (!carObj.railcarNumber && carNo) {
-      carObj.railcarNumber = carNo;
+    // Combine Car Init/Mark + Car No if railcarNumber not directly set
+    if (!carObj.railcarNumber) {
+      const prefix = carInit || carMark || '';
+      if (prefix && carNo) {
+        carObj.railcarNumber = `${prefix}${carNo}`;
+      } else if (carNo) {
+        carObj.railcarNumber = carNo;
+      }
+    }
+
+    // Store carMark separately if available
+    if (carMark) {
+      carObj.carMark = carMark;
+    }
+    if (carNo) {
+      carObj.carNumber = carNo;
     }
 
     // Auto-detect tank car from car type
     if (carObj.carType && typeof carObj.carType === 'string' && !carObj.isTankCar) {
-      carObj.isTankCar = carObj.carType.toLowerCase().includes('tank');
+      const carTypeLower = (carObj.carType as string).toLowerCase();
+      carObj.isTankCar = carTypeLower.includes('tank') || carTypeLower.includes('general service');
     }
 
     if (carObj.railcarNumber) {
