@@ -1,6 +1,16 @@
 /**
  * Master Planner Dashboard
  *
+ * @deprecated This page is being consolidated. The new simplified workflow uses:
+ * - /cars - Work Queue: view cars needing service (filter by shoppingStatus)
+ * - /scenarios - Plan Editor: create and manage planning scenarios
+ * - /scheduling-queue - Scheduling Queue: schedule customer-approved proposals
+ * - /sop-review - S&OP Review: executive overview of planning targets
+ *
+ * This page will be retained for executive KPI views but the primary
+ * planning workflow should use the pages above.
+ *
+ * Original description:
  * S&OP Master Planning Engine dashboard providing:
  * - Total Inventory Funnel (source of truth for entire fleet)
  * - Utilization Heatmapping for network capacity

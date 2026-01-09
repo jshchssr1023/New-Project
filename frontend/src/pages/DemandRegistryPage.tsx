@@ -1,6 +1,19 @@
 /**
  * Demand Registry Page
  *
+ * @deprecated This page is being consolidated into the Railcars page (/cars).
+ * The new workflow uses the Cars page as the "Work Queue" where planners can:
+ * - Filter by shoppingStatus (Urgent, Must Shop, Upcoming)
+ * - Select cars and create plans via the Plan Editor (/scenarios)
+ * - Send plans to customers for approval
+ * - Schedule approved plans via the Scheduling Queue (/scheduling-queue)
+ *
+ * This page will be removed in a future release. Please use:
+ * - /cars with shoppingStatus filters for viewing cars needing service
+ * - /scenarios for creating plans
+ * - /scheduling-queue for scheduling approved plans
+ *
+ * Original description:
  * Displays all cars that are due and active based on:
  * - tankQualDueDate (qualifications due this year or rolling 3 months)
  * - contractExpiration (returns within 6-month horizon)

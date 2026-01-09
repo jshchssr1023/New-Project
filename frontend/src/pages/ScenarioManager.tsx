@@ -1,3 +1,25 @@
+/**
+ * Plan Editor (formerly Scenario Manager)
+ *
+ * Central hub for creating and managing car service plans.
+ *
+ * NEW WORKFLOW:
+ * 1. Create a scenario (draft plan) by selecting cars and shops
+ * 2. Use "Send to Customer" to create a proposal and send for approval
+ * 3. Once customer approves, the proposal appears in the Scheduling Queue
+ * 4. Scheduler converts approved proposals to committed CarFlowPlans
+ *
+ * This page supports:
+ * - Creating scenarios from scratch or from global car selection
+ * - Adding cars by customer/project filter
+ * - Assigning shops to cars
+ * - Verifying capacity
+ * - Sending proposals to customers (new)
+ * - Direct scheduling (legacy - bypasses customer approval)
+ *
+ * @see /scheduling-queue - for scheduling approved proposals
+ * @see /cars - for selecting cars to plan
+ */
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
