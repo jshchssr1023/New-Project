@@ -199,8 +199,8 @@ async function main() {
 
   // Create railcars
   const insertCar = db.prepare(`
-    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, companyId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, portfolio, companyId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const cars = [];
@@ -247,20 +247,33 @@ async function main() {
       const qualificationType = record['qualtype'] || record['Qual Type'] || record['fullpartialqual'] || record['Full/Partial Qual'] || '';
       const tankQualified = parseBoolean(record['tankqual'] || record['Tank Qual'] || record['tankqualified'] || record['Tank Qualified'] || '');
       const tankQualDueDate = parseDate(record['tankqualdue'] || record['Tank Qual Due'] || record['tankqualduedate'] || record['Tank Qual Due Date'] || '');
-      const performScheduled = parseBoolean(record['perfsched'] || record['Perf Sched'] || record['performscheduled'] || record['Perform Scheduled'] || '');
+
+      // Scheduled/performScheduled - Column AJ: "Planned Shopping" means already planned
+      const scheduledValue = record['scheduled'] || record['Scheduled'] || record['performscheduled'] || record['Perform Scheduled'] || '';
+      const performScheduled = scheduledValue.toLowerCase().includes('planned') ? 1 : parseBoolean(scheduledValue);
+
       const planStatus = record['planstatus'] || record['Plan Status'] || '';
 
+      // Current Status - Column AK: Complete, Arrived, To Be Routed, Enroute, Release, etc.
+      const currentStatus = record['currentstatus'] || record['Current Status'] || record['status'] || record['Status'] || 'To Be Routed';
+
+      // Reason Shopped - Column AH
+      const reasonsShopped = record['reasonshopped'] || record['Reason Shopped'] || record['reasonsshopped'] || record['Reasons Shopped'] || '';
+
+      // Portfolio - Column AC: "On Lease" or "Active" = true
+      const portfolioValue = record['portfolio'] || record['Portfolio'] || '';
+      const portfolio = portfolioValue.toLowerCase() === 'on lease' || portfolioValue.toLowerCase() === 'active' ? 1 : 0;
+
       const region = regions[Math.floor(Math.random() * regions.length)];
-      const status = 'available';
       const carId = uuidv4();
 
       insertCar.run(
         carId, railcarNumber, carType, isTankCar, commodity, customer, '',
-        isTankCar && tankQualDueDate ? 'qualification' : '', status,
+        reasonsShopped, currentStatus,
         locations[Math.floor(Math.random() * locations.length)], region, region,
         0, 0, '', contractNumber, contractExpiration, isJacketed ? 1 : 0, isLined ? 1 : 0,
         buildYear, qualificationType, tankQualified ? 1 : 0, tankQualDueDate,
-        performScheduled ? 1 : 0, planStatus, companyId
+        performScheduled, planStatus, portfolio, companyId
       );
       cars.push({ id: carId, railcarNumber, isTankCar: isTankCar === 1, homeRegion: region });
 
@@ -301,13 +314,14 @@ async function main() {
       insertCar.run(
         carId, `AITX${String(100000 + i).slice(1)}`, carType, isTankCar, commodity, customer,
         `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
-        ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'][Math.floor(Math.random() * 6)],
-        'available', locations[Math.floor(Math.random() * locations.length)], region, region,
+        ['TANK QUALIFICATION', 'Annual Inspection', 'Wheel Repair', 'Tank Cleaning'][Math.floor(Math.random() * 4)],
+        ['To Be Routed', 'Arrived', 'Enroute', 'Complete'][Math.floor(Math.random() * 4)],
+        locations[Math.floor(Math.random() * locations.length)], region, region,
         12000 + Math.floor(Math.random() * 10000), 0, Math.random() > 0.7 ? 'Priority service required' : '',
         `CTR-${2024}-${String(10000 + i)}`, contractExpiration, isJacketed, isLined, buildYear,
         ['full', 'partial', ''][Math.floor(Math.random() * 3)], tankQualified, tankQualDueDate,
         Math.random() > 0.7 ? 1 : 0, ['planned', 'in_progress', 'completed', 'pending', ''][Math.floor(Math.random() * 5)],
-        companyId
+        Math.random() > 0.5 ? 1 : 0, companyId
       );
       cars.push({ id: carId, railcarNumber: `AITX${String(100000 + i).slice(1)}`, isTankCar: isTankCar === 1, homeRegion: region });
 
