@@ -364,9 +364,25 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 // STANDARD CRUD OPERATIONS
 // =============================================================================
 
-// Get all cars with pagination
+// Helper to format month/year as display string
+function formatPlannedDate(month: number, year: number): string {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${monthNames[month - 1]} ${year}`;
+}
+
+// Get all cars with pagination and active plan information
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const { page = '1', pageSize = '20', status, customer, reasonShopped, carType } = req.query;
+  const {
+    page = '1',
+    pageSize = '20',
+    status,
+    customer,
+    reasonShopped,
+    carType,
+    shoppingStatus,
+    planningStatus, // 'needs_planning' | 'already_planned' | 'all'
+    search,
+  } = req.query;
   const pageNum = parseInt(page as string);
   const pageSizeNum = parseInt(pageSize as string);
 
@@ -381,30 +397,175 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    const where = {
+    // Build base where clause
+    const where: Record<string, unknown> = {
       companyId: req.user!.companyId,
       ...(statusFilter && { status: statusFilter }),
       ...(customer && { customer: customer as string }),
       ...(reasonShopped && { reasonsShopped: reasonShopped as string }),
       ...(carType && { carType: carType as string }),
+      ...(shoppingStatus && { shoppingStatus: shoppingStatus as string }),
     };
 
+    // Search filter
+    if (search) {
+      const searchStr = search as string;
+      where.OR = [
+        { railcarNumber: { contains: searchStr, mode: 'insensitive' } },
+        { customer: { contains: searchStr, mode: 'insensitive' } },
+        { projectNumber: { contains: searchStr, mode: 'insensitive' } },
+      ];
+    }
+
+    // Planning status filter - handled after initial query
+    // We need to get cars with their plans first, then filter
+
+    // Get cars with active CarFlowPlans
     const [cars, total] = await Promise.all([
       prisma.car.findMany({
         where,
         skip: (pageNum - 1) * pageSizeNum,
         take: pageSizeNum,
         orderBy: { railcarNumber: 'asc' },
+        include: {
+          carFlowPlans: {
+            where: {
+              status: { in: ['Planned', 'In Progress'] },
+            },
+            take: 1,
+            include: {
+              shop: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  location: true,
+                  networkId: true,
+                  network: true,
+                  isParent: true,
+                  parentShopId: true,
+                  shopNetwork: {
+                    select: {
+                      id: true,
+                      name: true,
+                      code: true,
+                      isAitxInternal: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       }),
       prisma.car.count({ where }),
     ]);
 
+    // Get S&OP commitments for validation
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+
+    // Get all shop IDs from active plans
+    const shopIds = cars
+      .filter(car => car.carFlowPlans.length > 0)
+      .map(car => car.carFlowPlans[0].shopId);
+
+    // Get S&OP commitments for these shops
+    const sopCommitments = shopIds.length > 0 ? await prisma.sOPCommitment.findMany({
+      where: {
+        shopId: { in: shopIds },
+        year: { gte: currentYear },
+      },
+      select: {
+        shopId: true,
+        year: true,
+        month: true,
+        committedVolume: true,
+      },
+    }) : [];
+
+    // Create a lookup map for S&OP commitments
+    const sopCommitmentMap = new Map<string, boolean>();
+    for (const commitment of sopCommitments) {
+      const key = `${commitment.shopId}-${commitment.year}-${commitment.month}`;
+      sopCommitmentMap.set(key, commitment.committedVolume > 0);
+    }
+
+    // Transform cars to include active plan info
+    const transformedCars = cars.map(car => {
+      const activePlan = car.carFlowPlans[0];
+      let activePlanInfo = null;
+      let hasActivePlan = false;
+
+      if (activePlan) {
+        hasActivePlan = true;
+        const shop = activePlan.shop;
+
+        // Check S&OP commitment for this shop/month
+        const sopKey = `${shop.id}-${activePlan.plannedYear}-${activePlan.plannedMonth}`;
+        const hasSOPCommitment = sopCommitmentMap.has(sopKey);
+
+        // Determine network info
+        let networkId = shop.networkId;
+        let networkName = shop.shopNetwork?.name || shop.network || null;
+        let isAitxInternal = shop.shopNetwork?.isAitxInternal ?? false;
+
+        // If shop is AITX internal (check by network name or code)
+        if (!networkId && shop.network) {
+          isAitxInternal = shop.network.toLowerCase().includes('aitx');
+          networkName = shop.network;
+        }
+
+        activePlanInfo = {
+          id: activePlan.id,
+          shopId: shop.id,
+          shopName: shop.name,
+          shopCode: shop.code,
+          shopLocation: shop.location,
+          networkId,
+          networkName,
+          isAitxInternal,
+          plannedMonth: activePlan.plannedMonth,
+          plannedYear: activePlan.plannedYear,
+          plannedDate: formatPlannedDate(activePlan.plannedMonth, activePlan.plannedYear),
+          status: activePlan.status,
+          source: activePlan.source,
+          hasSOPCommitment,
+          sopValidationError: hasSOPCommitment
+            ? null
+            : `Shop "${shop.name}" does not have S&OP capacity set up for ${formatPlannedDate(activePlan.plannedMonth, activePlan.plannedYear)}. Please configure in S&OP Settings.`,
+        };
+      }
+
+      // Remove the raw carFlowPlans from response and add processed info
+      const { carFlowPlans, ...carWithoutPlans } = car;
+      return {
+        ...carWithoutPlans,
+        activePlan: activePlanInfo,
+        hasActivePlan,
+      };
+    });
+
+    // Apply planning status filter after transformation
+    let filteredCars = transformedCars;
+    if (planningStatus === 'needs_planning') {
+      // Cars that need planning: have shopping status but no active plan
+      filteredCars = transformedCars.filter(car =>
+        !car.hasActivePlan &&
+        ['Urgent', 'Must Shop', 'Upcoming'].includes(car.shoppingStatus)
+      );
+    } else if (planningStatus === 'already_planned') {
+      // Cars that are already planned
+      filteredCars = transformedCars.filter(car => car.hasActivePlan);
+    }
+
     res.json({
-      data: cars,
-      total,
+      data: filteredCars,
+      total: planningStatus ? filteredCars.length : total,
       page: pageNum,
       pageSize: pageSizeNum,
-      totalPages: Math.ceil(total / pageSizeNum),
+      totalPages: Math.ceil((planningStatus ? filteredCars.length : total) / pageSizeNum),
     });
   } catch (error) {
     logger.error('Get cars error', error);

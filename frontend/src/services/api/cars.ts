@@ -11,6 +11,9 @@ export const carsApi = {
     carType?: string;
     customer?: string;
     reasonsShopped?: string;
+    shoppingStatus?: string;
+    planningStatus?: string; // 'needs_planning' | 'already_planned' | 'all'
+    search?: string;
   }): Promise<PaginatedResponse<Car>> => {
     const response = await apiClient.get<PaginatedResponse<Car>>('/cars', { params });
     return response.data;

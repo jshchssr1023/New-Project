@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { carsApi } from '../services/api';
 import type { Car, PaginatedResponse, ShoppingStatus } from '../types';
 
+type PlanningStatus = 'needs_planning' | 'already_planned' | 'all';
+
 interface CarsFilters {
   page: number;
   pageSize: number;
@@ -11,6 +13,7 @@ interface CarsFilters {
   customer?: string;
   reasonsShopped?: string;
   shoppingStatus?: ShoppingStatus;
+  planningStatus?: PlanningStatus;
   search?: string;
 }
 
@@ -46,6 +49,9 @@ export function useCars(options: UseCarsOptions = {}) {
       carType: filters.carType,
       customer: filters.customer,
       reasonsShopped: filters.reasonsShopped,
+      shoppingStatus: filters.shoppingStatus,
+      planningStatus: filters.planningStatus,
+      search: filters.search,
     }),
     staleTime: 30000, // 30 seconds
   });

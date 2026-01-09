@@ -4,7 +4,14 @@ import type { ShopPerformanceMetrics, ShopScorecard, NetworkScorecard } from './
 
 // Shops API
 export const shopsApi = {
-  getAll: async (params?: { region?: string; network?: string; servingRailroad?: string; isActive?: boolean }): Promise<Shop[]> => {
+  getAll: async (params?: {
+    region?: string;
+    network?: string;
+    servingRailroad?: string;
+    isActive?: boolean;
+    hasSOPCommitment?: boolean; // Filter to only shops with S&OP commitments
+    year?: number; // Filter S&OP commitments by year
+  }): Promise<Shop[]> => {
     const response = await apiClient.get<Shop[]>('/shops', { params });
     return response.data;
   },

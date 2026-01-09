@@ -9,7 +9,7 @@ router.use(authenticate);
 // Get all shops with optional filters
 router.get('/', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
-  const { region, network, servingRailroad, isActive, hasCapacity, month } = req.query;
+  const { region, network, servingRailroad, isActive, hasCapacity, month, hasSOPCommitment, year } = req.query;
 
   try {
     let shops = await prisma.shop.findMany({
@@ -23,9 +23,37 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       orderBy: { name: 'asc' },
     });
 
+    // Filter to only shops with S&OP commitments
+    if (hasSOPCommitment === 'true') {
+      const targetYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      // Get all shop IDs that have S&OP commitments for the target year
+      const sopCommitments = await prisma.sOPCommitment.findMany({
+        where: {
+          year: targetYear,
+          committedVolume: { gt: 0 },
+        },
+        select: {
+          shopId: true,
+        },
+        distinct: ['shopId'],
+      });
+
+      const shopIdsWithSOP = new Set(sopCommitments.map((c: { shopId: string }) => c.shopId));
+
+      // Filter shops to only those with S&OP commitments
+      shops = shops.filter((shop: { id: string }) => shopIdsWithSOP.has(shop.id));
+
+      // Add a flag indicating S&OP status
+      shops = shops.map((shop: { id: string }) => ({
+        ...shop,
+        hasSOPCommitment: true,
+      }));
+    }
+
     // If checking capacity for a specific month
     if (hasCapacity === 'true' && month) {
-      const shopIds = shops.map(s => s.id);
+      const shopIds = shops.map((s: { id: string }) => s.id);
       const assignments = await prisma.planAssignment.groupBy({
         by: ['shopId'],
         where: {
@@ -35,16 +63,16 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         _count: { id: true },
       });
 
-      const assignmentMap = new Map<string, number>(assignments.map(a => [a.shopId, a._count.id]));
+      const assignmentMap = new Map<string, number>(assignments.map((a: { shopId: string; _count: { id: number } }) => [a.shopId, a._count.id]));
 
-      shops = shops.map(shop => ({
+      shops = shops.map((shop: { id: string; capacity: number }) => ({
         ...shop,
         currentLoad: assignmentMap.get(shop.id) || 0,
         availableCapacity: (shop.capacity as number) - (assignmentMap.get(shop.id) || 0),
       })) as typeof shops;
 
       // Filter to only shops with available capacity
-      shops = shops.filter((s: any) => s.availableCapacity > 0);
+      shops = shops.filter((s: { availableCapacity: number }) => s.availableCapacity > 0);
     }
 
     res.json(shops);
