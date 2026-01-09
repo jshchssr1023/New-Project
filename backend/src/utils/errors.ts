@@ -127,7 +127,6 @@ export class AppError extends Error {
     options?: {
       details?: ErrorDetails[];
       correlationId?: string;
-      cause?: Error;
     }
   ) {
     super(message);
@@ -141,11 +140,6 @@ export class AppError extends Error {
 
     // Maintain proper stack trace
     Error.captureStackTrace(this, this.constructor);
-
-    // Set the cause if provided
-    if (options?.cause) {
-      this.cause = options.cause;
-    }
   }
 
   /**

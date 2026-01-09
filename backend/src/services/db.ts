@@ -22,11 +22,22 @@ const ALLOWED_TABLES = new Set([
   'MasterPlanCommitment', 'Notification', 'WeeklyCapacity', 'CapacityAudit',
   'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
-  'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig',
+  'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
 const VALID_COLUMN_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+// Tables that don't have updatedAt column (only createdAt)
+const TABLES_WITHOUT_UPDATED_AT = new Set([
+  'AuditLog',
+  'InvalidatedToken',
+]);
+
+// Tables that have no timestamp columns at all
+const TABLES_WITHOUT_TIMESTAMPS = new Set<string>([
+  // Currently empty - all tables now have timestamps
+]);
 
 /**
  * Validates a table name against the whitelist
@@ -461,12 +472,13 @@ function createTableHandler(tableName: string) {
         data.id = uuidv4();
       }
 
-      // Add timestamps if not provided
+      // Add timestamps if not provided (skip for tables without timestamp columns)
       const now = new Date().toISOString();
-      if (!data.createdAt) {
+      if (!data.createdAt && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
         data.createdAt = now;
       }
-      if (!data.updatedAt) {
+      // Only add updatedAt for tables that have this column
+      if (!data.updatedAt && !TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
         data.updatedAt = now;
       }
 
@@ -511,7 +523,11 @@ function createTableHandler(tableName: string) {
 
     update: async (options: { where: WhereClause; data: any; include?: any }) => {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
-      const data = { ...options.data, updatedAt: new Date().toISOString() };
+      const data = { ...options.data };
+      // Only add updatedAt for tables that have this column
+      if (!TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+        data.updatedAt = new Date().toISOString();
+      }
 
       const keys = Object.keys(data);
       // SECURITY: Validate all column names
@@ -562,7 +578,11 @@ function createTableHandler(tableName: string) {
 
     updateMany: async (options: { where?: WhereClause; data: any }) => {
       const { sql: whereClause, params: whereParams } = buildWhereClause(options.where);
-      const data = { ...options.data, updatedAt: new Date().toISOString() };
+      const data = { ...options.data };
+      // Only add updatedAt for tables that have this column
+      if (!TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+        data.updatedAt = new Date().toISOString();
+      }
 
       const keys = Object.keys(data);
       // SECURITY: Validate all column names
@@ -675,6 +695,123 @@ function createTableHandler(tableName: string) {
       } else {
         return await createTableHandler(tableName).create({ data: options.create });
       }
+    },
+
+    groupBy: async (options: { by: string[]; where?: WhereClause; _count?: { [key: string]: boolean }; _sum?: { [key: string]: boolean }; _avg?: { [key: string]: boolean }; _min?: { [key: string]: boolean }; _max?: { [key: string]: boolean } }) => {
+      // Validate group by columns
+      options.by.forEach(validateColumnName);
+
+      const { sql: whereClause, params } = buildWhereClause(options.where);
+
+      // Build SELECT clause with aggregations
+      const selectParts: string[] = options.by.map(col => `"${col}"`);
+
+      // Handle _count aggregation
+      if (options._count) {
+        for (const [field, enabled] of Object.entries(options._count)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`COUNT("${field}") as "_count_${field}"`);
+          }
+        }
+      }
+
+      // Handle _sum aggregation
+      if (options._sum) {
+        for (const [field, enabled] of Object.entries(options._sum)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`SUM("${field}") as "_sum_${field}"`);
+          }
+        }
+      }
+
+      // Handle _avg aggregation
+      if (options._avg) {
+        for (const [field, enabled] of Object.entries(options._avg)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`AVG("${field}") as "_avg_${field}"`);
+          }
+        }
+      }
+
+      // Handle _min aggregation
+      if (options._min) {
+        for (const [field, enabled] of Object.entries(options._min)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MIN("${field}") as "_min_${field}"`);
+          }
+        }
+      }
+
+      // Handle _max aggregation
+      if (options._max) {
+        for (const [field, enabled] of Object.entries(options._max)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MAX("${field}") as "_max_${field}"`);
+          }
+        }
+      }
+
+      const groupByClause = `GROUP BY ${options.by.map(col => `"${col}"`).join(', ')}`;
+      const query = `SELECT ${selectParts.join(', ')} FROM "${tableName}" ${whereClause} ${groupByClause}`;
+
+      const rows = db.prepare(query).all(...params);
+
+      // Transform results to match Prisma's groupBy output format
+      return rows.map((row: any) => {
+        const result: any = {};
+
+        // Add grouped columns
+        for (const col of options.by) {
+          result[col] = row[col];
+        }
+
+        // Add _count results
+        if (options._count) {
+          result._count = {};
+          for (const field of Object.keys(options._count)) {
+            result._count[field] = row[`_count_${field}`] || 0;
+          }
+        }
+
+        // Add _sum results
+        if (options._sum) {
+          result._sum = {};
+          for (const field of Object.keys(options._sum)) {
+            result._sum[field] = row[`_sum_${field}`] || 0;
+          }
+        }
+
+        // Add _avg results
+        if (options._avg) {
+          result._avg = {};
+          for (const field of Object.keys(options._avg)) {
+            result._avg[field] = row[`_avg_${field}`] || null;
+          }
+        }
+
+        // Add _min results
+        if (options._min) {
+          result._min = {};
+          for (const field of Object.keys(options._min)) {
+            result._min[field] = row[`_min_${field}`] || null;
+          }
+        }
+
+        // Add _max results
+        if (options._max) {
+          result._max = {};
+          for (const field of Object.keys(options._max)) {
+            result._max[field] = row[`_max_${field}`] || null;
+          }
+        }
+
+        return result;
+      });
     }
   };
 }
@@ -744,6 +881,9 @@ export const prisma = {
 
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),
+
+  // Shop Network table
+  shopNetwork: createTableHandler('ShopNetwork'),
 
   // Raw query support - SECURITY: Use parameterized queries only
   // WARNING: These functions should be used sparingly and only with parameterized queries
