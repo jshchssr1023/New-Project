@@ -165,6 +165,10 @@ export async function previewCarImport(
 export interface ExtendedImportResult extends ImportResult {
   carFlowPlansCreated: number;
   shopAssignmentsProcessed: number;
+  // New workflow: scenario draft creation
+  scenarioDraftId?: string;
+  scenarioDraftName?: string;
+  scenarioCarsAdded?: number;
 }
 
 /**
@@ -174,8 +178,18 @@ export interface ExtendedImportResult extends ImportResult {
  * - Car identification (Mark + Number → railcarNumber)
  * - Qualification dates (9 date fields)
  * - Reference fields (CSR, CSL, Commercial)
- * - Shop assignments from shop columns → CarFlowPlan entries
+ * - Shop assignments from shop columns
  * - Status calculation (shoppingStatus)
+ *
+ * NEW WORKFLOW (default):
+ * When createAsDraft=true (default), shop assignments are collected and
+ * a Scenario (draft) is created instead of committed CarFlowPlans.
+ * This allows the plan to go through the proper approval workflow:
+ *   Import → Draft Scenario → Send to Customer → Customer Approval → Schedule
+ *
+ * LEGACY MODE:
+ * When createAsDraft=false, CarFlowPlan entries are created directly,
+ * bypassing the customer approval workflow.
  */
 export async function importCars(
   csvContent: string,
@@ -185,7 +199,10 @@ export async function importCars(
     customMappings?: Record<string, string>;
     dryRun?: boolean;
     createCarFlowPlans?: boolean;
-    userId?: string; // Required for CarFlowPlan creation
+    createAsDraft?: boolean; // NEW: Create scenario draft instead of committed CarFlowPlans
+    userId?: string; // Required for CarFlowPlan/Scenario creation
+    draftName?: string; // Optional name for the draft scenario
+    customerFilter?: string; // Optional customer for the draft scenario
   } = {}
 ): Promise<ExtendedImportResult> {
   const startTime = Date.now();
@@ -194,7 +211,10 @@ export async function importCars(
     customMappings,
     dryRun = false,
     createCarFlowPlans = true,
+    createAsDraft = true, // NEW DEFAULT: Create drafts instead of committed plans
     userId,
+    draftName,
+    customerFilter,
   } = options;
 
   const { headers, rows } = parseCSV(csvContent);
@@ -208,6 +228,19 @@ export async function importCars(
   let skipped = 0;
   let carFlowPlansCreated = 0;
   let shopAssignmentsProcessed = 0;
+
+  // NEW: Track assignments for draft scenario creation
+  let scenarioDraftId: string | undefined;
+  let scenarioDraftName: string | undefined;
+  let scenarioCarsAdded = 0;
+  const pendingAssignments: {
+    carId: string;
+    shopId: string;
+    plannedMonth: number;
+    plannedYear: number;
+    shopReason: string;
+    estimatedCost: number | null;
+  }[] = [];
 
   // Get existing cars for duplicate detection
   const existingCars = await prisma.car.findMany({
@@ -427,7 +460,7 @@ export async function importCars(
         imported++;
       }
 
-      // Process shop assignments and create CarFlowPlan entries
+      // Process shop assignments
       if (createCarFlowPlans && userId && result.shopAssignments.length > 0 && !dryRun) {
         for (const assignment of result.shopAssignments) {
           shopAssignmentsProcessed++;
@@ -450,33 +483,46 @@ export async function importCars(
             const shouldCreatePlan = ['arrived', 'enroute', 'to be routed'].includes(statusLower);
 
             if (shouldCreatePlan) {
-              // Check for existing ACTIVE CarFlowPlan for this car
-              const existingActivePlan = await prisma.carFlowPlan.findFirst({
-                where: {
+              // NEW: If createAsDraft is true, collect assignments for scenario creation
+              if (createAsDraft) {
+                pendingAssignments.push({
                   carId,
-                  status: { in: ['Planned', 'In Progress'] },
-                },
-              });
-
-              if (!existingActivePlan) {
-                await prisma.carFlowPlan.create({
-                  data: {
+                  shopId,
+                  plannedMonth,
+                  plannedYear,
+                  shopReason: String(carData.reasonsShopped || carData.qualificationType || ''),
+                  estimatedCost: Number(carData.projectedCost) || null,
+                });
+              } else {
+                // LEGACY: Create CarFlowPlan directly (bypasses approval workflow)
+                // Check for existing ACTIVE CarFlowPlan for this car
+                const existingActivePlan = await prisma.carFlowPlan.findFirst({
+                  where: {
                     carId,
-                    shopId,
-                    plannedMonth,
-                    plannedYear,
-                    status: statusLower === 'arrived' ? 'In Progress' : 'Planned',
-                    shopReason: String(carData.reasonsShopped || carData.qualificationType || ''),
-                    estimatedCost: Number(carData.projectedCost) || null,
-                    priority: carData.shoppingStatus === 'Urgent' ? 1 :
-                              carData.shoppingStatus === 'Must Shop' ? 2 : 3,
-                    notes: `Imported from Qual Planner Master CSV`,
-                    source: 'csv_import',
-                    committedById: userId,
-                    companyId,
+                    status: { in: ['Planned', 'In Progress'] },
                   },
                 });
-                carFlowPlansCreated++;
+
+                if (!existingActivePlan) {
+                  await prisma.carFlowPlan.create({
+                    data: {
+                      carId,
+                      shopId,
+                      plannedMonth,
+                      plannedYear,
+                      status: statusLower === 'arrived' ? 'In Progress' : 'Planned',
+                      shopReason: String(carData.reasonsShopped || carData.qualificationType || ''),
+                      estimatedCost: Number(carData.projectedCost) || null,
+                      priority: carData.shoppingStatus === 'Urgent' ? 1 :
+                                carData.shoppingStatus === 'Must Shop' ? 2 : 3,
+                      notes: `Imported from Qual Planner Master CSV`,
+                      source: 'csv_import',
+                      committedById: userId,
+                      companyId,
+                    },
+                  });
+                  carFlowPlansCreated++;
+                }
               }
             }
           }
@@ -485,6 +531,54 @@ export async function importCars(
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown error';
       errors.push({ row: rowNum, identifier: railcarNumber, error: errMsg });
+    }
+  }
+
+  // NEW: Create scenario draft with all collected assignments
+  if (createAsDraft && pendingAssignments.length > 0 && userId && !dryRun) {
+    try {
+      // Generate scenario name from options or create default
+      const timestamp = new Date().toISOString().slice(0, 10);
+      scenarioDraftName = draftName || `CSV Import ${timestamp}`;
+
+      // Create the scenario
+      const scenario = await prisma.scenario.create({
+        data: {
+          name: scenarioDraftName,
+          description: `Imported from CSV on ${timestamp}. ${pendingAssignments.length} cars with shop assignments.`,
+          projectNumber: `IMPORT-${timestamp}`,
+          status: 'draft',
+          customerFilter: customerFilter || null,
+          createdBy: userId,
+          companyId,
+        },
+      });
+
+      scenarioDraftId = scenario.id;
+
+      // Add all cars to the scenario
+      for (const assignment of pendingAssignments) {
+        await prisma.scenarioCar.create({
+          data: {
+            scenarioId: scenario.id,
+            carId: assignment.carId,
+            assignedShopId: assignment.shopId,
+            plannedMonth: assignment.plannedMonth,
+            plannedYear: assignment.plannedYear,
+            shopReason: assignment.shopReason,
+            estimatedCost: assignment.estimatedCost,
+          },
+        });
+        scenarioCarsAdded++;
+      }
+    } catch (error) {
+      console.error('Failed to create scenario draft:', error);
+      // Don't fail the import, just note it
+      errors.push({
+        row: 0,
+        identifier: 'SCENARIO_DRAFT',
+        error: `Failed to create draft scenario: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      });
     }
   }
 
@@ -497,6 +591,10 @@ export async function importCars(
     duration: Date.now() - startTime,
     carFlowPlansCreated,
     shopAssignmentsProcessed,
+    // NEW: Include draft scenario info
+    scenarioDraftId,
+    scenarioDraftName,
+    scenarioCarsAdded,
   };
 }
 
