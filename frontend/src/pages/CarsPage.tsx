@@ -20,7 +20,8 @@ import ShoppingStatusBadge, { getShoppingStatus } from '../components/cars/Shopp
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CarCardGridSkeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
-import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal } from '../components/ui';
+import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal, EmptyState } from '../components/ui';
+import { TruckIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../types';
 import { carsApi } from '../services/api';
 import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS } from '../constants/carOptions';
@@ -397,15 +398,15 @@ export default function CarsPage() {
               <TableSkeleton rows={10} columns={10} />
             )
           ) : displayedCars.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-steel-500">No cars found matching your filters.</p>
-              <button
-                onClick={handleClearAllFilters}
-                className="mt-2 text-rail-600 hover:text-rail-800 font-medium"
-              >
-                Clear all filters
-              </button>
-            </div>
+            <EmptyState
+              icon={TruckIcon}
+              title="No cars found"
+              description="No railcars match your current filters. Try adjusting your search or filters."
+              action={{
+                label: 'Clear all filters',
+                onClick: handleClearAllFilters,
+              }}
+            />
           ) : viewMode === 'cards' ? (
             <CompactCarCardGrid columns={5}>
               {displayedCars.map((car) => (
