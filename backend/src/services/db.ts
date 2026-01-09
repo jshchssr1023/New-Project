@@ -28,6 +28,13 @@ const ALLOWED_TABLES = new Set([
 // Column name validation regex - only allows alphanumeric and underscores
 const VALID_COLUMN_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
+// Tables that don't have updatedAt column (only createdAt)
+const TABLES_WITHOUT_UPDATED_AT = new Set([
+  'AuditLog',
+  'InvalidatedToken',
+  'RateLimitEntry',
+]);
+
 /**
  * Validates a table name against the whitelist
  * @throws Error if table name is not allowed
@@ -466,7 +473,8 @@ function createTableHandler(tableName: string) {
       if (!data.createdAt) {
         data.createdAt = now;
       }
-      if (!data.updatedAt) {
+      // Only add updatedAt for tables that have this column
+      if (!data.updatedAt && !TABLES_WITHOUT_UPDATED_AT.has(tableName)) {
         data.updatedAt = now;
       }
 
