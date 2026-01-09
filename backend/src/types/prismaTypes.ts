@@ -4,7 +4,65 @@
  */
 
 // =============================================================================
-// ENUMS
+// ENUMS - Car and Plan Status Types
+// =============================================================================
+// Note: These enum values must match the Prisma schema exactly.
+// SQLite stores enum values as their literal string names.
+// =============================================================================
+
+export enum CarStatus {
+  ToBeRouted = 'ToBeRouted',
+  Arrived = 'Arrived',
+  Complete = 'Complete',
+  Release = 'Release',
+  UpMarketed = 'UpMarketed',
+  Enroute = 'Enroute',
+  Reassigned = 'Reassigned',
+  Released = 'Released',
+  Scheduled = 'Scheduled',
+  Other = 'Other',
+}
+
+export enum ShoppingStatus {
+  Urgent = 'Urgent',
+  MustShop = 'MustShop',
+  Upcoming = 'Upcoming',
+  Compliant = 'Compliant',
+  InShop = 'InShop',
+  Planned = 'Planned',
+  Unknown = 'Unknown',
+}
+
+export enum PlanStatus {
+  draft = 'draft',
+  active = 'active',
+  completed = 'completed',
+  archived = 'archived',
+}
+
+export enum ScenarioStatus {
+  draft = 'draft',
+  confirmed = 'confirmed',
+  archived = 'archived',
+}
+
+export enum CarFlowPlanStatus {
+  Planned = 'Planned',
+  InProgress = 'InProgress',
+  Complete = 'Complete',
+  Cancelled = 'Cancelled',
+}
+
+export enum LeaseContractStatus {
+  active = 'active',
+  pending_release = 'pending_release',
+  released = 'released',
+  renewed = 'renewed',
+  terminated = 'terminated',
+}
+
+// =============================================================================
+// ENUMS - Master Plan Status Types
 // =============================================================================
 
 export enum MasterPlanStatus {
@@ -19,6 +77,7 @@ export enum MasterPlanStatus {
 export enum CommitmentStatus {
   DRAFT = 'DRAFT',
   PLANNED = 'PLANNED',
+  SCHEDULED = 'SCHEDULED',
   IN_PROGRESS = 'IN_PROGRESS',
   COMPLETE = 'COMPLETE',
   CANCELLED = 'CANCELLED',

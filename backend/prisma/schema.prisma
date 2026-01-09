@@ -228,11 +228,11 @@ model Car {
   projectNumber            String           @default("") // Project or work order number
   reasonsShopped           String           @default("") // Reason(s) for shopping: qualification, repair, maintenance, etc.
 
-  // Current Status - Values: Arrived, Complete, To Be Routed, Release, Up Marketed, Enroute, Reassigned, Released, Other
-  status                   String           @default("To Be Routed")
+  // Current Status - Values: Arrived, Complete, ToBeRouted, Release, UpMarketed, Enroute, Reassigned, Released, Other
+  status                   CarStatus        @default(ToBeRouted)
 
-  // Shopping Status - Computed field: Urgent, Must Shop, Upcoming, Compliant, In Shop, Planned, Unknown
-  shoppingStatus           String           @default("Unknown")
+  // Shopping Status - Computed field: Urgent, MustShop, Upcoming, Compliant, InShop, Planned, Unknown
+  shoppingStatus           ShoppingStatus   @default(Unknown)
 
   // Portfolio and Qualification flags
   portfolio                Boolean          @default(false) // Active lease - car is in customer's managed fleet
@@ -543,7 +543,7 @@ model Plan {
   description String           @default("")
   startDate   DateTime
   endDate     DateTime
-  status      String           @default("draft") // draft, active, completed, archived
+  status      PlanStatus       @default(draft)
   companyId   String
   company     Company          @relation(fields: [companyId], references: [id])
   createdBy   String
@@ -600,7 +600,7 @@ model Scenario {
   notes          String                 @default("") // Optional notes for the scenario
 
   // Status: draft, confirmed, archived
-  status         String                 @default("draft")
+  status         ScenarioStatus         @default(draft)
   confirmedAt    DateTime?              // When the scenario was confirmed to Car Flow Plan
 
   // Legacy fields (kept for backward compatibility)
@@ -746,12 +746,12 @@ model CarFlowPlan {
   committedById   String
   committedBy     User      @relation("CarFlowPlanCommitter", fields: [committedById], references: [id], onDelete: Cascade)
 
-  // Status workflow: Planned → In Progress → Complete, Cancelled
+  // Status workflow: Planned → InProgress → Complete, Cancelled
   // - Planned: Committed to the plan, not yet started
-  // - In Progress: Car has arrived at shop (status = 'Arrived')
+  // - InProgress: Car has arrived at shop (status = 'Arrived')
   // - Complete: Work finished (car status = 'Complete')
   // - Cancelled: Removed from plan (soft delete, capacity restored)
-  status          String    @default("Planned")
+  status          CarFlowPlanStatus @default(Planned)
 
   // Source tracking - where did this assignment come from?
   source          String    @default("csv_import") // csv_import, scenario, manual, master_plan, migration
@@ -988,7 +988,7 @@ model LeaseContract {
   startDate           DateTime
   endDate             DateTime  // Lease expiration date
   releaseDate         DateTime? // Actual or planned release date
-  status              String    @default("active") // active, pending_release, released, renewed, terminated
+  status              LeaseContractStatus @default(active)
   commodity           String    @default("") // What the car carries
   releaseReason       String    @default("") // full_qualification, partial_qualification, assignment, release, repair
   nextCustomerId      String?   // New customer if immediate reassignment
@@ -1609,56 +1609,59 @@ model FilterPreset {
 // =============================================================================
 // STATUS ENUMS - Type-safe status fields
 // =============================================================================
+// Note: Enum values must match exact string values stored in the database.
+// SQLite stores enum values as their literal string names.
+// =============================================================================
 
 enum CarStatus {
-  TO_BE_ROUTED
-  ARRIVED
-  COMPLETE
-  RELEASE
-  UP_MARKETED
-  ENROUTE
-  REASSIGNED
-  RELEASED
-  SCHEDULED
-  OTHER
+  ToBeRouted    // Maps to "To Be Routed" in legacy data
+  Arrived
+  Complete
+  Release
+  UpMarketed    // Maps to "Up Marketed" in legacy data
+  Enroute
+  Reassigned
+  Released
+  Scheduled
+  Other
 }
 
 enum ShoppingStatus {
-  URGENT
-  MUST_SHOP
-  UPCOMING
-  COMPLIANT
-  IN_SHOP
-  PLANNED
-  UNKNOWN
+  Urgent
+  MustShop      // Maps to "Must Shop" in legacy data
+  Upcoming
+  Compliant
+  InShop        // Maps to "In Shop" in legacy data
+  Planned
+  Unknown
 }
 
 enum PlanStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  ARCHIVED
+  draft
+  active
+  completed
+  archived
 }
 
 enum ScenarioStatus {
-  DRAFT
-  CONFIRMED
-  ARCHIVED
+  draft
+  confirmed
+  archived
 }
 
 enum CarFlowPlanStatus {
-  PLANNED
-  IN_PROGRESS
-  COMPLETE
-  CANCELLED
+  Planned
+  InProgress    // Maps to "In Progress" in legacy data
+  Complete
+  Cancelled
 }
 
 enum LeaseContractStatus {
-  ACTIVE
-  PENDING_RELEASE
-  RELEASED
-  RENEWED
-  TERMINATED
+  active
+  pending_release
+  released
+  renewed
+  terminated
 }
 
 enum MasterPlanStatus {
