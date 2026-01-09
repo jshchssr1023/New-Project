@@ -468,7 +468,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     // Get all shop IDs from active plans
     const shopIds = cars
-      .filter(car => car.carFlowPlans.length > 0)
+      .filter(car => car.carFlowPlans && car.carFlowPlans.length > 0)
       .map(car => car.carFlowPlans[0].shopId);
 
     // Get S&OP commitments for these shops
@@ -494,7 +494,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     // Transform cars to include active plan info
     const transformedCars = cars.map(car => {
-      const activePlan = car.carFlowPlans[0];
+      const activePlan = car.carFlowPlans?.[0];
       let activePlanInfo = null;
       let hasActivePlan = false;
 
