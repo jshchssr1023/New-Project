@@ -9,7 +9,6 @@ import {
   ChevronUpDownIcon,
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
-import { useAuth } from '../contexts/AuthContext';
 
 interface WebhookConfig {
   id: string;
@@ -43,7 +42,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function Webhooks() {
-  const { token } = useAuth();
   const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
   const [options, setOptions] = useState<WebhookOptions | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +69,7 @@ export default function Webhooks() {
   const fetchWebhooks = async () => {
     try {
       const res = await fetch('/api/webhooks', {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -87,7 +85,7 @@ export default function Webhooks() {
   const fetchOptions = async () => {
     try {
       const res = await fetch('/api/webhooks/options', {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();
@@ -159,8 +157,8 @@ export default function Webhooks() {
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify(formData),
       });
 
@@ -184,7 +182,7 @@ export default function Webhooks() {
     try {
       const res = await fetch(`/api/webhooks/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       if (res.ok) {
@@ -201,8 +199,8 @@ export default function Webhooks() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify({ isActive }),
       });
 
@@ -221,7 +219,7 @@ export default function Webhooks() {
     try {
       const res = await fetch(`/api/webhooks/${webhook.id}/test`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       const data = await res.json();
@@ -261,8 +259,8 @@ export default function Webhooks() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify({ type: formData.type, url: formData.url }),
       });
 

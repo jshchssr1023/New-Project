@@ -4,7 +4,6 @@ import { authApi } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
-  token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -15,34 +14,33 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Restore session from httpOnly cookie on mount
+  // The cookie is automatically sent with the request via withCredentials: true
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    const storedToken = localStorage.getItem('authToken');
-
-    if (storedUser && storedToken) {
+    const restoreSession = async () => {
       try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
-        setToken(storedToken);
-      } catch (error) {
-        // Invalid stored user data, clear it
-        console.error('Failed to parse stored user data:', error);
-        localStorage.removeItem('user');
-        localStorage.removeItem('authToken');
+        // Try to get current user - if cookie is valid, this will succeed
+        const currentUser = await authApi.getCurrentUser();
+        setUser(currentUser);
+      } catch {
+        // No valid session (cookie expired or not set)
+        // This is expected for logged-out users, no need to log error
+        setUser(null);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    setIsLoading(false);
+    };
+
+    restoreSession();
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const response = await authApi.login({ email, password });
-      // Use token directly from response, not from localStorage (fixes race condition)
+      // Backend sets httpOnly cookie, we just store user in state
       setUser(response.user);
-      setToken(response.token);
       return { success: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed';
@@ -54,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout();
     } finally {
+      // Backend clears httpOnly cookie, we clear user from state
       setUser(null);
-      setToken(null);
     }
   };
 
@@ -63,7 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        token,
         isLoading,
         isAuthenticated: !!user,
         login,

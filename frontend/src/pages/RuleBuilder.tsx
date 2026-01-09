@@ -12,7 +12,6 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
 } from '@heroicons/react/24/outline';
-import { useAuth } from '../contexts/AuthContext';
 
 interface RuleCondition {
   [key: string]: unknown;
@@ -72,7 +71,6 @@ const RULE_TYPE_COLORS: Record<string, string> = {
 };
 
 export default function RuleBuilder() {
-  const { token } = useAuth();
   const [rules, setRules] = useState<ShopRule[]>([]);
   const [schemas, setSchemas] = useState<Record<string, RuleSchema>>({});
   const [loading, setLoading] = useState(true);
@@ -88,10 +86,10 @@ export default function RuleBuilder() {
     try {
       const [rulesRes, schemasRes] = await Promise.all([
         fetch('/api/shop-rules', {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         }),
         fetch('/api/shop-rules/schemas', {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         }),
       ]);
 
@@ -109,12 +107,12 @@ export default function RuleBuilder() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, []);
 
   const fetchCars = useCallback(async () => {
     try {
       const res = await fetch('/api/cars?pageSize=100', {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       if (res.ok) {
         const response = await res.json();
@@ -129,7 +127,7 @@ export default function RuleBuilder() {
     } catch (error) {
       console.error('Error fetching cars:', error);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     fetchRules();
@@ -140,7 +138,7 @@ export default function RuleBuilder() {
     try {
       const res = await fetch(`/api/shop-rules/${id}/toggle`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       if (res.ok) {
@@ -158,7 +156,7 @@ export default function RuleBuilder() {
     try {
       const res = await fetch(`/api/shop-rules/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       if (res.ok) {
@@ -177,9 +175,9 @@ export default function RuleBuilder() {
       const res = await fetch(url, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(rule),
       });
 
@@ -204,7 +202,7 @@ export default function RuleBuilder() {
     try {
       const res = await fetch('/api/shop-rules/reset-defaults', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       if (res.ok) {
@@ -223,9 +221,9 @@ export default function RuleBuilder() {
       const res = await fetch('/api/shop-rules/test', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({ carId: testCar, month: testMonth }),
       });
 
