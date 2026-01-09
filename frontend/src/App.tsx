@@ -40,13 +40,13 @@ const SOPReviewDashboard = lazy(() => import('./pages/SOPReviewDashboard'));
 // const MasterPlanAuditLog = lazy(() => import('./components/MasterPlanAuditLog'));
 const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 
-// Page loading fallback
-function PageLoader() {
+// Page loading fallback with accessibility support
+function PageLoader({ message = 'Loading...' }: { message?: string }) {
   return (
-    <div className="flex items-center justify-center h-64">
+    <div className="flex items-center justify-center h-64" role="status" aria-label={message}>
       <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rail-600 mx-auto"></div>
-        <p className="mt-3 text-sm text-steel-500">Loading...</p>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rail-600 mx-auto" aria-hidden="true"></div>
+        <p className="mt-3 text-sm text-steel-500">{message}</p>
       </div>
     </div>
   );

@@ -95,6 +95,17 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-steel-50">
+      {/* Skip to main content link for keyboard/screen reader users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-rail-600 focus:text-white focus:rounded"
+      >
+        Skip to main content
+      </a>
+
+      {/* Announcer for screen readers */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only" id="announcer" />
+
       {/* Mobile sidebar */}
       <Transition.Root show={sidebarOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50 lg:hidden" onClose={setSidebarOpen}>
@@ -345,7 +356,7 @@ export default function Layout() {
         )}
 
         {/* Page content - reduced padding for more real estate */}
-        <main className="py-4">
+        <main id="main-content" className="py-4">
           <div className="px-4 sm:px-5 lg:px-6">
             <Outlet />
           </div>
