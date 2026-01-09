@@ -494,7 +494,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     // Transform cars to include active plan info
     const transformedCars = cars.map(car => {
-      const activePlan = car.carFlowPlans[0];
+      const activePlan = car.carFlowPlans?.[0];
       let activePlanInfo = null;
       let hasActivePlan = false;
 
