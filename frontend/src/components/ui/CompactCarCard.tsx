@@ -121,23 +121,22 @@ export default function CompactCarCard({
           </button>
         </div>
 
-        {/* Middle row: Type and Customer */}
-        <div className="flex items-center gap-2 text-sm mb-2">
+        {/* Middle row: Type and Customer - stacked for better visibility */}
+        <div className="space-y-1 text-sm mb-2">
           <div className="flex items-center gap-1 text-steel-600">
-            <TruckIcon className="h-3.5 w-3.5" />
-            <span>{car.carType || 'Unknown'}</span>
+            <TruckIcon className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="truncate">{car.carType || 'Unknown'}</span>
           </div>
-          <span className="text-steel-300">|</span>
-          <span className="text-steel-600 truncate flex-1">
+          <div className="text-steel-700 font-medium truncate" title={car.customer || 'No customer'}>
             {car.customer || 'No customer'}
-          </span>
+          </div>
         </div>
 
-        {/* Bottom row: Status badge */}
+        {/* Bottom row: Status badge and On Rent indicator */}
         <div className="flex items-center justify-between">
           {getStatusBadge()}
-          {car.onRent && (
-            <span className="text-xs text-steel-500">On Rent</span>
+          {car.portfolio && (
+            <span className="text-xs text-green-600 font-medium">On Lease</span>
           )}
         </div>
       </div>
