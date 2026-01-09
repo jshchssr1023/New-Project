@@ -1,4 +1,4 @@
-import { Fragment, useState, useCallback } from 'react';
+import { Fragment, useState, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { Dialog, Menu, Transition } from '@headlessui/react';
 import {
@@ -72,14 +72,19 @@ export default function Layout() {
     navigate('/login');
   };
 
+  // Use ref to avoid recreating callback on every keystroke
+  const globalSearchRef = useRef(globalSearch);
+  globalSearchRef.current = globalSearch;
+
   // Global search handler - searches across Railcar Number, Customer, Project Number
   const handleGlobalSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (globalSearch.trim()) {
-      navigate(`/cars?search=${encodeURIComponent(globalSearch.trim())}`);
+    const searchValue = globalSearchRef.current.trim();
+    if (searchValue) {
+      navigate(`/cars?search=${encodeURIComponent(searchValue)}`);
       setGlobalSearch('');
     }
-  }, [globalSearch, navigate]);
+  }, [navigate]);
 
   // Build navigation sections based on user role
   const navSections = [
