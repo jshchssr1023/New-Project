@@ -323,6 +323,17 @@ export default function CarsPage() {
             {/* Slicer Filters */}
             <SlicerBar>
               <Slicer
+                label="Planning"
+                options={[
+                  { value: 'needs_planning', label: 'Needs Planning' },
+                  { value: 'already_planned', label: 'Already Planned' },
+                ]}
+                value={filters.planningStatus || ''}
+                onChange={(v) => updateFilters({ planningStatus: v as string })}
+                placeholder="All"
+                size="sm"
+              />
+              <Slicer
                 label="Car Type"
                 options={CAR_TYPE_OPTIONS.map(t => ({ value: t, label: t }))}
                 value={filters.carType || ''}
@@ -363,7 +374,7 @@ export default function CarsPage() {
             </SlicerBar>
 
             {/* Clear Filters */}
-            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonsShopped) && (
+            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonsShopped || filters.planningStatus || filters.shoppingStatus) && (
               <button
                 onClick={handleClearAllFilters}
                 className="text-sm text-crimson-600 hover:text-crimson-700 font-medium"

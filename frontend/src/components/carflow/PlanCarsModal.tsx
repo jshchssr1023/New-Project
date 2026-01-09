@@ -72,10 +72,14 @@ export default function PlanCarsModal({
   const [bulkShopReason, setBulkShopReason] = useState('');
   const [conflicts, setConflicts] = useState<BulkPlanConflict[]>([]);
 
-  // Fetch shops with capacity info
+  // Fetch shops with capacity info - only shops with S&OP commitments
   const { data: shops = [] } = useQuery({
-    queryKey: ['shops'],
-    queryFn: () => shopsApi.getAll({ isActive: true }),
+    queryKey: ['shops', 'sop', selectedYear],
+    queryFn: () => shopsApi.getAll({
+      isActive: true,
+      hasSOPCommitment: true,
+      year: selectedYear,
+    }),
     enabled: isOpen,
   });
 
@@ -448,6 +452,14 @@ export default function PlanCarsModal({
                               </option>
                             ))}
                           </select>
+                          {shops.length === 0 && (
+                            <p className="text-xs text-amber-600 mt-1">
+                              No shops with S&OP commitments for {selectedYear}. Set up shops in S&OP Settings first.
+                            </p>
+                          )}
+                          <p className="text-xs text-steel-500 mt-1">
+                            Only shops with S&OP capacity commitments are available for planning.
+                          </p>
                         </div>
 
                         {/* Shop Capacity Info */}
