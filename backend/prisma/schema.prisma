@@ -234,8 +234,12 @@ model Car {
   projectNumber            String           @default("") // Project or work order number
   reasonsShopped           String           @default("") // Reason(s) for shopping: qualification, repair, maintenance, etc.
 
-  // Current Status - Values: ToBeRouted, Arrived, Complete, Release, UpMarketed, Enroute, Reassigned, Released, Scheduled, Other
-  status                   String           @default("ToBeRouted")
+  // Current Status (Column AK) - Values: Complete, Arrived, To Be Routed, Enroute, Release, Reassigned, Up Marketed
+  // Complete = Car is done, no longer needs shopping
+  // Arrived = Car is in shop now
+  // To Be Routed = Car has not been sent to shop
+  // Enroute = Car is on its way to shop
+  status                   String           @default("To Be Routed")
 
   // Shopping Status - Computed field: Urgent, MustShop, Upcoming, Compliant, InShop, Planned, Unknown
   shoppingStatus           String           @default("Unknown")

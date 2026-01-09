@@ -24,7 +24,7 @@ import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal, 
 import { TruckIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../types';
 import { carsApi } from '../services/api';
-import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS } from '../constants/carOptions';
+import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS, CAR_STATUS_OPTIONS, PLANNING_STATUS_OPTIONS } from '../constants/carOptions';
 
 // Lazy load modals
 const ImportModal = lazy(() => import('../components/cars/ImportModal'));
@@ -324,10 +324,7 @@ export default function CarsPage() {
             <SlicerBar>
               <Slicer
                 label="Planning"
-                options={[
-                  { value: 'needs_planning', label: 'Needs Planning' },
-                  { value: 'already_planned', label: 'Already Planned' },
-                ]}
+                options={PLANNING_STATUS_OPTIONS.map(p => ({ value: p.value, label: p.label }))}
                 value={filters.planningStatus || ''}
                 onChange={(v) => updateFilters({ planningStatus: v as string })}
                 placeholder="All"
@@ -335,7 +332,9 @@ export default function CarsPage() {
               />
               <Slicer
                 label="Car Type"
-                options={CAR_TYPE_OPTIONS.map(t => ({ value: t, label: t }))}
+                options={filterOptions.carTypes.length > 0
+                  ? filterOptions.carTypes.map(t => ({ value: t, label: t }))
+                  : CAR_TYPE_OPTIONS.map(t => ({ value: t, label: t }))}
                 value={filters.carType || ''}
                 onChange={(v) => updateFilters({ carType: v as string })}
                 placeholder="All"
@@ -343,13 +342,7 @@ export default function CarsPage() {
               />
               <Slicer
                 label="Status"
-                options={[
-                  { value: 'available', label: 'Available' },
-                  { value: 'in_service', label: 'In Service' },
-                  { value: 'in_shop', label: 'In Shop' },
-                  { value: 'scheduled', label: 'Scheduled' },
-                  { value: 'retired', label: 'Retired' },
-                ]}
+                options={CAR_STATUS_OPTIONS.map(s => ({ value: s.value, label: s.label }))}
                 value={filters.status || ''}
                 onChange={(v) => updateFilters({ status: v as string })}
                 placeholder="All"
@@ -365,7 +358,9 @@ export default function CarsPage() {
               />
               <Slicer
                 label="Reason"
-                options={REASON_OPTIONS.map(r => ({ value: r, label: r }))}
+                options={filterOptions.reasons.length > 0
+                  ? filterOptions.reasons.map(r => ({ value: r, label: r }))
+                  : REASON_OPTIONS.map(r => ({ value: r, label: r }))}
                 value={filters.reasonsShopped || ''}
                 onChange={(v) => updateFilters({ reasonsShopped: v as string })}
                 placeholder="All"
@@ -666,7 +661,11 @@ function TableView({
                   {car.projectNumber || '-'}
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap">
-                  <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium border ${STATUS_COLORS[car.status as keyof typeof STATUS_COLORS] || STATUS_COLORS.available}`}>
+                  <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium border ${
+                    STATUS_COLORS[car.status as keyof typeof STATUS_COLORS] ||
+                    STATUS_COLORS[car.status.replace('_', ' ') as keyof typeof STATUS_COLORS] ||
+                    STATUS_COLORS.available
+                  }`}>
                     {car.status.replace('_', ' ')}
                   </span>
                 </td>
