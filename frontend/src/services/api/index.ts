@@ -21,15 +21,29 @@ export { authApi } from './auth';
 export { carsApi } from './cars';
 export { shopsApi, shopPerformanceApi } from './shops';
 export { plansApi } from './plans';
-export { scenariosApi } from './scenarios';
 export { analyticsApi } from './analytics';
 export { usersApi, permissionsApi, auditApi } from './users';
 export { reportsApi } from './reports';
-export { masterPlanApi, masterPlanWizardApi } from './masterPlans';
 export { sopApi, leaseQualificationApi, shopRulesApi } from './sop';
 
 // Proposal & Scheduling Queue API
 export { default as proposalsApi } from './proposals';
+
+// Service Plan Builder API
+export { servicePlansApi } from './servicePlans';
+export type {
+  ServicePlan,
+  ServicePlanCar,
+  PlanOption,
+  PlanOptionAssignment,
+  CapacityReservation,
+  AvailableCapacity,
+  CapacityValidation,
+  OptionComparisonResult,
+  CreateServicePlanInput,
+  CreatePlanOptionInput,
+  AssignmentInput,
+} from './servicePlans';
 
 // Re-export all types
 export type {

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -14,7 +14,7 @@ const ShopNetworks = lazy(() => import('./pages/ShopNetworks'));
 const CarsPage = lazy(() => import('./pages/CarsPage'));
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
 const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
-const ScenarioManager = lazy(() => import('./pages/ScenarioManager'));
+const ServicePlanBuilder = lazy(() => import('./pages/ServicePlanBuilder'));
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -22,17 +22,13 @@ const RuleBuilder = lazy(() => import('./pages/RuleBuilder'));
 const ImportExport = lazy(() => import('./pages/ImportExport'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
-const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
-const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
 const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
 
 // S&OP Planning Module - Sales & Operations Planning for car flow
 const SOPCapacityPage = lazy(() => import('./pages/SOPCapacityPage'));
 const SOPPlanningPage = lazy(() => import('./pages/SOPPlanningPage'));
 const DemandRegistryPage = lazy(() => import('./pages/DemandRegistryPage'));
-const MasterPlannerDashboard = lazy(() => import('./pages/MasterPlannerDashboard'));
 const SOPReviewDashboard = lazy(() => import('./pages/SOPReviewDashboard'));
-const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 
 // New Workflow - Proposal & Scheduling Queue
 const SchedulingQueue = lazy(() => import('./pages/SchedulingQueue'));
@@ -50,18 +46,6 @@ function PageLoader({ message = 'Loading...' }: { message?: string }) {
         <p className="mt-3 text-sm text-steel-500">{message}</p>
       </div>
     </div>
-  );
-}
-
-// Wrapper component for ImportWorkflow as a standalone page
-function ImportWorkflowPage() {
-  const navigate = useNavigate();
-  return (
-    <ImportWorkflow
-      sessionType="cars"
-      onComplete={() => navigate('/cars')}
-      onCancel={() => navigate(-1)}
-    />
   );
 }
 
@@ -116,10 +100,8 @@ export default function App() {
             <Route path="cars" element={<CarsPage />} />
             <Route path="planning" element={<PlanningGrid />} />
             <Route path="car-flow" element={<CarFlowPlanning />} />
-            <Route path="scenarios" element={<ScenarioManager />} />
-            <Route path="import-workflow" element={<ImportWorkflowPage />} />
-            <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
-            <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
+            <Route path="service-plans" element={<ServicePlanBuilder />} />
+            <Route path="service-plans/:id" element={<ServicePlanBuilder />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
             <Route path="rules" element={<RuleBuilder />} />
 
@@ -128,7 +110,6 @@ export default function App() {
             <Route path="sop-capacity" element={<SOPCapacityPage />} />
             <Route path="sop-plan" element={<SOPPlanningPage />} />
             <Route path="demand-registry" element={<DemandRegistryPage />} />
-            <Route path="master-planner" element={<MasterPlannerDashboard />} />
 
             {/* New Workflow Routes */}
             <Route path="scheduling-queue" element={<SchedulingQueue />} />

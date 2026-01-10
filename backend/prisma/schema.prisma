@@ -42,6 +42,9 @@ model User {
   committedUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCommitter")
   cancelledUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCanceller")
 
+  // Service Plan relations
+  servicePlans                    ServicePlan[] @relation("ServicePlanCreator")
+
   // Performance indexes
   @@index([email])
   @@index([companyId])
@@ -82,6 +85,9 @@ model Company {
 
   // Plan Proposal relations
   planProposals           PlanProposal[]
+
+  // Service Plan relations
+  servicePlans            ServicePlan[]
 }
 
 // =============================================================================
@@ -219,6 +225,9 @@ model Customer {
   // Plan Proposal relations
   planProposals         PlanProposal[]
 
+  // Service Plan relations
+  servicePlans          ServicePlan[] @relation("ServicePlanCustomer")
+
   @@unique([code, companyId])
 }
 
@@ -318,6 +327,9 @@ model Car {
   masterPlanCommitments    MasterPlanCommitment[]
   unifiedAssignments       UnifiedAssignment[]
 
+  // Service Plan relations
+  servicePlanCars          ServicePlanCar[] @relation("ServicePlanCarCar")
+
   // Note: railcarNumber has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([railcarNumber, companyId])
@@ -414,6 +426,10 @@ model Shop {
 
   // Shop Capability Profile (shop-first constraints)
   capabilityProfile     ShopCapabilityProfile?
+
+  // Service Plan relations
+  planOptionAssignments   PlanOptionAssignment[] @relation("PlanOptionAssignmentShop")
+  capacityReservations    CapacityReservation[] @relation("CapacityReservationShop")
 
   // Note: code has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
@@ -1990,4 +2006,221 @@ model UnifiedAssignment {
   @@index([shopId, plannedYear, plannedMonth])
   @@index([carId, status])
   @@index([customerId, status, plannedYear])
+}
+
+// =============================================================================
+// SERVICE PLAN BUILDER - Customer Service Plan Proposals with Multiple Options
+// =============================================================================
+// The Service Plan Builder allows planners to create comprehensive service
+// proposals for customers. Each ServicePlan defines a car flow (X cars/month
+// from start to end date) and can have multiple PlanOptions (different shop
+// configurations) for customer comparison.
+//
+// Workflow:
+// 1. Create ServicePlan with car flow definition (cars/month, date range)
+// 2. Add cars to the plan (ServicePlanCar) - shared pool across all options
+// 3. Create multiple PlanOptions with different shop assignments
+// 4. Generate comparison PDF for customer review
+// 5. Customer approves one option → cars get scheduled
+// 6. Other options deleted, capacity reservations released
+// =============================================================================
+
+model ServicePlan {
+  id                    String              @id @default(uuid())
+
+  // Plan identification
+  name                  String              // e.g., "Q1 2026 Tank Car Service Plan"
+  description           String              @default("")
+
+  // Customer or Project association
+  customerId            String?
+  customer              Customer?           @relation("ServicePlanCustomer", fields: [customerId], references: [id])
+  projectNumber         String              @default("") // For multi-customer projects
+
+  // Car Flow Definition
+  carFlowRate           Int                 // Cars per month (e.g., 10)
+  startMonth            Int                 // 1-12
+  startYear             Int                 // e.g., 2026
+  endMonth              Int                 // 1-12
+  endYear               Int                 // e.g., 2026
+
+  // Status workflow
+  // Values: draft, proposed, approved, archived, cancelled
+  status                String              @default("draft")
+
+  // Approved option (when customer approves)
+  approvedOptionId      String?             // FK to PlanOption - set when approved
+
+  // Proposal tracking
+  proposedAt            DateTime?           // When sent to customer
+  proposedById          String?
+  approvedAt            DateTime?           // When customer approved
+  approvedBy            String              @default("") // Customer contact who approved
+
+  // Summary metrics (calculated)
+  totalCarSlots         Int                 @default(0) // carFlowRate * months
+  selectedCarCount      Int                 @default(0) // Actual cars added
+
+  // Audit fields
+  createdById           String
+  creator               User                @relation("ServicePlanCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  companyId             String
+  company               Company             @relation(fields: [companyId], references: [id])
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relations
+  cars                  ServicePlanCar[]
+  options               PlanOption[]
+
+  @@index([companyId, status])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdById])
+}
+
+// Cars selected for a Service Plan (shared pool across all options)
+model ServicePlanCar {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Car reference
+  carId                 String
+  car                   Car                 @relation("ServicePlanCarCar", fields: [carId], references: [id])
+
+  // Auto-distribution suggestion (system-calculated default month)
+  autoAssignedMonth     Int?                // 1-12 (system suggestion)
+  autoAssignedYear      Int?                // e.g., 2026
+
+  // User can override the month
+  userAssignedMonth     Int?                // 1-12 (user override)
+  userAssignedYear      Int?                // e.g., 2026
+
+  // Metadata for sorting/prioritization
+  qualificationDueDate  DateTime?           // Copied from car for display
+  contractExpiration    DateTime?           // Copied from car for display
+  shoppingStatus        String              @default("") // Copied from car
+
+  addedAt               DateTime            @default(now())
+
+  // Relations
+  optionAssignments     PlanOptionAssignment[]
+
+  @@unique([servicePlanId, carId])
+  @@index([servicePlanId])
+  @@index([carId])
+}
+
+// A specific configuration option within a Service Plan
+model PlanOption {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Option identification
+  name                  String              // e.g., "Option A - All to ABC Rail"
+  description           String              @default("")
+
+  // Calculated summary metrics
+  totalEstimatedCost    Float               @default(0)
+  totalEstimatedDays    Int                 @default(0)
+  shopCount             Int                 @default(0) // Number of unique shops
+
+  // Status
+  // Values: draft, ready, selected, rejected
+  status                String              @default("draft")
+
+  // Order for display
+  displayOrder          Int                 @default(0)
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relations
+  assignments           PlanOptionAssignment[]
+  capacityReservations  CapacityReservation[]
+
+  @@index([servicePlanId])
+  @@index([status])
+}
+
+// Shop assignment for a specific car within a Plan Option
+model PlanOptionAssignment {
+  id                    String              @id @default(uuid())
+
+  // Parent Plan Option
+  planOptionId          String
+  planOption            PlanOption          @relation(fields: [planOptionId], references: [id], onDelete: Cascade)
+
+  // Reference to the car in the plan
+  servicePlanCarId      String
+  servicePlanCar        ServicePlanCar      @relation(fields: [servicePlanCarId], references: [id], onDelete: Cascade)
+
+  // Shop assignment
+  shopId                String
+  shop                  Shop                @relation("PlanOptionAssignmentShop", fields: [shopId], references: [id])
+
+  // Suggested shop (from rule engine)
+  suggestedShopId       String?
+
+  // Planned timing
+  plannedMonth          Int                 // 1-12
+  plannedYear           Int                 // e.g., 2026
+
+  // Cost and duration estimates
+  estimatedCost         Float               @default(0)
+  estimatedDays         Int                 @default(14)
+
+  // Shop reason (copied from car or manually entered)
+  shopReason            String              @default("")
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([planOptionId, servicePlanCarId])
+  @@index([planOptionId])
+  @@index([servicePlanCarId])
+  @@index([shopId])
+  @@index([plannedYear, plannedMonth])
+}
+
+// Capacity Reservation - Soft-books shop capacity to prevent overbooking
+model CapacityReservation {
+  id                    String              @id @default(uuid())
+
+  // Which Plan Option holds this reservation
+  planOptionId          String
+  planOption            PlanOption          @relation(fields: [planOptionId], references: [id], onDelete: Cascade)
+
+  // Shop and period being reserved
+  shopId                String
+  shop                  Shop                @relation("CapacityReservationShop", fields: [shopId], references: [id])
+  reservedMonth         Int                 // 1-12
+  reservedYear          Int                 // e.g., 2026
+
+  // Number of car slots reserved
+  reservedSlots         Int                 @default(0)
+
+  // Status
+  // Values: active, released, converted (when approved and scheduled)
+  status                String              @default("active")
+
+  // Timestamps
+  reservedAt            DateTime            @default(now())
+  releasedAt            DateTime?
+  convertedAt           DateTime?           // When converted to actual commitment
+
+  companyId             String
+
+  @@unique([planOptionId, shopId, reservedYear, reservedMonth])
+  @@index([shopId, reservedYear, reservedMonth])
+  @@index([planOptionId])
+  @@index([status])
+  @@index([companyId])
 }
