@@ -326,6 +326,27 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     plans: { table: 'Plan', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
     scenarios: { table: 'Scenario', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
   },
+  // Service Plan Builder relationships
+  ServicePlan: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+    creator: { table: 'User', foreignKey: 'id', localKey: 'createdBy', type: 'belongsTo' },
+    cars: { table: 'ServicePlanCar', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+    options: { table: 'PlanOption', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+  },
+  ServicePlanCar: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+  },
+  PlanOption: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+    assignments: { table: 'PlanOptionAssignment', foreignKey: 'optionId', localKey: 'id', type: 'hasMany' },
+  },
+  PlanOptionAssignment: {
+    option: { table: 'PlanOption', foreignKey: 'id', localKey: 'optionId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
 };
 
 // =============================================================================
