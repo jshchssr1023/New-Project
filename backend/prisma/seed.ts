@@ -269,15 +269,7 @@ function parseCSV(content: string): { headers: string[]; records: Record<string,
 
   // Parse header - handle potential BOM, quotes, and whitespace
   const headerLine = lines[0].replace(/^\uFEFF/, ''); // Remove BOM if present
-
-  // Debug: show what we're parsing
-  console.log(`   🔍 DEBUG: Header line length: ${headerLine.length}`);
-  console.log(`   🔍 DEBUG: First 50 chars: "${headerLine.substring(0, 50)}"`);
-  console.log(`   🔍 DEBUG: Last 10 chars: "${headerLine.substring(headerLine.length - 10)}"`);
-  console.log(`   🔍 DEBUG: Char codes of first 5: ${[...headerLine.substring(0, 5)].map(c => c.charCodeAt(0)).join(', ')}`);
-
   const headers = parseCSVLine(headerLine);
-  console.log(`   🔍 DEBUG: Parsed ${headers.length} headers. First 3: ${headers.slice(0, 3).join(', ')}`);
 
   const records: Record<string, string>[] = [];
 
@@ -1005,7 +997,19 @@ async function importShopsFromCSV(
   }
 
   console.log(`   📄 Reading shop CSV: ${csvPath}`);
-  const csvContent = fs.readFileSync(csvPath, 'utf-8');
+
+  // Read file and detect encoding (UTF-16 LE vs UTF-8)
+  const rawBuffer = fs.readFileSync(csvPath);
+  let csvContent: string;
+
+  // Check for UTF-16 LE BOM (FF FE) or null bytes indicating UTF-16
+  if ((rawBuffer[0] === 0xFF && rawBuffer[1] === 0xFE) || rawBuffer[1] === 0x00) {
+    console.log(`   📄 Detected UTF-16 LE encoding, converting...`);
+    csvContent = rawBuffer.toString('utf16le');
+  } else {
+    csvContent = rawBuffer.toString('utf-8');
+  }
+
   const { headers, records } = parseCSV(csvContent);
 
   if (headers.length === 0) {
