@@ -33,12 +33,7 @@ import {
   ArrowDownTrayIcon,
 } from '@heroicons/react/24/outline';
 import { sopApi } from '../services/sopApi';
-import {
-  ALL_NETWORKS,
-  AITX_NETWORK,
-  THIRD_PARTY_NETWORKS,
-  getSystemTotalCapacity,
-} from '../constants/shopNetworks';
+import { useShopNetworks } from '../hooks/useShopNetworks';
 import { generate18MonthLabels } from '../utils/sopCalculations';
 import type { DemandRegister, WorkType, PlanningState } from '../types/sop';
 
@@ -82,6 +77,15 @@ export default function SOPReviewDashboard() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set(['aitx']));
   const [showFilters, setShowFilters] = useState(false);
+
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    AITX_NETWORK,
+    THIRD_PARTY_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
 
   // Generate month labels
   const monthLabels = useMemo(() => {
