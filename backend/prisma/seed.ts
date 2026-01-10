@@ -269,7 +269,15 @@ function parseCSV(content: string): { headers: string[]; records: Record<string,
 
   // Parse header - handle potential BOM, quotes, and whitespace
   const headerLine = lines[0].replace(/^\uFEFF/, ''); // Remove BOM if present
+
+  // Debug: show what we're parsing
+  console.log(`   🔍 DEBUG: Header line length: ${headerLine.length}`);
+  console.log(`   🔍 DEBUG: First 50 chars: "${headerLine.substring(0, 50)}"`);
+  console.log(`   🔍 DEBUG: Last 10 chars: "${headerLine.substring(headerLine.length - 10)}"`);
+  console.log(`   🔍 DEBUG: Char codes of first 5: ${[...headerLine.substring(0, 5)].map(c => c.charCodeAt(0)).join(', ')}`);
+
   const headers = parseCSVLine(headerLine);
+  console.log(`   🔍 DEBUG: Parsed ${headers.length} headers. First 3: ${headers.slice(0, 3).join(', ')}`);
 
   const records: Record<string, string>[] = [];
 
