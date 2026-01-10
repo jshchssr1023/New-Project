@@ -62,11 +62,3 @@ CREATE INDEX "ShopCapabilityProfile_shopId_idx" ON "ShopCapabilityProfile"("shop
 
 -- CreateIndex: Index on companyId for multi-tenant filtering
 CREATE INDEX "ShopCapabilityProfile_companyId_idx" ON "ShopCapabilityProfile"("companyId");
-
--- AlterTable: Add Draft Mode (Sandbox) Support to Scenario
--- These columns support the draft scenario workflow where planners can test changes in a sandbox.
-
-ALTER TABLE "Scenario" ADD COLUMN "isDraft" BOOLEAN NOT NULL DEFAULT 0;
-ALTER TABLE "Scenario" ADD COLUMN "draftExpiresAt" DATETIME;
-ALTER TABLE "Scenario" ADD COLUMN "parentMasterPlanId" TEXT;
-ALTER TABLE "Scenario" ADD COLUMN "draftKpiSnapshot" TEXT NOT NULL DEFAULT '{}';
