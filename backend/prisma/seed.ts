@@ -1300,6 +1300,17 @@ async function main() {
   await prisma.planAssignment.deleteMany();
   await prisma.plan.deleteMany();
 
+  // Service Plan tables (reference Car)
+  await prisma.servicePlanCar.deleteMany();
+  await prisma.servicePlan.deleteMany();
+
+  // Car Flow Plan tables (reference Car)
+  await prisma.carFlowPlan.deleteMany();
+
+  // Master Plan tables (reference Car)
+  await prisma.masterPlanCommitment.deleteMany();
+  await prisma.masterPlan.deleteMany();
+
   // Master data tables
   await prisma.car.deleteMany();
   await prisma.shop.deleteMany();
