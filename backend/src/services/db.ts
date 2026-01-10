@@ -23,6 +23,8 @@ const ALLOWED_TABLES = new Set([
   'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
   'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
+  // Service Plan Builder tables
+  'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -204,17 +206,27 @@ function buildOrderByClause(orderBy: OrderByClause | OrderByClause[] | undefined
   if (!orderBy) return '';
 
   const orders = Array.isArray(orderBy) ? orderBy : [orderBy];
-  const parts = orders.map(o => {
+  const parts: string[] = [];
+
+  for (const o of orders) {
     const [key, dir] = Object.entries(o)[0];
+
+    // Skip nested relation orderBy (e.g., { shop: { name: 'asc' } })
+    // SQLite doesn't support ordering by related table columns without a JOIN
+    if (typeof dir === 'object' && dir !== null) {
+      console.warn(`[DB] Skipping nested orderBy for relation "${key}" - not supported in SQLite`);
+      continue;
+    }
+
     // SECURITY: Validate column name before using in query
     validateColumnName(key);
     // Validate direction is only 'asc' or 'desc'
-    const direction = dir.toUpperCase();
+    const direction = (dir as string).toUpperCase();
     if (direction !== 'ASC' && direction !== 'DESC') {
       throw new Error(`SECURITY: Invalid ORDER BY direction "${dir}"`);
     }
-    return `"${key}" ${direction}`;
-  });
+    parts.push(`"${key}" ${direction}`);
+  }
 
   return parts.length > 0 ? `ORDER BY ${parts.join(', ')}` : '';
 }
@@ -313,6 +325,27 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
     plans: { table: 'Plan', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
     scenarios: { table: 'Scenario', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
+  },
+  // Service Plan Builder relationships
+  ServicePlan: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+    creator: { table: 'User', foreignKey: 'id', localKey: 'createdBy', type: 'belongsTo' },
+    cars: { table: 'ServicePlanCar', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+    options: { table: 'PlanOption', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+  },
+  ServicePlanCar: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+  },
+  PlanOption: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+    assignments: { table: 'PlanOptionAssignment', foreignKey: 'optionId', localKey: 'id', type: 'hasMany' },
+  },
+  PlanOptionAssignment: {
+    option: { table: 'PlanOption', foreignKey: 'id', localKey: 'optionId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
   },
 };
 
@@ -878,6 +911,12 @@ export const prisma = {
   // Car Flow Planning tables
   carFlowPlan: createTableHandler('CarFlowPlan'),
   sOPCommitment: createTableHandler('SOPCommitment'),
+
+  // Service Plan Builder tables
+  servicePlan: createTableHandler('ServicePlan'),
+  servicePlanCar: createTableHandler('ServicePlanCar'),
+  planOption: createTableHandler('PlanOption'),
+  planOptionAssignment: createTableHandler('PlanOptionAssignment'),
 
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),

@@ -70,6 +70,16 @@ export function determinePlanningState(car: Car): PlanningState {
 /**
  * Build the demand register from actual car data
  * This is the PRIMARY source of demand - based on actual due dates
+ *
+ * RULES for inclusion:
+ * 1. Car has a qualification date (any of the 9 fields) in current year or prior year (overdue)
+ * 2. AND car status (Column AK) is NOT 'Complete'
+ * 3. AND car does NOT have an active CarFlowPlan
+ *
+ * Work type is determined by reasonsShopped (Column AH):
+ * - TANK QUALIFICATION -> qualification (Qual team)
+ * - RELEASE, REASSIGNMENT, UP MARKETED -> release (Assignment & Release team)
+ * - Other reasons -> maintenance/repair (Other team)
  */
 export function buildDemandRegister(
   cars: Car[],
@@ -87,41 +97,120 @@ export function buildDemandRegister(
   const items: DemandRegisterItem[] = [];
   const shopMap = new Map(shops.map(s => [s.id, s]));
 
+  // Helper: Get earliest qualification date from all qualification fields
+  const getEarliestQualDate = (car: Car): { date: Date; fieldName: string } | null => {
+    const qualDates: { date: Date; fieldName: string }[] = [];
+
+    // All 9 qualification date fields
+    const qualFields = [
+      { field: 'minNoLining', value: car.minNoLining },
+      { field: 'minWLining', value: car.minWLining },
+      { field: 'interiorLining', value: car.interiorLining },
+      { field: 'rule88B', value: car.rule88B },
+      { field: 'safetyRelief', value: car.safetyRelief },
+      { field: 'serviceEquipment', value: car.serviceEquipment },
+      { field: 'stubSill', value: car.stubSill },
+      { field: 'tankThickness', value: car.tankThickness },
+      { field: 'tankQualification', value: car.tankQualification },
+    ];
+
+    qualFields.forEach(({ field, value }) => {
+      if (value) {
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+          qualDates.push({ date, fieldName: field });
+        }
+      }
+    });
+
+    if (qualDates.length === 0) return null;
+
+    // Return the earliest date
+    qualDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return qualDates[0];
+  };
+
+  // Helper: Determine work type from reasonsShopped (Column AH)
+  const getWorkTypeFromReason = (reasonsShopped: string): WorkType => {
+    const reason = (reasonsShopped || '').toUpperCase().trim();
+
+    // Tank Qualification -> qualification (Qual team)
+    if (reason.includes('TANK QUAL') || reason.includes('QUALIFICATION')) {
+      return 'full_qualification';
+    }
+
+    // Release, Reassignment, Up Marketed -> release (Assignment & Release team)
+    if (reason.includes('RELEASE') || reason.includes('REASSIGN') || reason.includes('UP MARKET')) {
+      return 'release';
+    }
+
+    // Assignment -> assignment
+    if (reason.includes('ASSIGNMENT')) {
+      return 'assignment';
+    }
+
+    // Default to qualification if has qual dates
+    return 'full_qualification';
+  };
+
+  // Helper: Determine planning state, accounting for active CarFlowPlan
+  const getPlanningState = (car: Car): PlanningState => {
+    // If car has an active CarFlowPlan, it's planned
+    if (car.hasActivePlan && car.activePlan) {
+      if (car.activePlan.status === 'In Progress') return 'in_progress';
+      return 'planned';
+    }
+
+    // Use the standard logic for other cases
+    return determinePlanningState(car);
+  };
+
   // Process each car to determine if it belongs in the demand register
   cars.forEach(car => {
-    // Skip retired cars
-    if (car.status === 'retired') return;
+    // EXCLUSION RULES:
+    // 1. Skip if status is 'Complete' (Column AK = Complete means done, no longer needs shopping)
+    const statusLower = (car.status || '').toLowerCase();
+    if (statusLower === 'complete' || statusLower === 'completed') return;
 
-    // Skip cars already completed (in_shop status handled separately)
-    // We want to show in_progress cars too
+    // 2. Skip retired cars
+    if (statusLower === 'retired') return;
 
-    // QUALIFICATIONS: Cars with tankQualDueDate due this year or prior (including overdue)
-    if (car.tankQualDueDate) {
-      const qualDueDate = new Date(car.tankQualDueDate);
-      const daysUntil = calculateDaysUntilDue(car.tankQualDueDate);
+    // 3. Skip cars that already have an active CarFlowPlan (they're already planned)
+    //    These should show in "Planned" views, not "Needs Planning"
+    if (car.hasActivePlan) return;
+
+    // Get earliest qualification date across all qualification fields
+    const earliestQual = getEarliestQualDate(car);
+
+    // Check if car needs to be included based on qualification dates
+    if (earliestQual) {
+      const qualDueDate = earliestQual.date;
+      const daysUntil = calculateDaysUntilDue(qualDueDate.toISOString());
+      const qualYear = qualDueDate.getFullYear();
 
       // Include if:
-      // 1. Due date is in the filter year or earlier (overdue)
+      // 1. Due date year is current year or earlier (overdue)
       // 2. OR due date is within rolling 3 months (for visibility into next year planning)
-      const isInFilterYear = qualDueDate <= yearEnd;
+      const isDueThisYearOrEarlier = qualYear <= currentYear;
       const isInRolling3Months = includeRolling3Months && qualDueDate <= rolling3MonthCutoff;
-      const isOverdue = daysUntil < 0;
+      const isOverdue = daysUntil < 0 || qualYear < currentYear;
 
-      if (isInFilterYear || isInRolling3Months || isOverdue) {
+      if (isDueThisYearOrEarlier || isInRolling3Months) {
         const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
+        const workType = getWorkTypeFromReason(car.reasonsShopped);
 
         items.push({
           carId: car.id,
           railcarNumber: car.railcarNumber,
-          workType: 'full_qualification',
-          dueDate: car.tankQualDueDate,
+          workType: workType,
+          dueDate: qualDueDate.toISOString(),
           dueMonth: formatMonthYear(qualDueDate),
           daysUntilDue: daysUntil,
           isOverdue: isOverdue,
           customer: car.customer,
           commodity: car.commodity,
           isTankCar: car.isTankCar,
-          planningState: determinePlanningState(car),
+          planningState: getPlanningState(car),
           assignedShopId: car.assignedShopId,
           assignedShopName: shop?.name || null,
           scheduledMonth: car.projectedCompletionMonth || null,
@@ -130,78 +219,69 @@ export function buildDemandRegister(
           qualificationType: car.qualificationType,
           tankQualified: car.tankQualified
         });
+        return; // Don't process further for this car
       }
     }
 
-    // RETURNS: Cars with contractExpiration (lease end dates) in the planning horizon
-    // Returns are known 60+ days in advance, so look 6 months ahead
-    if (car.contractExpiration) {
-      const leaseEndDate = new Date(car.contractExpiration);
-      const daysUntil = calculateDaysUntilDue(car.contractExpiration);
-      const sixMonthsOut = new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
+    // RETURNS: Cars with reasonsShopped indicating release/reassignment but no qual dates
+    const reason = (car.reasonsShopped || '').toUpperCase();
+    if (reason.includes('RELEASE') || reason.includes('REASSIGN') || reason.includes('UP MARKET')) {
+      // Skip if already added
+      if (items.some(i => i.carId === car.id)) return;
 
-      // Include returns coming in the next 6 months or overdue
-      const isInHorizon = leaseEndDate <= sixMonthsOut;
-      const isOverdue = daysUntil < 0;
+      const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
+      const dueDate = car.contractExpiration || car.nextServiceDue || null;
+      const daysUntil = dueDate ? calculateDaysUntilDue(dueDate) : 999;
 
-      if ((isInHorizon || isOverdue) && car.status !== 'in_shop') {
-        const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
-
-        // Don't double-count if already added as qualification
-        const alreadyAdded = items.some(i => i.carId === car.id && (i.workType === 'full_qualification' || i.workType === 'partial_qualification'));
-        if (!alreadyAdded) {
-          items.push({
-            carId: car.id,
-            railcarNumber: car.railcarNumber,
-            workType: 'release',
-            dueDate: car.contractExpiration,
-            dueMonth: formatMonthYear(leaseEndDate),
-            daysUntilDue: daysUntil,
-            isOverdue: isOverdue,
-            customer: car.customer,
-            commodity: car.commodity,
-            isTankCar: car.isTankCar,
-            planningState: determinePlanningState(car),
-            assignedShopId: car.assignedShopId,
-            assignedShopName: shop?.name || null,
-            scheduledMonth: car.projectedCompletionMonth || null,
-            isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
-            notes: car.notes,
-            leaseEndDate: car.contractExpiration
-          });
-        }
-      }
+      items.push({
+        carId: car.id,
+        railcarNumber: car.railcarNumber,
+        workType: 'release',
+        dueDate: dueDate,
+        dueMonth: dueDate ? formatMonthYear(new Date(dueDate)) : formatMonthYear(now),
+        daysUntilDue: daysUntil,
+        isOverdue: daysUntil < 0,
+        customer: car.customer,
+        commodity: car.commodity,
+        isTankCar: car.isTankCar,
+        planningState: getPlanningState(car),
+        assignedShopId: car.assignedShopId,
+        assignedShopName: shop?.name || null,
+        scheduledMonth: car.projectedCompletionMonth || null,
+        isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
+        notes: car.notes,
+        leaseEndDate: car.contractExpiration
+      });
+      return;
     }
 
-    // ASSIGNMENTS: Cars marked for assignment (pre-delivery prep)
-    // These come from Commercial team triggers - use reasonShopped
-    if (car.reasonShopped?.toLowerCase() === 'assignment' || car.status === 'assignment') {
+    // ASSIGNMENTS: Cars with assignment reason
+    if (reason.includes('ASSIGNMENT')) {
+      // Skip if already added
+      if (items.some(i => i.carId === car.id)) return;
+
       const shop = car.assignedShopId ? shopMap.get(car.assignedShopId) : null;
       const dueDate = car.nextServiceDue || null;
-      const daysUntil = calculateDaysUntilDue(dueDate);
+      const daysUntil = dueDate ? calculateDaysUntilDue(dueDate) : 999;
 
-      // Don't double-count
-      const alreadyAdded = items.some(i => i.carId === car.id);
-      if (!alreadyAdded) {
-        items.push({
-          carId: car.id,
-          railcarNumber: car.railcarNumber,
-          workType: 'assignment',
-          dueDate: dueDate,
-          dueMonth: dueDate ? formatMonthYear(new Date(dueDate)) : formatMonthYear(now),
-          daysUntilDue: daysUntil,
-          isOverdue: daysUntil < 0,
-          customer: car.customer,
-          commodity: car.commodity,
-          isTankCar: car.isTankCar,
-          planningState: determinePlanningState(car),
-          assignedShopId: car.assignedShopId,
-          assignedShopName: shop?.name || null,
-          scheduledMonth: car.projectedCompletionMonth || null,
-          isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
-          notes: car.notes
-        });
-      }
+      items.push({
+        carId: car.id,
+        railcarNumber: car.railcarNumber,
+        workType: 'assignment',
+        dueDate: dueDate,
+        dueMonth: dueDate ? formatMonthYear(new Date(dueDate)) : formatMonthYear(now),
+        daysUntilDue: daysUntil,
+        isOverdue: daysUntil < 0,
+        customer: car.customer,
+        commodity: car.commodity,
+        isTankCar: car.isTankCar,
+        planningState: getPlanningState(car),
+        assignedShopId: car.assignedShopId,
+        assignedShopName: shop?.name || null,
+        scheduledMonth: car.projectedCompletionMonth || null,
+        isPriorityCustomer: PRIORITY_CUSTOMERS.includes(car.customer),
+        notes: car.notes
+      });
     }
   });
 
