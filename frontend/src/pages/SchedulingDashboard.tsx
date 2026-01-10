@@ -34,7 +34,7 @@ import {
   ExportPlanButton,
 } from '../components/scheduling';
 import type { WorkflowCounts, SchedulingItem, PlanPDFData } from '../components/scheduling';
-import { carsApi, scenariosApi, shopsApi } from '../services/api';
+import { carsApi, shopsApi } from '../services/api';
 import proposalsApi from '../services/api/proposals';
 import { getShoppingStatus } from '../components/cars/ShoppingStatusBadge';
 import type { Car, Scenario, Shop } from '../types';
@@ -75,14 +75,13 @@ export default function SchedulingDashboard() {
     setIsLoading(true);
     setError(null);
     try {
-      const [carsRes, scenariosRes, shopsRes] = await Promise.all([
+      const [carsRes, shopsRes] = await Promise.all([
         carsApi.getAll({ page: 1, pageSize: 500 }),
-        scenariosApi.getAll(),
         shopsApi.getAll({ isActive: true }),
       ]);
 
       setCars(carsRes.data);
-      setScenarios(scenariosRes);
+      setScenarios([]); // Scenarios feature removed - use Service Plans instead
       setShops(shopsRes);
 
       // Extract unique customers

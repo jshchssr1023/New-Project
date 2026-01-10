@@ -9,12 +9,11 @@
  * - api/cars.ts - Car management (CRUD, bulk operations, import/export)
  * - api/shops.ts - Shop management (CRUD, capacity, performance)
  * - api/plans.ts - Planning (CRUD, assignments, grid view, reports)
- * - api/scenarios.ts - Scenario management (CRUD, analysis, recommendations)
  * - api/analytics.ts - Dashboard and analytics
  * - api/users.ts - User management (admin CRUD, permissions, audit)
  * - api/reports.ts - Custom reports (templates, scheduled reports)
- * - api/masterPlans.ts - Master plans and wizard operations
  * - api/sop.ts - S&OP (allocations, lease qualification, shop rules)
+ * - api/servicePlans.ts - Service Plan Builder (customer proposals)
  * - api/types.ts - Shared API types
  */
 
@@ -36,14 +35,11 @@ export {
   shopsApi,
   shopPerformanceApi,
   plansApi,
-  scenariosApi,
   analyticsApi,
   usersApi,
   permissionsApi,
   auditApi,
   reportsApi,
-  masterPlanApi,
-  masterPlanWizardApi,
   sopApi,
   leaseQualificationApi,
   shopRulesApi,

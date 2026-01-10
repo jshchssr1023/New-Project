@@ -8,7 +8,6 @@ import {
   BuildingStorefrontIcon,
   BuildingOffice2Icon,
   ArrowsRightLeftIcon,
-  BeakerIcon,
   ChartBarIcon,
   ChartPieIcon,
   UsersIcon,
@@ -37,7 +36,6 @@ const workflowNavigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
   { name: 'Service Plans', href: '/service-plans', icon: DocumentTextIcon, description: 'Customer Proposals' },
-  { name: 'Plan Editor', href: '/scenarios', icon: BeakerIcon, description: 'Legacy Plans' },
   { name: 'Scheduling Status', href: '/scheduling-dashboard', icon: ClipboardDocumentListIcon, description: 'See What\'s Scheduled' },
   { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentCheckIcon, description: 'Approved Plans' },
 ];
@@ -349,11 +347,11 @@ export default function Layout() {
               </div>
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => navigate('/scenarios')}
+                  onClick={() => navigate('/service-plans')}
                   className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
                 >
-                  <BeakerIcon className="h-4 w-4 mr-1" />
-                  Scenario Builder
+                  <DocumentTextIcon className="h-4 w-4 mr-1" />
+                  Service Plans
                 </button>
                 <button
                   onClick={() => navigate('/car-flow')}

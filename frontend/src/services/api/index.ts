@@ -21,11 +21,9 @@ export { authApi } from './auth';
 export { carsApi } from './cars';
 export { shopsApi, shopPerformanceApi } from './shops';
 export { plansApi } from './plans';
-export { scenariosApi } from './scenarios';
 export { analyticsApi } from './analytics';
 export { usersApi, permissionsApi, auditApi } from './users';
 export { reportsApi } from './reports';
-export { masterPlanApi, masterPlanWizardApi } from './masterPlans';
 export { sopApi, leaseQualificationApi, shopRulesApi } from './sop';
 
 // Proposal & Scheduling Queue API
