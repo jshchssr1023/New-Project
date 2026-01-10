@@ -102,8 +102,19 @@ export default function CarsPage() {
 
     const urlStatus = searchParams.get('status');
     const urlSearch = searchParams.get('search');
+    const urlCarId = searchParams.get('carId');
     if (urlStatus) updateFilters({ status: urlStatus });
     if (urlSearch) updateFilters({ search: urlSearch });
+
+    // Auto-open car detail modal if carId is provided
+    if (urlCarId) {
+      // Fetch the car and open the detail modal
+      carsApi.getById(urlCarId).then((car) => {
+        setViewingCar(car);
+      }).catch((err) => {
+        console.error('Failed to load car for detail view:', err);
+      });
+    }
   }, [searchParams, updateFilters]);
 
   // Filtered cars based on hierarchical filter
@@ -529,7 +540,15 @@ export default function CarsPage() {
       {/* Car Detail Modal */}
       <CarDetailModal
         isOpen={viewingCar !== null}
-        onClose={() => setViewingCar(null)}
+        onClose={() => {
+          setViewingCar(null);
+          // Clear carId from URL if present
+          if (searchParams.get('carId')) {
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete('carId');
+            navigate(`/cars${newParams.toString() ? '?' + newParams.toString() : ''}`, { replace: true });
+          }
+        }}
         car={viewingCar}
       />
     </div>

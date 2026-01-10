@@ -164,17 +164,17 @@ async function main() {
     console.log('Created company: AITX Rail Services');
 
     // Create users only if company was created
-    const adminPassword = bcrypt.hashSync('admin123', 10);
+    const adminPassword = bcrypt.hashSync('password123', 10);
     const adminId = uuidv4();
     const plannerId = uuidv4();
     const viewerId = uuidv4();
 
     db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(adminId, 'admin@demo.com', adminPassword, 'Admin', 'User', 'admin', companyId);
+      .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
     db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(plannerId, 'planner@demo.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
+      .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
     db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(viewerId, 'viewer@demo.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
+      .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
     console.log('Created users: admin, planner, viewer');
   }
 

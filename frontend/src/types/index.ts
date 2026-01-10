@@ -443,9 +443,11 @@ export interface AnalyticsData {
     id: string;
     railcarNumber: string;
     customer: string;
-    reasonsShopped: string;
-    nextServiceDue: string | null;
-    daysUntilDue: number | null;
+    planStatus?: string;
+    status?: string;
+    reasonsShopped?: string;
+    nextServiceDue?: string | null;
+    daysUntilDue?: number | null;
   }[];
   inShopStatus: {
     id: string;
@@ -468,6 +470,21 @@ export interface AnalyticsData {
     }[];
     hasAlerts: boolean;
   };
+  // S&OP Planning Summary
+  sopSummary?: {
+    notPlanned: number;
+    overdue: number;
+    planned: number;
+    scheduled: number;
+  };
+  // Monthly Shoppings by network
+  monthlyShoppings?: {
+    month: string;
+    aitx: number;
+    thirdParty: number;
+    total: number;
+    byShop: Record<string, number>;
+  }[];
 }
 
 export interface AuthResponse {
