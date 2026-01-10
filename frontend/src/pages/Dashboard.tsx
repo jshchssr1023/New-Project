@@ -37,7 +37,7 @@ import type { AnalyticsData, Car, Shop } from '../types';
 import { useCarUpdates, useDashboardUpdates } from '../contexts/WebSocketContext';
 import { sopApi } from '../services/sopApi';
 import type { DemandRegister } from '../types/sop';
-import { ALL_NETWORKS, getSystemTotalCapacity } from '../constants/shopNetworks';
+import { useShopNetworks } from '../hooks/useShopNetworks';
 
 const DAYS_IN_SHOP_THRESHOLD = 10;
 
@@ -97,6 +97,13 @@ export default function Dashboard() {
   const [myQueueSortAsc, setMyQueueSortAsc] = useState(true);
   const [myQueueFilter, setMyQueueFilter] = useState('');
   const navigate = useNavigate();
+
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
 
   // S&OP Dashboard state - now uses API data
   const [sopSummary, setSopSummary] = useState<SOPSummary | null>(null);

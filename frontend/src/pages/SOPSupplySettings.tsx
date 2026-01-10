@@ -36,12 +36,9 @@ import { shopsApi } from '../services/api';
 import type { SOPCommitment, CreateSOPCommitmentRequest } from '../types/carFlow';
 import type { Shop } from '../types';
 import {
-  ALL_NETWORKS,
-  AITX_NETWORK,
-  THIRD_PARTY_NETWORKS,
-  getSystemTotalCapacity,
+  useShopNetworks,
   SOP_PLANNING_DEFAULTS,
-} from '../constants/shopNetworks';
+} from '../hooks/useShopNetworks';
 
 const MONTH_ABBREV = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -74,6 +71,15 @@ export default function SOPSupplySettings() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [editingNetworkTarget, setEditingNetworkTarget] = useState<{ networkId: string; year: number } | null>(null);
   const [networkTargetValue, setNetworkTargetValue] = useState('');
+
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    AITX_NETWORK,
+    THIRD_PARTY_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
 
   // Fetch shops
   const { data: shops = [], isLoading: shopsLoading } = useQuery({
