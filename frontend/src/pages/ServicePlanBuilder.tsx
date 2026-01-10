@@ -182,7 +182,7 @@ export default function ServicePlanBuilder() {
   const loadAvailableCars = useCallback(async () => {
     try {
       const response = await carsApi.getAll();
-      setAvailableCars(response);
+      setAvailableCars(response.data || []);
     } catch (err) {
       console.error('Failed to load cars:', err);
     }
