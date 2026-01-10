@@ -233,11 +233,11 @@ if (existingCompany) {
 const existingUser = db.prepare('SELECT id FROM User WHERE email = ?').get('admin@aitx.com');
 
 if (!existingUser) {
-  // Create admin user (password: admin123)
+  // Create admin user (password: password123)
   const userId = uuid();
-  const hashedPassword = bcrypt.hashSync('admin123', 10);
+  const hashedPassword = bcrypt.hashSync('password123', 10);
   db.prepare('INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)').run(userId, 'admin@aitx.com', hashedPassword, 'Admin', 'User', 'admin', companyId);
-  console.log('Created admin user: admin@aitx.com / admin123');
+  console.log('Created admin user: admin@aitx.com / password123');
 } else {
   console.log('Admin user already exists');
 }
@@ -453,5 +453,5 @@ console.log('Setup complete!');
 console.log('');
 console.log('Login credentials:');
 console.log('  Email:    admin@aitx.com');
-console.log('  Password: admin123');
+console.log('  Password: password123');
 console.log('========================================');
