@@ -337,14 +337,22 @@ model Car {
 
 model Shop {
   id                 String           @id @default(uuid())
+  externalId         Int?             // Original ID from CSV import (for reference)
   name               String
+  displayName        String           @default("") // Display name with city, e.g., "AITX Railcar Services LLC (Longview)"
   code               String           @unique // Shop code as unique business key
+  shopType           String           @default("Repair") // Repair, Repair: Mini Mobile, Storage Yard, Scrap Yard, Cleaning
   location           String
+  address1           String           @default("")
+  address2           String           @default("")
   city               String           @default("")
   state              String           @default("")
+  zip                String           @default("")
   region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
   network            String           @default("") // Shop network: e.g., "AITX-Own", "3rd Party" (legacy, use networkId)
   servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
+  splc               String           @default("") // Standard Point Location Code (railroad location identifier)
+  scac               String           @default("") // Standard Carrier Alpha Code
 
   // Location coordinates for map view
   latitude           Float?           // GPS latitude
@@ -379,7 +387,22 @@ model Shop {
   contactName        String           @default("")
   contactEmail       String           @default("")
   contactPhone       String           @default("")
+  contactFax         String           @default("")
+  website            String           @default("")
+  sapVendorId        String           @default("") // SAP vendor number
   notes              String           @default("")
+
+  // Certification tracking
+  certificationClass String           @default("")
+  certificationDate  DateTime?        // When certified
+  certificationExp   DateTime?        // Certification expiration
+
+  // Visibility and portal flags
+  displayOnMap       Boolean          @default(false) // Show on customer map
+  displayOnPortal    Boolean          @default(false) // Show on web portal
+  environmentalReview Boolean         @default(false) // Environmental review completed
+  lastVerified       DateTime?        // When shop data was last verified
+
   isActive           Boolean          @default(true)
   companyId          String
   company            Company          @relation(fields: [companyId], references: [id])
@@ -425,8 +448,11 @@ model Shop {
   @@index([companyId])
   @@index([isActive])
   @@index([isParent])
+  @@index([shopType])
+  @@index([externalId])
   // Composite index for shop search/recommendations
   @@index([companyId, tankQualified, region])
+  @@index([companyId, shopType, isActive])
 }
 
 // =============================================================================
