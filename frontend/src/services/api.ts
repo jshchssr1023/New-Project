@@ -43,6 +43,7 @@ export {
   sopApi,
   leaseQualificationApi,
   shopRulesApi,
+  servicePlansApi,
 } from './api/index';
 
 // Re-export all types

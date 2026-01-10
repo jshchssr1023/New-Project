@@ -292,15 +292,30 @@ function parseCSV(content: string): { headers: string[]; records: Record<string,
 
 /**
  * Parse a single CSV line, handling quoted fields properly
+ * Also handles malformed CSVs where entire row is wrapped in quotes
  */
 function parseCSVLine(line: string): string[] {
+  let processedLine = line.trim();
+
+  // Handle malformed CSV where entire row is wrapped in quotes
+  // e.g., "Action,Id,ShopName,...,,,," -> Action,Id,ShopName,...,,,,
+  // e.g., ",18,A C & S Inc.,...,,,," -> ,18,A C & S Inc.,...,,,,
+  // Key pattern: starts with ", ends with ", and second char is NOT a quote
+  if (processedLine.startsWith('"') && processedLine.endsWith('"') && processedLine.length > 2) {
+    const secondChar = processedLine[1];
+    // If second char is comma (data row) or letter (header row), strip outer quotes
+    if (secondChar === ',' || /[a-zA-Z]/.test(secondChar)) {
+      processedLine = processedLine.slice(1, -1);
+    }
+  }
+
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
+  for (let i = 0; i < processedLine.length; i++) {
+    const char = processedLine[i];
+    const nextChar = processedLine[i + 1];
 
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
@@ -982,7 +997,19 @@ async function importShopsFromCSV(
   }
 
   console.log(`   📄 Reading shop CSV: ${csvPath}`);
-  const csvContent = fs.readFileSync(csvPath, 'utf-8');
+
+  // Read file and detect encoding (UTF-16 LE vs UTF-8)
+  const rawBuffer = fs.readFileSync(csvPath);
+  let csvContent: string;
+
+  // Check for UTF-16 LE BOM (FF FE) or null bytes indicating UTF-16
+  if ((rawBuffer[0] === 0xFF && rawBuffer[1] === 0xFE) || rawBuffer[1] === 0x00) {
+    console.log(`   📄 Detected UTF-16 LE encoding, converting...`);
+    csvContent = rawBuffer.toString('utf16le');
+  } else {
+    csvContent = rawBuffer.toString('utf-8');
+  }
+
   const { headers, records } = parseCSV(csvContent);
 
   if (headers.length === 0) {
@@ -997,20 +1024,13 @@ async function importShopsFromCSV(
   // Track existing codes for uniqueness
   const existingCodes = new Set<string>();
 
-  // Get existing shops from DB to preserve their codes
+  // Get existing shop codes from DB to avoid duplicates
+  // Note: Only selecting 'code' to ensure compatibility across Prisma versions
   const existingShops = await prisma.shop.findMany({
-    select: { code: true, externalId: true },
+    select: { code: true },
   });
   existingShops.forEach(s => {
     if (s.code) existingCodes.add(s.code);
-  });
-
-  // Build a map of externalId -> existing shop code
-  const externalIdToCode = new Map<number, string>();
-  existingShops.forEach(s => {
-    if (s.externalId && s.code) {
-      externalIdToCode.set(s.externalId, s.code);
-    }
   });
 
   for (let i = 0; i < records.length; i++) {
@@ -1019,7 +1039,6 @@ async function importShopsFromCSV(
 
     try {
       // Get values from CSV columns
-      const externalId = parseInt(record['Id'] || '0', 10) || null;
       const shopName = (record['ShopName'] || '').trim();
       const displayName = (record['ShopNameDisplay'] || shopName).trim();
       const shopStatus = (record['ShopStatus'] || 'Review').trim().toLowerCase();
@@ -1041,14 +1060,9 @@ async function importShopsFromCSV(
         continue;
       }
 
-      // Generate or reuse shop code
-      let code: string;
-      if (externalId && externalIdToCode.has(externalId)) {
-        code = externalIdToCode.get(externalId)!;
-      } else {
-        code = generateShopCode(shopName, city, existingCodes);
-        existingCodes.add(code);
-      }
+      // Generate unique shop code
+      const code = generateShopCode(shopName, city, existingCodes);
+      existingCodes.add(code);
 
       // Parse coordinates
       const latitude = parseFloat(record['Latitude'] || '') || null;
@@ -1066,8 +1080,8 @@ async function importShopsFromCSV(
       const region = getRegionFromState(state);
 
       // Build shop data object
+      // Note: externalId removed for compatibility - can be added after Prisma client regeneration
       const shopData = {
-        externalId,
         name: shopName,
         displayName,
         shopType,
@@ -1146,6 +1160,14 @@ async function importShopsFromCSV(
   console.log(`      • Successful: ${stats.successfulUpserts}`);
   console.log(`      • Skipped: ${stats.skippedRows}`);
   console.log(`      • Failed: ${stats.failedRows}`);
+
+  // Show first few errors if any
+  if (stats.errors.length > 0) {
+    console.log(`   ❌ First 5 errors:`);
+    stats.errors.slice(0, 5).forEach((err, i) => {
+      console.log(`      ${i + 1}. Row ${err.row}: ${err.error}`);
+    });
+  }
 
   return { shops, stats };
 }
