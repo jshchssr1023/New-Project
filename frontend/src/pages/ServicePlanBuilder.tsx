@@ -199,7 +199,7 @@ export default function ServicePlanBuilder() {
 
   useEffect(() => {
     const init = async () => {
-      await Promise.all([loadServicePlans(), loadCustomers(), loadShops()]);
+      await Promise.all([loadServicePlans(), loadCustomers(), loadShops(), loadAvailableCars()]);
       if (id) {
         await loadServicePlan(id);
         setViewMode('cars');
@@ -207,7 +207,7 @@ export default function ServicePlanBuilder() {
       setIsLoading(false);
     };
     init();
-  }, [id, loadServicePlans, loadServicePlan, loadCustomers, loadShops]);
+  }, [id, loadServicePlans, loadServicePlan, loadCustomers, loadShops, loadAvailableCars]);
 
   // ==========================================================================
   // ACTION HANDLERS

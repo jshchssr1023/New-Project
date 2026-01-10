@@ -1,5 +1,11 @@
-import { BeakerIcon, ArrowsRightLeftIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
+import { DocumentPlusIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../../types';
+
+interface ServicePlanOption {
+  id: string;
+  name: string;
+  customerName?: string;
+}
 
 interface BulkActionsBarProps {
   selectedCount: number;
@@ -7,8 +13,9 @@ interface BulkActionsBarProps {
   onBulkStatusUpdate: (status: Car['status']) => void;
   onBulkDelete: () => void;
   onClearSelection: () => void;
-  onUseInScenario: () => void;
   onUseInCarFlow: () => void;
+  servicePlans?: ServicePlanOption[];
+  onAddToServicePlan?: (servicePlanId: string) => void;
   isExporting?: boolean;
 }
 
@@ -18,8 +25,9 @@ export default function BulkActionsBar({
   onBulkStatusUpdate,
   onBulkDelete,
   onClearSelection,
-  onUseInScenario,
   onUseInCarFlow,
+  servicePlans = [],
+  onAddToServicePlan,
   isExporting = false,
 }: BulkActionsBarProps) {
   if (selectedCount === 0) return null;
@@ -40,14 +48,30 @@ export default function BulkActionsBar({
 
       <div className="h-4 w-px bg-rail-300" />
 
-      {/* Secondary: Use in Scenario */}
-      <button
-        onClick={onUseInScenario}
-        className="flex items-center text-sm text-rail-600 hover:text-rail-800 font-medium bg-white px-2 py-1 rounded border border-rail-300 hover:bg-rail-100"
-      >
-        <BeakerIcon className="h-4 w-4 mr-1" />
-        Create Scenario
-      </button>
+      {/* Add to Service Plan Dropdown */}
+      <div className="flex items-center">
+        <DocumentPlusIcon className="h-4 w-4 mr-1 text-rail-600" />
+        <select
+          onChange={(e) => {
+            if (e.target.value && onAddToServicePlan) {
+              onAddToServicePlan(e.target.value);
+              e.target.value = '';
+            }
+          }}
+          className="input w-48 text-sm py-1"
+          defaultValue=""
+        >
+          <option value="">Add to Service Plan...</option>
+          {servicePlans.map((plan) => (
+            <option key={plan.id} value={plan.id}>
+              {plan.name} {plan.customerName ? `(${plan.customerName})` : ''}
+            </option>
+          ))}
+          {servicePlans.length === 0 && (
+            <option value="" disabled>No service plans available</option>
+          )}
+        </select>
+      </div>
 
       <div className="h-4 w-px bg-rail-300" />
 
