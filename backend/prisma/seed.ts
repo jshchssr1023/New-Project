@@ -98,7 +98,20 @@ const OPTIONAL_HEADERS: Record<string, string[]> = {
   'buildYear': ['build yr', 'build year', 'buildyr', 'built', 'year built', 'mfg year'],
   'qualificationType': ['qual type', 'qualification type', 'qualtype', 'full/partial qual'],
   'tankQualified': ['tank qual', 'tank qualified', 'tankqual', 'qualified'],
-  'tankQualification': ['tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
+  'tankQualification': ['tank qualification', 'tank qual due', 'qual due date', 'qualification due', 'next qual', 'qual due'],
+
+  // Qualification date fields (CSV columns T-AB) - These drive shopping urgency
+  'minNoLining': ['min (no lining)', 'min no lining', 'minnolining', 'min_no_lining'],
+  'minWLining': ['min w lining', 'min w/ lining', 'minwlining', 'min_w_lining', 'min with lining'],
+  'interiorLining': ['interior lining', 'interiorlining', 'interior_lining'],
+  'rule88B': ['rule 88b', 'rule88b', 'rule_88b', 'rule 88b '],
+  'safetyRelief': ['safety relief', 'safetyrelief', 'safety_relief'],
+  'serviceEquipment': ['service equipment', 'serviceequipment', 'service_equipment', 'service equipment '],
+  'stubSill': ['stub sill', 'stubsill', 'stub_sill'],
+  'tankThickness': ['tank thickness', 'tankthickness', 'tank_thickness'],
+
+  // Status fields
+  'currentStatus': ['current status', 'currentstatus', 'current_status'],
   'performScheduled': ['perf sched', 'performance scheduled', 'scheduled', 'perform scheduled'],
   'planStatus': ['plan status', 'planstatus', 'status', 'planning status'],
   'currentLocation': ['location', 'current location', 'currentlocation', 'city'],
@@ -410,6 +423,25 @@ function parseFloatSafe(value: string, fallback: number = 0): number {
   return isNaN(parsed) ? fallback : parsed;
 }
 
+// Helper function to parse year value into Date (December 31st of that year)
+// Qualification dates in CSV are years like 2025, 2030
+function parseYearToDate(value: string): Date | null {
+  if (!value || value.trim() === '') return null;
+  const cleaned = value.trim();
+
+  // Check if it's a 4-digit year
+  if (/^\d{4}$/.test(cleaned)) {
+    const year = parseInt(cleaned, 10);
+    if (year >= 2000 && year <= 2100) {
+      // Return December 31st of that year (end of year when qualification is due)
+      return new Date(year, 11, 31);
+    }
+  }
+
+  // Try parsing as a regular date
+  return parseDate(value);
+}
+
 // =============================================================================
 // DELIVERABLE #2: importCarsFromCSV WITH BULK UPSERT
 // =============================================================================
@@ -586,14 +618,45 @@ async function importCarsFromCSV(
         const buildYear = parseIntSafe(getField(record, 'buildYear'));
         const qualificationType = getField(record, 'qualificationType');
         const tankQualified = parseBoolean(getField(record, 'tankQualified'));
-        const tankQualification = parseDate(getField(record, 'tankQualification'));
+
+        // Qualification date fields (CSV columns T-AB) - stored as years, converted to dates
+        const minNoLining = parseYearToDate(getField(record, 'minNoLining'));
+        const minWLining = parseYearToDate(getField(record, 'minWLining'));
+        const interiorLining = parseYearToDate(getField(record, 'interiorLining'));
+        const rule88B = parseYearToDate(getField(record, 'rule88B'));
+        const safetyRelief = parseYearToDate(getField(record, 'safetyRelief'));
+        const serviceEquipment = parseYearToDate(getField(record, 'serviceEquipment'));
+        const stubSill = parseYearToDate(getField(record, 'stubSill'));
+        const tankThickness = parseYearToDate(getField(record, 'tankThickness'));
+        const tankQualification = parseYearToDate(getField(record, 'tankQualification'));
+
         const performScheduled = parseBoolean(getField(record, 'performScheduled'));
         const planStatus = getField(record, 'planStatus');
+        // Current Status (Column AK): Complete, Arrived, To Be Routed, Enroute, Release, etc.
+        const currentStatus = getField(record, 'currentStatus') || 'To Be Routed';
         const currentLocation = getField(record, 'currentLocation') || locations[Math.floor(Math.random() * locations.length)];
         const homeRegion = getField(record, 'homeRegion') || regions[Math.floor(Math.random() * regions.length)];
-        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualification ? 'qualification' : '');
+        const reasonsShopped = getField(record, 'reasonsShopped') || getField(record, 'reasonShopped') || (isTankCar && tankQualification ? 'TANK QUALIFICATION' : '');
         const projectedCost = parseFloatSafe(getField(record, 'projectedCost'));
         const notes = getField(record, 'notes');
+
+        // Calculate shopping status based on qualification dates
+        const currentYear = new Date().getFullYear();
+        let shoppingStatus = 'Unknown';
+        const qualDates = [minNoLining, minWLining, interiorLining, rule88B, safetyRelief, serviceEquipment, stubSill, tankThickness, tankQualification].filter(Boolean);
+        if (qualDates.length > 0) {
+          const earliestYear = Math.min(...qualDates.map(d => d!.getFullYear()));
+          if (earliestYear < currentYear) shoppingStatus = 'Urgent';
+          else if (earliestYear === currentYear) shoppingStatus = 'Must Shop';
+          else if (earliestYear === currentYear + 1) shoppingStatus = 'Upcoming';
+          else shoppingStatus = 'Compliant';
+        }
+        // Override if status indicates in shop
+        if (currentStatus.toLowerCase() === 'arrived' || currentStatus.toLowerCase() === 'enroute') {
+          shoppingStatus = 'In Shop';
+        } else if (currentStatus.toLowerCase() === 'complete') {
+          shoppingStatus = 'Compliant';
+        }
 
         // Track if this is an update or create
         const isUpdate = existingRailcarNumbers.has(railcarNumber);
@@ -606,7 +669,8 @@ async function importCarsFromCSV(
           customer,
           projectNumber: '',
           reasonsShopped,
-          status: 'available',
+          status: currentStatus,
+          shoppingStatus,
           currentLocation,
           homeRegion,
           originRegion: homeRegion,
@@ -623,6 +687,15 @@ async function importCarsFromCSV(
           buildYear,
           qualificationType,
           tankQualified,
+          // All qualification date fields
+          minNoLining,
+          minWLining,
+          interiorLining,
+          rule88B,
+          safetyRelief,
+          serviceEquipment,
+          stubSill,
+          tankThickness,
           tankQualification,
           performScheduled,
           planStatus,
@@ -1226,6 +1299,17 @@ async function main() {
   await prisma.scenario.deleteMany();
   await prisma.planAssignment.deleteMany();
   await prisma.plan.deleteMany();
+
+  // Service Plan tables (reference Car)
+  await prisma.servicePlanCar.deleteMany();
+  await prisma.servicePlan.deleteMany();
+
+  // Car Flow Plan tables (reference Car)
+  await prisma.carFlowPlan.deleteMany();
+
+  // Master Plan tables (reference Car)
+  await prisma.masterPlanCommitment.deleteMany();
+  await prisma.masterPlan.deleteMany();
 
   // Master data tables
   await prisma.car.deleteMany();

@@ -6,6 +6,7 @@
  */
 
 import apiClient from './api';
+import type { Customer } from '../types';
 import {
   Scenario,
   CreateScenarioRequest,
@@ -391,12 +392,6 @@ export const shoppingStatusApi = {
 // =============================================================================
 // CUSTOMERS
 // =============================================================================
-
-export interface Customer {
-  id: string;
-  name: string;
-  code: string;
-}
 
 export const customersApi = {
   /**

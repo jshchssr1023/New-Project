@@ -1618,12 +1618,16 @@ router.get('/plans/export', async (req: AuthenticatedRequest, res: Response) => 
 /**
  * GET /api/car-flow/customers
  * List customers for the current user's company
+ * Returns customers from Customer table, with fallback to Car.customer field
  */
 router.get('/customers', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const customers = await prisma.customer.findMany({
+    const companyId = req.user!.companyId;
+
+    // Get customers from Customer table (primary source)
+    const customersFromTable = await prisma.customer.findMany({
       where: {
-        companyId: req.user!.companyId,
+        companyId,
         isActive: true,
       },
       select: {
@@ -1634,7 +1638,32 @@ router.get('/customers', async (req: AuthenticatedRequest, res: Response) => {
       orderBy: { name: 'asc' },
     });
 
-    res.json(customers);
+    // If we have customers in the table, return them
+    if (customersFromTable.length > 0) {
+      res.json(customersFromTable);
+      return;
+    }
+
+    // Fallback: Get unique customer names from Car.customer field
+    // This handles cases where Customer table hasn't been populated yet
+    const carsWithCustomers = await prisma.car.findMany({
+      where: {
+        companyId,
+        customer: { not: '' },
+      },
+      select: { customer: true },
+      distinct: ['customer'],
+      orderBy: { customer: 'asc' },
+    });
+
+    // Convert to Customer-like objects with generated IDs
+    const fallbackCustomers = carsWithCustomers.map((car, index) => ({
+      id: `car-customer-${index}`,
+      name: car.customer,
+      code: car.customer.substring(0, 4).toUpperCase(),
+    }));
+
+    res.json(fallbackCustomers);
   } catch (error) {
     logger.error('Failed to fetch customers', error as Error);
     res.status(500).json({ message: 'Failed to fetch customers' });
