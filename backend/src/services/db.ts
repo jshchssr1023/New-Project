@@ -23,6 +23,8 @@ const ALLOWED_TABLES = new Set([
   'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
   'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
+  // Service Plan Builder tables
+  'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
