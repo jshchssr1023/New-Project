@@ -130,6 +130,30 @@ CREATE TABLE IF NOT EXISTS Car (
   tankQualDueDate TEXT,
   performScheduled INTEGER DEFAULT 0,
   planStatus TEXT DEFAULT '',
+  portfolio INTEGER DEFAULT 0,
+  shoppingStatus TEXT DEFAULT 'Unknown',
+  customerId TEXT,
+  performedTankQual INTEGER DEFAULT 0,
+  -- Reference fields from CSV
+  csr TEXT DEFAULT '',
+  csl TEXT DEFAULT '',
+  commercial TEXT DEFAULT '',
+  liningType TEXT DEFAULT '',
+  carMark TEXT DEFAULT '',
+  carNumber TEXT DEFAULT '',
+  fmsLesseeNumber TEXT DEFAULT '',
+  pastRegion TEXT DEFAULT '',
+  region2026 TEXT DEFAULT '',
+  -- Qualification date fields
+  minNoLining TEXT,
+  minWLining TEXT,
+  interiorLining TEXT,
+  rule88B TEXT,
+  safetyRelief TEXT,
+  serviceEquipment TEXT,
+  stubSill TEXT,
+  tankThickness TEXT,
+  tankQualification TEXT,
   companyId TEXT NOT NULL,
   createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
   updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -768,6 +792,35 @@ CREATE TABLE IF NOT EXISTS ApiKey (
   FOREIGN KEY (companyId) REFERENCES Company(id)
 );
 
+-- CarFlowPlan (Car Flow Planning module)
+CREATE TABLE IF NOT EXISTS CarFlowPlan (
+  id TEXT PRIMARY KEY,
+  carId TEXT NOT NULL,
+  shopId TEXT NOT NULL,
+  customerId TEXT,
+  plannedMonth INTEGER NOT NULL,
+  plannedYear INTEGER NOT NULL,
+  sourceScenarioId TEXT,
+  committedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  committedById TEXT NOT NULL,
+  status TEXT DEFAULT 'Planned',
+  source TEXT DEFAULT 'csv_import',
+  shopReason TEXT DEFAULT '',
+  estimatedCost REAL,
+  priority INTEGER DEFAULT 3,
+  notes TEXT DEFAULT '',
+  companyId TEXT NOT NULL,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  cancelledAt TEXT,
+  FOREIGN KEY (carId) REFERENCES Car(id),
+  FOREIGN KEY (shopId) REFERENCES Shop(id),
+  FOREIGN KEY (customerId) REFERENCES Customer(id),
+  FOREIGN KEY (sourceScenarioId) REFERENCES Scenario(id),
+  FOREIGN KEY (committedById) REFERENCES User(id),
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_car_company ON Car(companyId);
 CREATE INDEX IF NOT EXISTS idx_shop_company ON Shop(companyId);
@@ -813,6 +866,10 @@ CREATE INDEX IF NOT EXISTS idx_invalidated_token_expires ON InvalidatedToken(exp
 CREATE INDEX IF NOT EXISTS idx_webhook_company ON Webhook(companyId);
 CREATE INDEX IF NOT EXISTS idx_webhook_delivery ON WebhookDelivery(webhookId);
 CREATE INDEX IF NOT EXISTS idx_apikey_company ON ApiKey(companyId);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_car ON CarFlowPlan(carId);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_shop ON CarFlowPlan(shopId, plannedYear, plannedMonth);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_customer ON CarFlowPlan(customerId);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_company ON CarFlowPlan(companyId, status);
 `;
 
 // Execute schema

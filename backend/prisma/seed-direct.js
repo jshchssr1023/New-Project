@@ -293,10 +293,36 @@ async function main() {
 
   // Get existing company ID from init-db.js, or create if not exists
   let companyId;
+  let plannerId;
+  let adminId;
   const existingCompany = db.prepare('SELECT id FROM Company LIMIT 1').get();
   if (existingCompany) {
     companyId = existingCompany.id;
     console.log('Using existing company');
+
+    // Get existing planner user or create users
+    const existingPlanner = db.prepare('SELECT id FROM User WHERE role = ? AND companyId = ?').get('planner', companyId);
+    const existingAdmin = db.prepare('SELECT id FROM User WHERE role = ? AND companyId = ?').get('admin', companyId);
+
+    if (existingPlanner) {
+      plannerId = existingPlanner.id;
+      adminId = existingAdmin?.id || existingPlanner.id;
+      console.log('Using existing users');
+    } else {
+      // Create users for existing company
+      const adminPassword = bcrypt.hashSync('password123', 10);
+      adminId = uuidv4();
+      plannerId = uuidv4();
+      const viewerId = uuidv4();
+
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
+      console.log('Created users: admin, planner, viewer');
+    }
   } else {
     companyId = uuidv4();
     db.prepare(`INSERT INTO Company (id, name, code) VALUES (?, ?, ?)`).run(companyId, 'AITX Rail Services', 'AITX');
@@ -304,8 +330,8 @@ async function main() {
 
     // Create users only if company was created
     const adminPassword = bcrypt.hashSync('password123', 10);
-    const adminId = uuidv4();
-    const plannerId = uuidv4();
+    adminId = uuidv4();
+    plannerId = uuidv4();
     const viewerId = uuidv4();
 
     db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
@@ -461,8 +487,8 @@ async function main() {
 
   // Create railcars
   const insertCar = db.prepare(`
-    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, portfolio, companyId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, portfolio, csr, csl, commercial, liningType, carMark, carNumber, fmsLesseeNumber, pastRegion, region2026, minNoLining, minWLining, interiorLining, rule88B, safetyRelief, serviceEquipment, stubSill, tankThickness, tankQualification, companyId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const cars = [];
@@ -526,7 +552,29 @@ async function main() {
       const portfolioValue = record['portfolio'] || record['Portfolio'] || '';
       const portfolio = portfolioValue.toLowerCase() === 'on lease' || portfolioValue.toLowerCase() === 'active' ? 1 : 0;
 
-      const region = regions[Math.floor(Math.random() * regions.length)];
+      // Reference fields
+      const csr = record['csr'] || record['CSR'] || '';
+      const csl = record['csl'] || record['CSL'] || '';
+      const commercial = record['commercial'] || record['Commercial'] || '';
+      const liningType = record['liningtype'] || record['Lining Type'] || '';
+      const carMark = record['carmark'] || record['Car Mark'] || railcarNumber.replace(/[0-9]/g, '');
+      const carNumber = record['carnumber'] || record['Car Number'] || record['carno'] || record['Car No'] || railcarNumber.replace(/[^0-9]/g, '');
+      const fmsLesseeNumber = record['fmslesseenumber'] || record['FMS Lessee Number'] || record['fmslessee'] || '';
+      const pastRegion = record['pastregion'] || record['Past Region'] || '';
+      const region2026 = record['region2026'] || record['2026 Region'] || record['26region'] || '';
+
+      // Qualification date fields - these drive shopping urgency
+      const minNoLining = parseDate(record['minnolining'] || record['Min (no lining)'] || record['min(nolining)'] || '');
+      const minWLining = parseDate(record['minwlining'] || record['Min w/ lining'] || record['minw/lining'] || '');
+      const interiorLining = parseDate(record['interiorlining'] || record['Interior Lining'] || '');
+      const rule88B = parseDate(record['rule88b'] || record['Rule 88B'] || '');
+      const safetyRelief = parseDate(record['safetyrelief'] || record['Safety Relief'] || '');
+      const serviceEquipment = parseDate(record['serviceequipment'] || record['Service Equipment'] || '');
+      const stubSill = parseDate(record['stubsill'] || record['Stub Sill'] || '');
+      const tankThickness = parseDate(record['tankthickness'] || record['Tank Thickness'] || '');
+      const tankQualification = parseDate(record['tankqualification'] || record['Tank Qualification'] || '');
+
+      const region = record['region'] || record['Region'] || record['homeregion'] || record['Home Region'] || regions[Math.floor(Math.random() * regions.length)];
       const carId = uuidv4();
 
       insertCar.run(
@@ -535,7 +583,10 @@ async function main() {
         locations[Math.floor(Math.random() * locations.length)], region, region,
         0, 0, '', contractNumber, contractExpiration, isJacketed ? 1 : 0, isLined ? 1 : 0,
         buildYear, qualificationType, tankQualified ? 1 : 0, tankQualDueDate,
-        performScheduled, planStatus, portfolio, companyId
+        performScheduled, planStatus, portfolio,
+        csr, csl, commercial, liningType, carMark, carNumber, fmsLesseeNumber, pastRegion, region2026,
+        minNoLining, minWLining, interiorLining, rule88B, safetyRelief, serviceEquipment, stubSill, tankThickness, tankQualification,
+        companyId
       );
       cars.push({ id: carId, railcarNumber, isTankCar: isTankCar === 1, homeRegion: region });
 
@@ -572,9 +623,17 @@ async function main() {
 
       const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000).toISOString();
       const carId = uuidv4();
+      const railcarNumber = `AITX${String(100000 + i).slice(1)}`;
+
+      // Generate random qualification dates for demo
+      const generateQualDate = () => {
+        if (Math.random() > 0.5) return null;
+        const daysOffset = Math.floor(Math.random() * 730) - 60; // -60 to +670 days
+        return new Date(Date.now() + daysOffset * 24 * 60 * 60 * 1000).toISOString();
+      };
 
       insertCar.run(
-        carId, `AITX${String(100000 + i).slice(1)}`, carType, isTankCar, commodity, customer,
+        carId, railcarNumber, carType, isTankCar, commodity, customer,
         `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
         ['TANK QUALIFICATION', 'Annual Inspection', 'Wheel Repair', 'Tank Cleaning'][Math.floor(Math.random() * 4)],
         ['To Be Routed', 'Arrived', 'Enroute', 'Complete'][Math.floor(Math.random() * 4)],
@@ -583,9 +642,16 @@ async function main() {
         `CTR-${2024}-${String(10000 + i)}`, contractExpiration, isJacketed, isLined, buildYear,
         ['full', 'partial', ''][Math.floor(Math.random() * 3)], tankQualified, tankQualDueDate,
         Math.random() > 0.7 ? 1 : 0, ['planned', 'in_progress', 'completed', 'pending', ''][Math.floor(Math.random() * 5)],
-        Math.random() > 0.5 ? 1 : 0, companyId
+        Math.random() > 0.5 ? 1 : 0,
+        // Reference fields (empty for random data)
+        '', '', '', isLined ? 'Epoxy' : '', 'AITX', String(100000 + i).slice(1), '', region, region,
+        // Qualification dates (random for demo)
+        isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null,
+        isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null,
+        generateQualDate(), isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null,
+        companyId
       );
-      cars.push({ id: carId, railcarNumber: `AITX${String(100000 + i).slice(1)}`, isTankCar: isTankCar === 1, homeRegion: region });
+      cars.push({ id: carId, railcarNumber, isTankCar: isTankCar === 1, homeRegion: region });
 
       if ((i + 1) % 50 === 0) {
         console.log(`  ... created ${i + 1}/200 railcars`);
