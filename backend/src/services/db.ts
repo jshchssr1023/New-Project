@@ -204,17 +204,27 @@ function buildOrderByClause(orderBy: OrderByClause | OrderByClause[] | undefined
   if (!orderBy) return '';
 
   const orders = Array.isArray(orderBy) ? orderBy : [orderBy];
-  const parts = orders.map(o => {
+  const parts: string[] = [];
+
+  for (const o of orders) {
     const [key, dir] = Object.entries(o)[0];
+
+    // Skip nested relation orderBy (e.g., { shop: { name: 'asc' } })
+    // SQLite doesn't support ordering by related table columns without a JOIN
+    if (typeof dir === 'object' && dir !== null) {
+      console.warn(`[DB] Skipping nested orderBy for relation "${key}" - not supported in SQLite`);
+      continue;
+    }
+
     // SECURITY: Validate column name before using in query
     validateColumnName(key);
     // Validate direction is only 'asc' or 'desc'
-    const direction = dir.toUpperCase();
+    const direction = (dir as string).toUpperCase();
     if (direction !== 'ASC' && direction !== 'DESC') {
       throw new Error(`SECURITY: Invalid ORDER BY direction "${dir}"`);
     }
-    return `"${key}" ${direction}`;
-  });
+    parts.push(`"${key}" ${direction}`);
+  }
 
   return parts.length > 0 ? `ORDER BY ${parts.join(', ')}` : '';
 }
@@ -878,6 +888,12 @@ export const prisma = {
   // Car Flow Planning tables
   carFlowPlan: createTableHandler('CarFlowPlan'),
   sOPCommitment: createTableHandler('SOPCommitment'),
+
+  // Service Plan Builder tables
+  servicePlan: createTableHandler('ServicePlan'),
+  servicePlanCar: createTableHandler('ServicePlanCar'),
+  planOption: createTableHandler('PlanOption'),
+  planOptionAssignment: createTableHandler('PlanOptionAssignment'),
 
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),
