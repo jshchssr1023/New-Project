@@ -6,8 +6,9 @@ import * as path from 'path';
 
 const prisma = new PrismaClient();
 
-// CSV file path
-const CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
+// CSV file paths
+const CAR_CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
+const SHOP_CSV_FILE_PATH = path.join(__dirname, 'cleaned shop locations.csv');
 
 // =============================================================================
 // CSV IMPORT TYPES AND INTERFACES
@@ -867,42 +868,298 @@ const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', '
 const CURRENT_YEAR = new Date().getFullYear();
 const NEXT_YEAR = CURRENT_YEAR + 1;
 
-// Shop locations - actual shop data
-const shopData = [
-  // Midwest Region
-  { name: 'AITX Maumee', code: 'MAUM', city: 'Maumee', state: 'OH', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1200, turnTime: 85, contact: 'Mike Thompson (419) 555-1234', notes: 'Primary Midwest hub' },
-  { name: 'AITX East Chicago', code: 'ECHI', city: 'East Chicago', state: 'IN', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1400, turnTime: 80, contact: 'Dave Wilson (219) 555-2345', notes: 'Full service facility' },
-  { name: 'AITX Coffeyville', code: 'COFF', city: 'Coffeyville', state: 'KS', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 900, turnTime: 90, contact: 'Jim Baker (620) 555-3456', notes: '' },
-  { name: 'Watco Coffeyville', code: 'WATC', city: 'Coffeyville', state: 'KS', region: 'Midwest', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 800, turnTime: 95, contact: 'Steve Morris (620) 555-4567', notes: 'Watco partnership' },
-  { name: 'Mid-America Railcar', code: 'MARC', city: 'Kansas City', state: 'MO', region: 'Midwest', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Tom Anderson (816) 555-5678', notes: '' },
-  { name: 'GATX Danville', code: 'GATX', city: 'Danville', state: 'IL', region: 'Midwest', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1600, turnTime: 75, contact: 'Robert Lee (217) 555-6789', notes: 'High capacity facility' },
+// =============================================================================
+// SHOP CSV IMPORT FUNCTION
+// =============================================================================
+// Imports shops from cleaned shop locations.csv with full column mapping
+// =============================================================================
 
-  // South Region
-  { name: 'AITX Texarkana', code: 'TXRK', city: 'Texarkana', state: 'TX', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1100, turnTime: 85, contact: 'Carlos Rodriguez (903) 555-7890', notes: '' },
-  { name: 'AITX Longview', code: 'LONG', city: 'Longview', state: 'TX', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Lining', annualCapacity: 950, turnTime: 90, contact: 'Mark Johnson (903) 555-8901', notes: 'Lining specialist' },
-  { name: 'AITX Bossier City', code: 'BOSS', city: 'Bossier City', state: 'LA', region: 'South', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 850, turnTime: 92, contact: 'Paul Davis (318) 555-9012', notes: '' },
-  { name: 'Ennis Railcar', code: 'ENNS', city: 'Ennis', state: 'TX', region: 'South', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 700, turnTime: 95, contact: 'John Smith (972) 555-0123', notes: '' },
-  { name: 'RSI Rail Group', code: 'RSI', city: 'Longview', state: 'TX', region: 'South', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1300, turnTime: 82, contact: 'Brian Taylor (903) 555-1235', notes: 'Full fabrication capabilities' },
+interface ShopImportStats {
+  totalRows: number;
+  successfulUpserts: number;
+  failedRows: number;
+  skippedRows: number;
+  errors: Array<{ row: number; error: string }>;
+  duration: number;
+}
 
-  // Gulf Region
-  { name: 'AITX Eagle', code: 'EAGL', city: 'Eagle Pass', state: 'TX', region: 'Gulf', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Miguel Santos (830) 555-2346', notes: 'Border location' },
-  { name: 'Rescar Houston', code: 'RHOU', city: 'Houston', state: 'TX', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1500, turnTime: 78, contact: 'Greg Harris (713) 555-3457', notes: 'Major Gulf hub' },
-  { name: 'TankCar Services', code: 'TANK', city: 'Beaumont', state: 'TX', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Lining', annualCapacity: 1100, turnTime: 85, contact: 'Larry White (409) 555-4568', notes: 'Tank car specialist' },
-  { name: 'Union Tank Repair', code: 'UTCR', city: 'Lake Charles', state: 'LA', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 900, turnTime: 90, contact: 'Chris Martin (337) 555-5679', notes: '' },
-  { name: 'UTLX Alexandria', code: 'UTLX', city: 'Alexandria', state: 'LA', region: 'Gulf', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1200, turnTime: 82, contact: 'James Brown (318) 555-6780', notes: '' },
+// Region mapping based on US state codes
+const STATE_TO_REGION: Record<string, string> = {
+  // Northeast
+  'ME': 'Northeast', 'NH': 'Northeast', 'VT': 'Northeast', 'MA': 'Northeast',
+  'RI': 'Northeast', 'CT': 'Northeast', 'NY': 'Northeast', 'NJ': 'Northeast',
+  'PA': 'Northeast', 'DE': 'Northeast', 'MD': 'Northeast', 'WV': 'Northeast',
+  // Southeast
+  'VA': 'Southeast', 'NC': 'Southeast', 'SC': 'Southeast', 'GA': 'Southeast',
+  'FL': 'Southeast', 'AL': 'Southeast', 'MS': 'Southeast', 'TN': 'Southeast',
+  'KY': 'Southeast', 'AR': 'Southeast',
+  // Midwest
+  'OH': 'Midwest', 'IN': 'Midwest', 'IL': 'Midwest', 'MI': 'Midwest',
+  'WI': 'Midwest', 'MN': 'Midwest', 'IA': 'Midwest', 'MO': 'Midwest',
+  'ND': 'Midwest', 'SD': 'Midwest', 'NE': 'Midwest', 'KS': 'Midwest',
+  // Southwest (Gulf states included here)
+  'TX': 'Southwest', 'OK': 'Southwest', 'NM': 'Southwest', 'AZ': 'Southwest',
+  'LA': 'Southwest',
+  // West
+  'CO': 'West', 'WY': 'West', 'MT': 'West', 'ID': 'West', 'UT': 'West',
+  'NV': 'West', 'CA': 'West', 'OR': 'West', 'WA': 'West', 'AK': 'West', 'HI': 'West',
+  // Canada
+  'ON': 'Canada', 'QC': 'Canada', 'BC': 'Canada', 'AB': 'Canada', 'MB': 'Canada',
+  'SK': 'Canada', 'NS': 'Canada', 'NB': 'Canada', 'PE': 'Canada', 'NL': 'Canada',
+  // Mexico
+  'MX': 'Mexico',
+};
 
-  // Northeast Region
-  { name: 'Midland Rail Services', code: 'MDLD', city: 'Midland', state: 'PA', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Frank Miller (412) 555-7891', notes: '' },
-  { name: 'GBW Rail Services', code: 'GBW', city: 'Hornell', state: 'NY', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1100, turnTime: 85, contact: 'Dan Clark (607) 555-8902', notes: '' },
-  { name: 'National Steel Car', code: 'NSC', city: 'Hamilton', state: 'ON', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair, Fabrication', annualCapacity: 1400, turnTime: 80, contact: 'Andrew Scott (905) 555-9013', notes: 'Canada location' },
-  { name: 'Procor Sarnia', code: 'PROC', city: 'Sarnia', state: 'ON', region: 'Northeast', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 950, turnTime: 90, contact: 'Kevin Moore (519) 555-0124', notes: 'Canada location' },
+function getRegionFromState(state: string): string {
+  if (!state || state === 'nan') return 'Unknown';
+  const normalized = state.trim().toUpperCase();
+  return STATE_TO_REGION[normalized] || 'Unknown';
+}
 
-  // West Region
-  { name: 'Vulcan Rail Services', code: 'VULC', city: 'Los Angeles', state: 'CA', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 1000, turnTime: 88, contact: 'Tony Garcia (213) 555-1236', notes: 'West coast hub' },
-  { name: 'Frontier Railcar', code: 'FRNT', city: 'Salt Lake City', state: 'UT', region: 'West', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 750, turnTime: 95, contact: 'Bill Jackson (801) 555-2347', notes: '' },
-  { name: 'CF Rail', code: 'CFR', city: 'Denver', state: 'CO', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 850, turnTime: 92, contact: 'Rick Nelson (303) 555-3458', notes: '' },
-  { name: 'Apex Rail', code: 'APEX', city: 'Phoenix', state: 'AZ', region: 'West', network: '3rd Party', certifications: 'Heavy Repair', annualCapacity: 600, turnTime: 100, contact: 'Sam Adams (602) 555-4569', notes: '' },
-  { name: 'Nortrak Services', code: 'NORT', city: 'Seattle', state: 'WA', region: 'West', network: '3rd Party', certifications: 'Qualification, Heavy Repair', annualCapacity: 800, turnTime: 92, contact: 'Eric Young (206) 555-5670', notes: 'Pacific Northwest' },
+/**
+ * Generate a unique shop code from the shop name
+ * Creates codes like: AITX-SARNIA, EAGLE-CAIRO, etc.
+ */
+function generateShopCode(name: string, city: string, existingCodes: Set<string>): string {
+  // Clean and normalize name
+  const cleanName = name.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+  const cleanCity = (city || '').replace(/[^a-zA-Z0-9]/g, '').trim().toUpperCase();
+
+  // Extract meaningful parts from name
+  const nameParts = cleanName.split(/\s+/).filter(p => p.length > 1);
+
+  // Special handling for AITX shops
+  if (cleanName.toUpperCase().includes('AITX') || cleanName.toUpperCase().includes('ARI ')) {
+    const cityCode = cleanCity.substring(0, 8) || 'SHOP';
+    let code = `AITX-${cityCode}`;
+    let suffix = 1;
+    while (existingCodes.has(code)) {
+      code = `AITX-${cityCode}${suffix}`;
+      suffix++;
+    }
+    return code;
+  }
+
+  // For other shops, use first word + city
+  const prefix = (nameParts[0] || 'SHOP').substring(0, 8).toUpperCase();
+  const cityPart = cleanCity.substring(0, 6) || 'LOC';
+  let code = `${prefix}-${cityPart}`;
+
+  // Ensure uniqueness
+  let suffix = 1;
+  while (existingCodes.has(code)) {
+    code = `${prefix}-${cityPart}${suffix}`;
+    suffix++;
+  }
+
+  return code;
+}
+
+/**
+ * Import shops from cleaned shop locations CSV file
+ */
+async function importShopsFromCSV(
+  csvPath: string,
+  companyId: string,
+): Promise<{ shops: any[]; stats: ShopImportStats }> {
+  const startTime = Date.now();
+  const stats: ShopImportStats = {
+    totalRows: 0,
+    successfulUpserts: 0,
+    failedRows: 0,
+    skippedRows: 0,
+    errors: [],
+    duration: 0,
+  };
+  const shops: any[] = [];
+
+  // Check if file exists
+  if (!fs.existsSync(csvPath)) {
+    console.log(`   ⚠️  Shop CSV not found: ${csvPath}`);
+    stats.errors.push({ row: 0, error: `CSV file not found: ${csvPath}` });
+    stats.duration = Date.now() - startTime;
+    return { shops, stats };
+  }
+
+  console.log(`   📄 Reading shop CSV: ${csvPath}`);
+  const csvContent = fs.readFileSync(csvPath, 'utf-8');
+  const { headers, records } = parseCSV(csvContent);
+
+  if (headers.length === 0) {
+    stats.errors.push({ row: 0, error: 'CSV file is empty or has no headers' });
+    stats.duration = Date.now() - startTime;
+    return { shops, stats };
+  }
+
+  stats.totalRows = records.length;
+  console.log(`   📊 Found ${stats.totalRows} shop records with ${headers.length} columns`);
+
+  // Track existing codes for uniqueness
+  const existingCodes = new Set<string>();
+
+  // Get existing shops from DB to preserve their codes
+  const existingShops = await prisma.shop.findMany({
+    select: { code: true, externalId: true },
+  });
+  existingShops.forEach(s => {
+    if (s.code) existingCodes.add(s.code);
+  });
+
+  // Build a map of externalId -> existing shop code
+  const externalIdToCode = new Map<number, string>();
+  existingShops.forEach(s => {
+    if (s.externalId && s.code) {
+      externalIdToCode.set(s.externalId, s.code);
+    }
+  });
+
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i];
+    const rowIndex = i + 2; // 1-indexed + header row
+
+    try {
+      // Get values from CSV columns
+      const externalId = parseInt(record['Id'] || '0', 10) || null;
+      const shopName = (record['ShopName'] || '').trim();
+      const displayName = (record['ShopNameDisplay'] || shopName).trim();
+      const shopStatus = (record['ShopStatus'] || 'Review').trim().toLowerCase();
+      const shopType = (record['ShopType'] || 'Repair').trim();
+      const city = (record['City'] || '').trim();
+      const state = (record['State'] || '').trim();
+      const zip = (record['Zip'] || '').trim();
+      const isAitxShop = (record['IsAITXShop'] || '').toLowerCase() === 'yes';
+
+      // Skip rows with no shop name
+      if (!shopName) {
+        stats.skippedRows++;
+        continue;
+      }
+
+      // Skip if state is invalid
+      if (state === 'nan' || !state) {
+        stats.skippedRows++;
+        continue;
+      }
+
+      // Generate or reuse shop code
+      let code: string;
+      if (externalId && externalIdToCode.has(externalId)) {
+        code = externalIdToCode.get(externalId)!;
+      } else {
+        code = generateShopCode(shopName, city, existingCodes);
+        existingCodes.add(code);
+      }
+
+      // Parse coordinates
+      const latitude = parseFloat(record['Latitude'] || '') || null;
+      const longitude = parseFloat(record['Longitude'] || '') || null;
+
+      // Parse dates
+      const certificationDate = parseDate(record['CertificationDate'] || '');
+      const certificationExp = parseDate(record['CertificateExpiration'] || '');
+      const lastVerified = parseDate(record['Last Verified'] || '');
+
+      // Parse labor rate
+      const laborRate = parseFloatSafe(record['LaborRate'] || '', 75);
+
+      // Determine region from state
+      const region = getRegionFromState(state);
+
+      // Build shop data object
+      const shopData = {
+        externalId,
+        name: shopName,
+        displayName,
+        shopType,
+        shopStatus: shopStatus === 'active' ? 'active' : shopStatus === 'review' ? 'probation' : 'inactive',
+        location: city && state ? `${city}, ${state}` : city || state || '',
+        address1: (record['Address1'] || '').trim(),
+        address2: (record['Address2'] || '').trim(),
+        city,
+        state,
+        zip: zip === 'nan' ? '' : zip,
+        region,
+        splc: (record['SPLC'] || '').trim(),
+        scac: (record['SCAC'] || '').trim(),
+        isAitxInternal: isAitxShop,
+        tankQualified: shopType.toLowerCase().includes('repair'), // Repair shops are tank qualified
+        networkTier: isAitxShop ? 1 : 3,
+        network: isAitxShop ? 'AITX' : '3rd Party',
+        latitude,
+        longitude,
+        certificationClass: (record['CertifcationClass'] || '').trim(),
+        certificationDate,
+        certificationExp,
+        notes: (record['Comment'] || '').trim(),
+        servingRailroad: (record['DeliveryLines'] || '').trim(),
+        displayOnMap: (record['DisplayOnCustomerMap'] || '').toLowerCase() === 'yes',
+        displayOnPortal: (record['DisplayOnWebPortal'] || '').toLowerCase() === 'yes',
+        contactEmail: (record['Email'] || '').trim(),
+        environmentalReview: (record['EnvironmentalReview'] || '').toLowerCase() === 'yes',
+        contactFax: (record['Fax'] || '').trim(),
+        laborRate,
+        contactPhone: (record['Phone'] || '').trim(),
+        sapVendorId: (record['SAP'] || '').toString().trim(),
+        website: (record['Website'] || '').trim(),
+        lastVerified,
+        isActive: shopStatus === 'active',
+        // Default capacity values
+        capacity: 20, // Default monthly capacity
+        baseCostPerCar: isAitxShop ? 20685 : 15000,
+        costIndex: isAitxShop ? 1.379 : 1.0,
+        baseTurnTime: 14,
+      };
+
+      // UPSERT shop using code as unique key
+      const createdShop = await prisma.shop.upsert({
+        where: { code },
+        update: shopData,
+        create: {
+          id: uuidv4(),
+          code,
+          ...shopData,
+          companyId,
+        },
+      });
+
+      shops.push(createdShop);
+      stats.successfulUpserts++;
+
+      // Progress logging every 100 shops
+      if ((i + 1) % 100 === 0) {
+        console.log(`   ... processed ${i + 1}/${stats.totalRows} shops`);
+      }
+
+    } catch (error) {
+      stats.failedRows++;
+      stats.errors.push({
+        row: rowIndex,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  stats.duration = Date.now() - startTime;
+
+  console.log(`   ✅ Shop import completed in ${(stats.duration / 1000).toFixed(2)}s`);
+  console.log(`      • Total rows: ${stats.totalRows}`);
+  console.log(`      • Successful: ${stats.successfulUpserts}`);
+  console.log(`      • Skipped: ${stats.skippedRows}`);
+  console.log(`      • Failed: ${stats.failedRows}`);
+
+  return { shops, stats };
+}
+
+// Fallback shop data for when CSV is not available
+const fallbackShopData = [
+  { name: 'AITX Fleet Services of Canada Inc.', code: 'AITX-SARNIA', city: 'Sarnia', state: 'ON', region: 'Canada', isAitx: true },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-NKC', city: 'N Kansas City', state: 'MO', region: 'Midwest', isAitx: true },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-LONGVIEW', city: 'Longview', state: 'TX', region: 'Southwest', isAitx: true },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-BROOKHAVEN', city: 'Brookhaven', state: 'MS', region: 'Southeast', isAitx: true },
+  { name: 'AITX Railcar Services LLC', code: 'AITX-TENNILLE', city: 'Tennille', state: 'GA', region: 'Southeast', isAitx: true },
+  { name: 'Eagle Railcar', code: 'EAGLE-CAIRO', city: 'Cairo', state: 'GA', region: 'Southeast', isAitx: false },
+  { name: 'Trinity Industries', code: 'TRINITY-FTWORTH', city: 'Ft. Worth', state: 'TX', region: 'Southwest', isAitx: false },
+  { name: 'Greenbrier Repair & Services', code: 'GBR-CLEBURNE', city: 'Cleburne', state: 'TX', region: 'Southwest', isAitx: false },
 ];
 
 async function main() {
@@ -1050,65 +1307,94 @@ async function main() {
   console.log('✓ Users stable: admin, planner, viewer (using email as unique key)');
 
   // ==========================================================================
-  // SHOP MASTER DATA WITH BULK UPSERT ON CODE FIELD
+  // SHOP MASTER DATA - IMPORT FROM CSV
   // ==========================================================================
-  // Uses UPSERT pattern on the @unique code field for re-run stability
+  // Uses CSV import with UPSERT pattern on the @unique code field
+  // Falls back to minimal sample data if CSV not available
   // ==========================================================================
-  const shops = [];
-  console.log('   📍 Upserting shop master data...');
+  console.log('\n📍 Importing shop master data from CSV...');
 
-  for (let index = 0; index < shopData.length; index++) {
-    const shop = shopData[index];
-    // Convert annual capacity to monthly (divide by 12)
-    const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
-    const isAitx = shop.network === 'AITX-Own';
-    // Tank qualified based on certifications (shops with Qualification cert are tank qualified)
-    const tankQualified = shop.certifications.includes('Qualification');
-    // Network tier: AITX = 1 (preferred), 3P varies by index
-    const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(index / 5), 5);
+  let shops: any[] = [];
 
-    // Build shop data object for UPSERT
-    const shopDataObj = {
-      name: shop.name,
-      location: `${shop.city}, ${shop.state}`,
-      city: shop.city,
-      state: shop.state,
-      region: shop.region,
-      network: shop.network,
-      isAitxInternal: isAitx,
-      tankQualified,
-      networkTier,
-      shopStatus: 'active',
-      capacity: monthlyCapacity,
-      utilizationTarget: 0.90,
-      baseCostPerCar: isAitx ? 20685 : 15000, // AITX has 37.9% premium
-      laborRate: isAitx ? 95 : 75,
-      costIndex: isAitx ? 1.379 : 1.0,
-      baseTurnTime: shop.turnTime,
-      certifications: JSON.stringify(shop.certifications.split(', ')),
-      contactName: shop.contact.split(' (')[0],
-      contactPhone: shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
-      notes: shop.notes,
-      isActive: true,
-    };
+  if (fs.existsSync(SHOP_CSV_FILE_PATH)) {
+    const { shops: importedShops, stats: shopStats } = await importShopsFromCSV(
+      SHOP_CSV_FILE_PATH,
+      company.id
+    );
 
-    // UPSERT using @unique constraint on code field
-    const createdShop = await prisma.shop.upsert({
-      where: {
-        code: shop.code,
-      },
-      update: shopDataObj,
-      create: {
-        id: uuidv4(),
-        code: shop.code,
-        ...shopDataObj,
-        companyId: company.id,
-      },
-    });
-    shops.push(createdShop);
+    if (shopStats.successfulUpserts > 0) {
+      shops = importedShops;
+      console.log(`✓ Imported ${shops.length} shops from CSV`);
+    } else {
+      console.log('   ⚠️  CSV import failed, using fallback shop data');
+      // Use fallback data
+      for (const shop of fallbackShopData) {
+        const createdShop = await prisma.shop.upsert({
+          where: { code: shop.code },
+          update: {
+            name: shop.name,
+            city: shop.city,
+            state: shop.state,
+            region: shop.region,
+            location: `${shop.city}, ${shop.state}`,
+            isAitxInternal: shop.isAitx,
+            network: shop.isAitx ? 'AITX' : '3rd Party',
+            isActive: true,
+          },
+          create: {
+            id: uuidv4(),
+            code: shop.code,
+            name: shop.name,
+            city: shop.city,
+            state: shop.state,
+            region: shop.region,
+            location: `${shop.city}, ${shop.state}`,
+            isAitxInternal: shop.isAitx,
+            network: shop.isAitx ? 'AITX' : '3rd Party',
+            isActive: true,
+            companyId: company.id,
+          },
+        });
+        shops.push(createdShop);
+      }
+      console.log(`✓ Created ${shops.length} fallback shops`);
+    }
+  } else {
+    console.log(`   ⚠️  Shop CSV not found at ${SHOP_CSV_FILE_PATH}`);
+    console.log('   Using fallback shop data...');
+    for (const shop of fallbackShopData) {
+      const createdShop = await prisma.shop.upsert({
+        where: { code: shop.code },
+        update: {
+          name: shop.name,
+          city: shop.city,
+          state: shop.state,
+          region: shop.region,
+          location: `${shop.city}, ${shop.state}`,
+          isAitxInternal: shop.isAitx,
+          network: shop.isAitx ? 'AITX' : '3rd Party',
+          isActive: true,
+        },
+        create: {
+          id: uuidv4(),
+          code: shop.code,
+          name: shop.name,
+          city: shop.city,
+          state: shop.state,
+          region: shop.region,
+          location: `${shop.city}, ${shop.state}`,
+          isAitxInternal: shop.isAitx,
+          network: shop.isAitx ? 'AITX' : '3rd Party',
+          isActive: true,
+          companyId: company.id,
+        },
+      });
+      shops.push(createdShop);
+    }
+    console.log(`✓ Created ${shops.length} fallback shops`);
   }
 
-  console.log(`✓ Upserted ${shops.length} shops (using code as unique key)`);
+  console.log(`📦 Total shops available: ${shops.length}`);
 
   // ==========================================================================
   // IMPORT CARS FROM CSV USING BULK UPSERT
@@ -1122,10 +1408,10 @@ async function main() {
 
   let cars: { id: string; railcarNumber: string }[] = [];
 
-  if (fs.existsSync(CSV_FILE_PATH)) {
+  if (fs.existsSync(CAR_CSV_FILE_PATH)) {
     console.log(`\n📄 Importing cars from CSV using bulk UPSERT...`);
 
-    const importStats = await importCarsFromCSV(CSV_FILE_PATH, company.id, {
+    const importStats = await importCarsFromCSV(CAR_CSV_FILE_PATH, company.id, {
       batchSize: 100,       // Process 100 cars per transaction
       dryRun: false,        // Actually perform the upserts
       continueOnError: true // Continue even if some rows fail
@@ -1147,7 +1433,7 @@ async function main() {
       cars = importedCars;
     }
   } else {
-    console.log(`\n⚠️  CSV file not found at ${CSV_FILE_PATH}`);
+    console.log(`\n⚠️  Car CSV file not found at ${CAR_CSV_FILE_PATH}`);
     console.log(`   Generating random car data as fallback...`);
     cars = await generateRandomCars(company.id, 200);
   }
