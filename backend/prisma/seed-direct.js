@@ -154,10 +154,36 @@ async function main() {
 
   // Get existing company ID from init-db.js, or create if not exists
   let companyId;
+  let plannerId;
+  let adminId;
   const existingCompany = db.prepare('SELECT id FROM Company LIMIT 1').get();
   if (existingCompany) {
     companyId = existingCompany.id;
     console.log('Using existing company');
+
+    // Get existing planner user or create users
+    const existingPlanner = db.prepare('SELECT id FROM User WHERE role = ? AND companyId = ?').get('planner', companyId);
+    const existingAdmin = db.prepare('SELECT id FROM User WHERE role = ? AND companyId = ?').get('admin', companyId);
+
+    if (existingPlanner) {
+      plannerId = existingPlanner.id;
+      adminId = existingAdmin?.id || existingPlanner.id;
+      console.log('Using existing users');
+    } else {
+      // Create users for existing company
+      const adminPassword = bcrypt.hashSync('password123', 10);
+      adminId = uuidv4();
+      plannerId = uuidv4();
+      const viewerId = uuidv4();
+
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
+      console.log('Created users: admin, planner, viewer');
+    }
   } else {
     companyId = uuidv4();
     db.prepare(`INSERT INTO Company (id, name, code) VALUES (?, ?, ?)`).run(companyId, 'AITX Rail Services', 'AITX');
@@ -165,8 +191,8 @@ async function main() {
 
     // Create users only if company was created
     const adminPassword = bcrypt.hashSync('password123', 10);
-    const adminId = uuidv4();
-    const plannerId = uuidv4();
+    adminId = uuidv4();
+    plannerId = uuidv4();
     const viewerId = uuidv4();
 
     db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
