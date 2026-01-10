@@ -1161,6 +1161,14 @@ async function importShopsFromCSV(
   console.log(`      • Skipped: ${stats.skippedRows}`);
   console.log(`      • Failed: ${stats.failedRows}`);
 
+  // Show first few errors if any
+  if (stats.errors.length > 0) {
+    console.log(`   ❌ First 5 errors:`);
+    stats.errors.slice(0, 5).forEach((err, i) => {
+      console.log(`      ${i + 1}. Row ${err.row}: ${err.error}`);
+    });
+  }
+
   return { shops, stats };
 }
 
