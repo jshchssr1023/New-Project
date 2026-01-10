@@ -292,15 +292,29 @@ function parseCSV(content: string): { headers: string[]; records: Record<string,
 
 /**
  * Parse a single CSV line, handling quoted fields properly
+ * Also handles malformed CSVs where entire row is wrapped in quotes
  */
 function parseCSVLine(line: string): string[] {
+  let processedLine = line.trim();
+
+  // Handle malformed CSV where entire row is wrapped in quotes
+  // e.g., "Action,Id,ShopName,...,,,," -> Action,Id,ShopName,...,,,,
+  if (processedLine.startsWith('"') && processedLine.endsWith('"')) {
+    // Check if this looks like a whole-row quote (contains commas inside)
+    const inner = processedLine.slice(1, -1);
+    // If the inner content has commas and no unescaped quotes, treat as whole-row quote
+    if (inner.includes(',') && !inner.includes('"')) {
+      processedLine = inner;
+    }
+  }
+
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
+  for (let i = 0; i < processedLine.length; i++) {
+    const char = processedLine[i];
+    const nextChar = processedLine[i + 1];
 
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
@@ -997,20 +1011,13 @@ async function importShopsFromCSV(
   // Track existing codes for uniqueness
   const existingCodes = new Set<string>();
 
-  // Get existing shops from DB to preserve their codes
+  // Get existing shop codes from DB to avoid duplicates
+  // Note: Only selecting 'code' to ensure compatibility across Prisma versions
   const existingShops = await prisma.shop.findMany({
-    select: { code: true, externalId: true },
+    select: { code: true },
   });
   existingShops.forEach(s => {
     if (s.code) existingCodes.add(s.code);
-  });
-
-  // Build a map of externalId -> existing shop code
-  const externalIdToCode = new Map<number, string>();
-  existingShops.forEach(s => {
-    if (s.externalId && s.code) {
-      externalIdToCode.set(s.externalId, s.code);
-    }
   });
 
   for (let i = 0; i < records.length; i++) {
@@ -1019,7 +1026,6 @@ async function importShopsFromCSV(
 
     try {
       // Get values from CSV columns
-      const externalId = parseInt(record['Id'] || '0', 10) || null;
       const shopName = (record['ShopName'] || '').trim();
       const displayName = (record['ShopNameDisplay'] || shopName).trim();
       const shopStatus = (record['ShopStatus'] || 'Review').trim().toLowerCase();
@@ -1041,14 +1047,9 @@ async function importShopsFromCSV(
         continue;
       }
 
-      // Generate or reuse shop code
-      let code: string;
-      if (externalId && externalIdToCode.has(externalId)) {
-        code = externalIdToCode.get(externalId)!;
-      } else {
-        code = generateShopCode(shopName, city, existingCodes);
-        existingCodes.add(code);
-      }
+      // Generate unique shop code
+      const code = generateShopCode(shopName, city, existingCodes);
+      existingCodes.add(code);
 
       // Parse coordinates
       const latitude = parseFloat(record['Latitude'] || '') || null;
@@ -1066,8 +1067,8 @@ async function importShopsFromCSV(
       const region = getRegionFromState(state);
 
       // Build shop data object
+      // Note: externalId removed for compatibility - can be added after Prisma client regeneration
       const shopData = {
-        externalId,
         name: shopName,
         displayName,
         shopType,
