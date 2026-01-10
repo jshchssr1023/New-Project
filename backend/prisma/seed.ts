@@ -299,12 +299,13 @@ function parseCSVLine(line: string): string[] {
 
   // Handle malformed CSV where entire row is wrapped in quotes
   // e.g., "Action,Id,ShopName,...,,,," -> Action,Id,ShopName,...,,,,
-  if (processedLine.startsWith('"') && processedLine.endsWith('"')) {
-    // Check if this looks like a whole-row quote (contains commas inside)
-    const inner = processedLine.slice(1, -1);
-    // If the inner content has commas and no unescaped quotes, treat as whole-row quote
-    if (inner.includes(',') && !inner.includes('"')) {
-      processedLine = inner;
+  // e.g., ",18,A C & S Inc.,...,,,," -> ,18,A C & S Inc.,...,,,,
+  // Key pattern: starts with ", ends with ", and second char is NOT a quote
+  if (processedLine.startsWith('"') && processedLine.endsWith('"') && processedLine.length > 2) {
+    const secondChar = processedLine[1];
+    // If second char is comma (data row) or letter (header row), strip outer quotes
+    if (secondChar === ',' || /[a-zA-Z]/.test(secondChar)) {
+      processedLine = processedLine.slice(1, -1);
     }
   }
 
