@@ -38,6 +38,7 @@ import {
   ChartBarIcon,
 } from '@heroicons/react/24/outline';
 import { servicePlansApi, carsApi, shopsApi } from '../services/api';
+import { customersApi } from '../services/carFlowApi';
 import type {
   ServicePlan,
   ServicePlanCar,
@@ -170,19 +171,9 @@ export default function ServicePlanBuilder() {
 
   const loadCustomers = useCallback(async () => {
     try {
-      const response = await carsApi.getAll();
-      // Extract unique customers
-      const uniqueCustomers = new Map<string, Customer>();
-      response.forEach((car: Car) => {
-        if (car.customerId && !uniqueCustomers.has(car.customerId)) {
-          uniqueCustomers.set(car.customerId, {
-            id: car.customerId,
-            name: car.customer || 'Unknown',
-            code: car.customer || '',
-          } as Customer);
-        }
-      });
-      setCustomers(Array.from(uniqueCustomers.values()));
+      // Use dedicated customers API to get all active customers
+      const customerList = await customersApi.getAll();
+      setCustomers(customerList);
     } catch (err) {
       console.error('Failed to load customers:', err);
     }

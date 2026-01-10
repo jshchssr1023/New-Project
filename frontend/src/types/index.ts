@@ -105,6 +105,16 @@ export interface Car {
   activePlan?: CarActivePlan | null; // Current active plan for this car
   hasActivePlan?: boolean; // Convenience flag: true if car has Planned/InProgress plan
 
+  // =============================================================================
+  // PENDING SERVICE PLAN (for cars in draft/proposed service plans)
+  // =============================================================================
+  pendingServicePlan?: {
+    id: string;
+    name: string;
+    status: string;
+  } | null;
+  hasPendingServicePlan?: boolean; // True if car is in a pending (draft/proposed) service plan
+
   // Legacy aliases for backwards compatibility
   scheduled: string | null; // Alias for performScheduled
   currentStatusNote: string; // Additional status notes
