@@ -31,6 +31,22 @@ export { sopApi, leaseQualificationApi, shopRulesApi } from './sop';
 // Proposal & Scheduling Queue API
 export { default as proposalsApi } from './proposals';
 
+// Service Plan Builder API
+export { servicePlansApi } from './servicePlans';
+export type {
+  ServicePlan,
+  ServicePlanCar,
+  PlanOption,
+  PlanOptionAssignment,
+  CapacityReservation,
+  AvailableCapacity,
+  CapacityValidation,
+  OptionComparisonResult,
+  CreateServicePlanInput,
+  CreatePlanOptionInput,
+  AssignmentInput,
+} from './servicePlans';
+
 // Re-export all types
 export type {
   CarImportStatus,

@@ -15,6 +15,7 @@ const CarsPage = lazy(() => import('./pages/CarsPage'));
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
 const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
 const ScenarioManager = lazy(() => import('./pages/ScenarioManager'));
+const ServicePlanBuilder = lazy(() => import('./pages/ServicePlanBuilder'));
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -117,6 +118,8 @@ export default function App() {
             <Route path="planning" element={<PlanningGrid />} />
             <Route path="car-flow" element={<CarFlowPlanning />} />
             <Route path="scenarios" element={<ScenarioManager />} />
+            <Route path="service-plans" element={<ServicePlanBuilder />} />
+            <Route path="service-plans/:id" element={<ServicePlanBuilder />} />
             <Route path="import-workflow" element={<ImportWorkflowPage />} />
             <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
             <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />

@@ -36,7 +36,8 @@ import NotificationBell from './NotificationBell';
 const workflowNavigation = [
   { name: 'Dashboard', href: '/', icon: HomeIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
-  { name: 'Plan Editor', href: '/scenarios', icon: BeakerIcon, description: 'Create Plans' },
+  { name: 'Service Plans', href: '/service-plans', icon: DocumentTextIcon, description: 'Customer Proposals' },
+  { name: 'Plan Editor', href: '/scenarios', icon: BeakerIcon, description: 'Legacy Plans' },
   { name: 'Scheduling Status', href: '/scheduling-dashboard', icon: ClipboardDocumentListIcon, description: 'See What\'s Scheduled' },
   { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentCheckIcon, description: 'Approved Plans' },
 ];
