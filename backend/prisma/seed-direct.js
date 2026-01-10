@@ -318,6 +318,7 @@ async function main() {
   }
 
   // Create shops from CSV
+  const now = new Date().toISOString();
   const insertShop = db.prepare(`
     INSERT INTO Shop (
       id, externalId, name, displayName, code, shopType, location, address1, address2,
@@ -327,7 +328,7 @@ async function main() {
       contactName, contactEmail, contactPhone, contactFax, website, sapVendorId, notes,
       certificationClass, certificationDate, certificationExp,
       displayOnMap, displayOnPortal, environmentalReview, lastVerified,
-      isActive, companyId
+      isActive, companyId, createdAt, updatedAt
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, ?, ?,
@@ -336,7 +337,7 @@ async function main() {
       ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?,
       ?, ?, ?, ?,
-      ?, ?
+      ?, ?, ?, ?
     )
   `);
 
@@ -427,7 +428,9 @@ async function main() {
           parseBoolean(record.EnvironmentalReview),
           lastVerified,
           1,
-          companyId
+          companyId,
+          now,
+          now
         );
         shopIds.push({ id: shopId, code, name: record.ShopName, isAitx: isAitx === 1, tankQualified: true });
       } catch (err) {
@@ -452,7 +455,7 @@ async function main() {
         monthlyCapacity, isAitx ? 20685 : 15000, isAitx ? 95 : 75, isAitx ? 1.379 : 1.0,
         shop.turnTime, JSON.stringify(shop.certifications.split(', ')),
         shop.contact.split(' (')[0], '', shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
-        '', '', '', shop.notes, '', null, null, 0, 0, 0, null, 1, companyId
+        '', '', '', shop.notes, '', null, null, 0, 0, 0, null, 1, companyId, now, now
       );
       shopIds.push({ id: shopId, ...shop, tankQualified: tankQual === 1 });
     }
