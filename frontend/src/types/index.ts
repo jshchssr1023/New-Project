@@ -312,6 +312,22 @@ export interface Shop {
   updatedAt: string;
 }
 
+// =============================================================================
+// CUSTOMER
+// =============================================================================
+
+export interface Customer {
+  id: string;
+  name: string;
+  code: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
+  notes?: string;
+  isActive?: boolean;
+}
+
 export interface ShopFilters {
   regions: string[];
   networks: string[];
