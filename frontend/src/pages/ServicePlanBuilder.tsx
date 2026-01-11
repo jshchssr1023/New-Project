@@ -198,7 +198,7 @@ export default function ServicePlanBuilder() {
     }
   }, []);
 
-  const loadAvailableCars = useCallback(async (customerName?: string) => {
+  const loadAvailableCars = useCallback(async (customerId?: string, customerName?: string) => {
     try {
       setIsLoadingCars(true);
       setCarsError(null);
@@ -208,8 +208,10 @@ export default function ServicePlanBuilder() {
         pageSize: 10000,
       };
 
-      // Apply customer filter at the API level for proper filtering
-      if (customerName) {
+      // Apply customer filter at the API level - prefer customerId over name for reliability
+      if (customerId) {
+        params.customerId = customerId;
+      } else if (customerName) {
         params.customer = customerName;
       }
 
@@ -217,8 +219,8 @@ export default function ServicePlanBuilder() {
       setAvailableCars(response.data || []);
 
       // Provide feedback if no cars found for this customer
-      if (customerName && (!response.data || response.data.length === 0)) {
-        setCarsError(`No available cars found for customer "${customerName}". Cars may already be in other plans or have completed planning.`);
+      if ((customerId || customerName) && (!response.data || response.data.length === 0)) {
+        setCarsError(`No available cars found for customer "${customerName || 'selected'}". Cars may already be in other plans or have completed planning.`);
       }
     } catch (err) {
       console.error('Failed to load cars:', err);
@@ -727,9 +729,11 @@ export default function ServicePlanBuilder() {
           </div>
           <button
             onClick={() => {
-              // Load cars filtered by customer name for the current service plan
+              // Load cars filtered by customer ID for the current service plan
+              // Using customerId is more reliable than customer name matching
+              const customerId = servicePlan.customer?.id;
               const customerName = servicePlan.customer?.name;
-              loadAvailableCars(customerName);
+              loadAvailableCars(customerId, customerName);
               setIsAddCarsModalOpen(true);
             }}
             className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 flex items-center gap-2"
