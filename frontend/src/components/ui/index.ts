@@ -21,6 +21,7 @@ export type { SlicerOption } from './Slicer';
 // Car Components
 export { default as CompactCarCard, CompactCarCardGrid } from './CompactCarCard';
 export { default as CarDetailModal } from './CarDetailModal';
+export { default as CustomerCard, CustomerCardGrid } from './CustomerCard';
 
 // Shop Components
 export { default as ShopCard, ShopCardGrid } from './ShopCard';

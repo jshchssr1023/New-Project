@@ -7,7 +7,7 @@ type PlanningStatus = 'needs_planning' | 'already_planned' | 'all';
 
 interface CarsFilters {
   page: number;
-  pageSize: number;
+  pageSize: 25 | 50 | 100;
   status?: string;
   carType?: string;
   customer?: string;
@@ -18,17 +18,17 @@ interface CarsFilters {
 }
 
 interface UseCarsOptions {
-  initialPageSize?: number;
+  initialPageSize?: 25 | 50 | 100;
 }
 
 export function useCars(options: UseCarsOptions = {}) {
-  const { initialPageSize = 25 } = options;
+  const { initialPageSize = 25 as const } = options;
   const queryClient = useQueryClient();
 
   // Filters state
   const [filters, setFilters] = useState<CarsFilters>({
     page: 1,
-    pageSize: initialPageSize,
+    pageSize: initialPageSize as 25 | 50 | 100,
   });
 
   // Selection state
@@ -187,7 +187,7 @@ export function useCars(options: UseCarsOptions = {}) {
   const clearFilters = useCallback(() => {
     setFilters({
       page: 1,
-      pageSize: initialPageSize,
+      pageSize: initialPageSize as 25 | 50 | 100,
     });
   }, [initialPageSize]);
 
