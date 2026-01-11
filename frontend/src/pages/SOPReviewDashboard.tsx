@@ -580,7 +580,7 @@ export default function SOPReviewDashboard() {
               </tr>
 
               {/* AITX Locations (when expanded) */}
-              {expandedNetworks.has('aitx') &&
+              {expandedNetworks.has('aitx') && AITX_NETWORK &&
                 AITX_NETWORK.locations.map((location) => (
                   <tr key={location.code} className="border-b border-steel-50 bg-steel-50">
                     <td className="py-1.5 px-2 pl-10 text-xs text-steel-600">

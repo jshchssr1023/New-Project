@@ -7,14 +7,12 @@ import {
   TruckIcon,
   BuildingStorefrontIcon,
   BuildingOffice2Icon,
-  ArrowsRightLeftIcon,
   ChartBarIcon,
   ChartPieIcon,
   UsersIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon,
-  AdjustmentsHorizontalIcon,
   ArrowUpTrayIcon,
   BellAlertIcon,
   KeyIcon,
@@ -49,15 +47,13 @@ const shopsNavigation = [
 // Planning Tools - Additional planning views
 const planningNavigation = [
   { name: 'Plan Overview', href: '/plan-overview', icon: ChartPieIcon, description: 'Visual Reports' },
-  { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
   { name: 'S&OP Review', href: '/sop-review', icon: DocumentTextIcon },
 ];
 
-// Reporting & Rules - Data review and configuration
+// Reporting - Data review and analytics
 const reportingNavigation = [
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
-  { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
 ];
 
 // System Administration - System and user management (admin only)
@@ -352,13 +348,6 @@ export default function Layout() {
                 >
                   <DocumentTextIcon className="h-4 w-4 mr-1" />
                   Service Plans
-                </button>
-                <button
-                  onClick={() => navigate('/car-flow')}
-                  className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
-                >
-                  <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
-                  Car Flow
                 </button>
                 <button
                   onClick={clearSelection}

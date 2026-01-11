@@ -586,11 +586,29 @@ export default function ServicePlanBuilder() {
     if (!servicePlan) return null;
 
     const existingCarIds = new Set(servicePlan.cars.map((c) => c.carId));
-    const filteredCars = availableCars.filter(
-      (c) =>
-        !existingCarIds.has(c.id) &&
-        (!servicePlan.customerId || c.customerId === servicePlan.customerId)
-    );
+
+    // Filter cars to only show those for the selected customer
+    // Match by customerId (preferred) or by customer name (fallback for imported cars)
+    const customerName = servicePlan.customer?.name;
+    const filteredCars = availableCars.filter((c) => {
+      // Exclude cars already in the plan
+      if (existingCarIds.has(c.id)) return false;
+
+      // If no customer is selected for this plan, show all available cars
+      if (!servicePlan.customerId && !customerName) return true;
+
+      // Match by customerId if both have it
+      if (servicePlan.customerId && c.customerId) {
+        return c.customerId === servicePlan.customerId;
+      }
+
+      // Fall back to matching by customer name (case-insensitive)
+      if (customerName && c.customer) {
+        return c.customer.toLowerCase() === customerName.toLowerCase();
+      }
+
+      return false;
+    });
 
     return (
       <div className="bg-white rounded-lg shadow">

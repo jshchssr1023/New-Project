@@ -29,7 +29,6 @@ import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS, CAR_STATUS_OPTIONS, PL
 // Lazy load modals
 const ImportModal = lazy(() => import('../components/cars/ImportModal'));
 const CarFormModal = lazy(() => import('../components/cars/CarFormModal'));
-const PlanCarsModal = lazy(() => import('../components/carflow/PlanCarsModal'));
 
 export default function CarsPage() {
   const [searchParams] = useSearchParams();
@@ -55,7 +54,6 @@ export default function CarsPage() {
   // Modal states
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [isPlanCarsModalOpen, setIsPlanCarsModalOpen] = useState(false);
   const [editingCar, setEditingCar] = useState<Car | null>(null);
   const [viewingCar, setViewingCar] = useState<Car | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; carId: string | null; isBulk: boolean }>({
@@ -190,11 +188,6 @@ export default function CarsPage() {
       await deleteCar(deleteConfirm.carId);
     }
     setDeleteConfirm({ isOpen: false, carId: null, isBulk: false });
-  };
-
-  // Navigation handlers
-  const handleUseInCarFlow = () => {
-    setIsPlanCarsModalOpen(true);
   };
 
   // Add selected cars to an existing service plan
@@ -368,7 +361,7 @@ export default function CarsPage() {
                 label="Planning"
                 options={PLANNING_STATUS_OPTIONS.map(p => ({ value: p.value, label: p.label }))}
                 value={filters.planningStatus || ''}
-                onChange={(v) => updateFilters({ planningStatus: v as string })}
+                onChange={(v) => updateFilters({ planningStatus: (v || undefined) as 'needs_planning' | 'already_planned' | 'all' | undefined })}
                 placeholder="All"
                 size="sm"
               />
@@ -430,7 +423,6 @@ export default function CarsPage() {
                 onBulkStatusUpdate={(status) => bulkUpdate(Array.from(selectedCarIds), { status })}
                 onBulkDelete={handleBulkDeleteClick}
                 onClearSelection={clearSelection}
-                onUseInCarFlow={handleUseInCarFlow}
                 servicePlans={servicePlans.map(plan => ({
                   id: plan.id,
                   name: plan.name,
@@ -542,19 +534,6 @@ export default function CarsPage() {
           editingCar={editingCar}
           carTypeOptions={CAR_TYPE_OPTIONS}
           reasonOptions={REASON_OPTIONS}
-        />
-        <PlanCarsModal
-          isOpen={isPlanCarsModalOpen}
-          onClose={() => {
-            setIsPlanCarsModalOpen(false);
-            clearSelection();
-          }}
-          selectedCars={selectedCars}
-          onSuccess={(planCount) => {
-            clearSelection();
-            // Navigate to car flow plans page to see the saved plans
-            navigate('/car-flow?tab=plans');
-          }}
         />
       </Suspense>
 
