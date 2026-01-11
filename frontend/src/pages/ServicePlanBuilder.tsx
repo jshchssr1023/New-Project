@@ -201,7 +201,6 @@ export default function ServicePlanBuilder() {
       // This is more efficient than loading all cars and filtering in frontend
       const params: Parameters<typeof carsApi.getAll>[0] = {
         pageSize: 10000,
-        planningStatus: 'needs_planning', // Only show cars that need planning
       };
 
       // Apply customer filter at the API level for proper filtering
