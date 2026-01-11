@@ -24,6 +24,7 @@ export interface Car {
   isTankCar: boolean;
   commodity: string;
   customer: string;
+  customerId: string | null; // FK to Customer table (preferred for filtering)
   projectNumber: string;
   reasonsShopped: string;
   status: string; // Current Status: Arrived, Complete, To Be Routed, Release, etc.
@@ -279,6 +280,7 @@ export interface Shop {
   // Shop Network Reference (for 3rd party networks)
   networkId?: string | null;
   shopNetwork?: ShopNetwork;
+  networkName?: string | null; // Populated from shopNetwork.name or network field
   // Parent/Child Shop Hierarchy
   parentShopId: string | null;  // Reference to parent shop (for network/group hierarchy)
   parentShop?: Shop;            // Parent shop object (when populated)

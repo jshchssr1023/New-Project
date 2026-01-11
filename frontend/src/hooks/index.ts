@@ -5,7 +5,6 @@
  */
 
 export { useCars } from './useCars';
-export { useQueryWithCompany } from './useQueryWithCompany';
 export {
   useShopNetworks,
   SOP_PLANNING_DEFAULTS,

@@ -350,19 +350,8 @@ export async function recommendShopsForCar(
     },
   });
 
-  // Get custom rules or use defaults
-  let rules = await prisma.shopRule.findMany({
-    where: {
-      companyId,
-      isActive: true,
-    },
-    orderBy: { priority: 'desc' },
-  });
-
-  if (rules.length === 0) {
-    // Use default rules (without id)
-    rules = defaultRules.map((r, i) => ({ ...r, id: `default-${i}` })) as ShopRule[];
-  }
+  // Always use default rules (built-in logic for capacity, tank qualification, etc.)
+  const rules = defaultRules.map((r, i) => ({ ...r, id: `default-${i}` })) as ShopRule[];
 
   // Get current capacity usage for the month
   const assignments = await prisma.planAssignment.groupBy({

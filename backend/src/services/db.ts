@@ -24,8 +24,7 @@ const ALLOWED_TABLES = new Set([
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
   'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
   // Service Plan Builder tables
-  'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment',
-  'CapacityReservation', 'ServicePlanAuditEvent',
+  'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment', 'CapacityReservation',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -350,6 +349,10 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
   PlanOptionAssignment: {
     planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
     servicePlanCar: { table: 'ServicePlanCar', foreignKey: 'id', localKey: 'servicePlanCarId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  CapacityReservation: {
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
     shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
   },
   CapacityReservation: {
@@ -930,7 +933,6 @@ export const prisma = {
   planOption: createTableHandler('PlanOption'),
   planOptionAssignment: createTableHandler('PlanOptionAssignment'),
   capacityReservation: createTableHandler('CapacityReservation'),
-  servicePlanAuditEvent: createTableHandler('ServicePlanAuditEvent'),
 
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),
