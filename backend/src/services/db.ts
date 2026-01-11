@@ -333,10 +333,13 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     creator: { table: 'User', foreignKey: 'id', localKey: 'createdById', type: 'belongsTo' },
     cars: { table: 'ServicePlanCar', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
     options: { table: 'PlanOption', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+    auditEvents: { table: 'ServicePlanAuditEvent', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
   },
   ServicePlanCar: {
     servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
     car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    assignedShop: { table: 'Shop', foreignKey: 'id', localKey: 'assignedShopId', type: 'belongsTo' },
+    optionAssignments: { table: 'PlanOptionAssignment', foreignKey: 'servicePlanCarId', localKey: 'id', type: 'hasMany' },
   },
   PlanOption: {
     servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
@@ -351,6 +354,13 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
   CapacityReservation: {
     planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
     shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  CapacityReservation: {
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  ServicePlanAuditEvent: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
   },
 };
 

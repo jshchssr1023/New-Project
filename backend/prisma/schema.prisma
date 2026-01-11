@@ -2058,10 +2058,13 @@ model ServicePlan {
   name                  String              // e.g., "Q1 2026 Tank Car Service Plan"
   description           String              @default("")
 
-  // Customer or Project association
-  customerId            String?
-  customer              Customer?           @relation("ServicePlanCustomer", fields: [customerId], references: [id])
-  projectNumber         String              @default("") // For multi-customer projects
+  // Version control (increments on changes)
+  version               Int                 @default(1)
+
+  // Customer association (REQUIRED - Plan belongs to exactly one customer)
+  customerId            String
+  customer              Customer            @relation("ServicePlanCustomer", fields: [customerId], references: [id])
+  projectNumber         String              @default("") // Optional project reference
 
   // Car Flow Definition
   carFlowRate           Int                 // Cars per month (e.g., 10)
@@ -2071,7 +2074,8 @@ model ServicePlan {
   endYear               Int                 // e.g., 2026
 
   // Status workflow
-  // Values: draft, proposed, approved, archived, cancelled
+  // Values: draft, pending, final_confirmed, scheduled, archived
+  // draft = editable, pending = ready for review, final_confirmed = locked and sent to master schedule
   status                String              @default("draft")
 
   // Approved option (when customer approves)
@@ -2083,9 +2087,18 @@ model ServicePlan {
   approvedAt            DateTime?           // When customer approved
   approvedBy            String              @default("") // Customer contact who approved
 
+  // Final Confirmation tracking
+  finalConfirmedAt      DateTime?           // When plan was finally confirmed
+  finalConfirmedById    String?             // User who confirmed the plan
+
+  // Cars scheduled tracking
+  scheduledAt           DateTime?           // When confirmed cars were sent to Master Schedule
+
   // Summary metrics (calculated)
   totalCarSlots         Int                 @default(0) // carFlowRate * months
-  selectedCarCount      Int                 @default(0) // Actual cars added
+  selectedCarCount      Int                 @default(0) // Actual cars added (pending + confirmed)
+  confirmedCarCount     Int                 @default(0) // Only confirmed cars
+  pendingCarCount       Int                 @default(0) // Only pending cars
 
   // Audit fields
   createdById           String
@@ -2099,14 +2112,17 @@ model ServicePlan {
   // Relations
   cars                  ServicePlanCar[]
   options               PlanOption[]
+  auditEvents           ServicePlanAuditEvent[]
 
   @@index([companyId, status])
   @@index([customerId])
+  @@index([customerId, status])  // For finding final_confirmed plan per customer
   @@index([status])
   @@index([createdById])
 }
 
 // Cars selected for a Service Plan (shared pool across all options)
+// Car Matrix: Displays all cars with their confirmation status
 model ServicePlanCar {
   id                    String              @id @default(uuid())
 
@@ -2117,6 +2133,16 @@ model ServicePlanCar {
   // Car reference
   carId                 String
   car                   Car                 @relation("ServicePlanCarCar", fields: [carId], references: [id])
+
+  // Car Status: pending = editable, confirmed = locked, deleted = soft-deleted with audit
+  // Confirmation can ONLY occur in the Car Matrix
+  status                String              @default("pending")
+
+  // Assignment details (editable until confirmed)
+  assignedShopId        String?             // Shop assignment
+  plannedMonth          Int?                // 1-12
+  plannedYear           Int?                // e.g., 2026
+  shopReason            String              @default("") // Shopping reason
 
   // Auto-distribution suggestion (system-calculated default month)
   autoAssignedMonth     Int?                // 1-12 (system suggestion)
@@ -2131,14 +2157,26 @@ model ServicePlanCar {
   contractExpiration    DateTime?           // Copied from car for display
   shoppingStatus        String              @default("") // Copied from car
 
+  // Confirmation tracking
+  confirmedAt           DateTime?           // When car was confirmed
+  confirmedById         String?             // User who confirmed
+
+  // Soft-delete tracking (for audit)
+  deletedAt             DateTime?           // When car was deleted
+  deletedById           String?             // User who deleted
+  deleteReason          String              @default("") // Reason for deletion
+
   addedAt               DateTime            @default(now())
+  updatedAt             DateTime            @default(now()) @updatedAt
 
   // Relations
   optionAssignments     PlanOptionAssignment[]
 
   @@unique([servicePlanId, carId])
   @@index([servicePlanId])
+  @@index([servicePlanId, status])  // For filtering by status
   @@index([carId])
+  @@index([status])
 }
 
 // A specific configuration option within a Service Plan
@@ -2249,4 +2287,54 @@ model CapacityReservation {
   @@index([planOptionId])
   @@index([status])
   @@index([companyId])
+}
+
+// =============================================================================
+// SERVICE PLAN AUDIT EVENT - Tracks all confirmation and planning actions
+// =============================================================================
+// Required for Story 9: Versioning & Audit Control
+// Tracks: car_confirmed, car_deleted, plan_final_confirmed, car_added, car_updated
+// =============================================================================
+
+model ServicePlanAuditEvent {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Event type
+  // Values: car_added, car_updated, car_confirmed, car_deleted, plan_created,
+  //         plan_updated, plan_final_confirmed, plan_scheduled, plan_archived
+  eventType             String
+
+  // Version at time of event
+  planVersion           Int
+
+  // Associated car (if car-level event)
+  servicePlanCarId      String?
+  carId                 String?
+  railcarNumber         String?             // Denormalized for audit readability
+
+  // Event details (JSON serialized)
+  // For car events: { shopId, plannedMonth, plannedYear, shopReason, previousStatus, newStatus }
+  // For plan events: { previousStatus, newStatus, confirmedCarCount, pendingCarCount }
+  eventDetails          String              @default("{}")
+
+  // Who performed the action
+  performedById         String
+  performedByName       String              @default("") // Denormalized for audit readability
+
+  // When
+  performedAt           DateTime            @default(now())
+
+  // Company for multi-tenant isolation
+  companyId             String
+
+  @@index([servicePlanId])
+  @@index([servicePlanId, eventType])
+  @@index([eventType])
+  @@index([performedAt])
+  @@index([companyId])
+  @@index([carId])
 }
