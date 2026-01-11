@@ -21,6 +21,7 @@ export const carsApi = {
     status?: string;
     carType?: string;
     customer?: string;
+    customerId?: string; // Filter by customer ID (more reliable than name)
     reasonsShopped?: string;
     shoppingStatus?: string;
     planningStatus?: string; // 'needs_planning' | 'already_planned' | 'all'

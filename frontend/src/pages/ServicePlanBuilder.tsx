@@ -15,7 +15,7 @@
  * @version 1.0.0
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -113,6 +113,13 @@ export default function ServicePlanBuilder() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // New loading states for better UX
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+  const [isLoadingCars, setIsLoadingCars] = useState(false);
+  const [customersError, setCustomersError] = useState<string | null>(null);
+  const [carsError, setCarsError] = useState<string | null>(null);
+  const [includeInactiveCustomers, setIncludeInactiveCustomers] = useState(false);
+
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddCarsModalOpen, setIsAddCarsModalOpen] = useState(false);
@@ -169,23 +176,57 @@ export default function ServicePlanBuilder() {
     }
   }, []);
 
-  const loadCustomers = useCallback(async () => {
+  const loadCustomers = useCallback(async (includeInactive = false) => {
     try {
-      // Use dedicated customers API to get all active customers
-      const customerList = await customersApi.getAll();
+      setIsLoadingCustomers(true);
+      setCustomersError(null);
+      // Use dedicated customers API to get customers
+      const customerList = await customersApi.getAll(includeInactive);
       setCustomers(customerList);
+      if (customerList.length === 0) {
+        setCustomersError(
+          includeInactive
+            ? 'No customers found. Please add customers first.'
+            : 'No active customers found. Try including inactive customers or add new ones.'
+        );
+      }
     } catch (err) {
       console.error('Failed to load customers:', err);
+      setCustomersError('Failed to load customers. Please refresh the page.');
+    } finally {
+      setIsLoadingCustomers(false);
     }
   }, []);
 
-  const loadAvailableCars = useCallback(async () => {
+  const loadAvailableCars = useCallback(async (customerId?: string, customerName?: string) => {
     try {
-      // Request all cars with a large page size to get the full list
-      const response = await carsApi.getAll({ pageSize: 10000 });
+      setIsLoadingCars(true);
+      setCarsError(null);
+      // Request cars filtered by customer if a customer is selected
+      // This is more efficient than loading all cars and filtering in frontend
+      const params: Parameters<typeof carsApi.getAll>[0] = {
+        pageSize: 10000,
+      };
+
+      // Apply customer filter at the API level - prefer customerId over name for reliability
+      if (customerId) {
+        params.customerId = customerId;
+      } else if (customerName) {
+        params.customer = customerName;
+      }
+
+      const response = await carsApi.getAll(params);
       setAvailableCars(response.data || []);
+
+      // Provide feedback if no cars found for this customer
+      if ((customerId || customerName) && (!response.data || response.data.length === 0)) {
+        setCarsError(`No available cars found for customer "${customerName || 'selected'}". Cars may already be in other plans or have completed planning.`);
+      }
     } catch (err) {
       console.error('Failed to load cars:', err);
+      setCarsError('Failed to load cars. Please try again.');
+    } finally {
+      setIsLoadingCars(false);
     }
   }, []);
 
@@ -200,7 +241,8 @@ export default function ServicePlanBuilder() {
 
   useEffect(() => {
     const init = async () => {
-      await Promise.all([loadServicePlans(), loadCustomers(), loadShops(), loadAvailableCars()]);
+      // Load base data in parallel - don't load cars yet (will load when customer is selected)
+      await Promise.all([loadServicePlans(), loadCustomers(includeInactiveCustomers), loadShops()]);
       if (id) {
         await loadServicePlan(id);
         setViewMode('cars');
@@ -208,7 +250,13 @@ export default function ServicePlanBuilder() {
       setIsLoading(false);
     };
     init();
-  }, [id, loadServicePlans, loadServicePlan, loadCustomers, loadShops, loadAvailableCars]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, loadServicePlans, loadServicePlan, loadShops]);
+
+  // Reload customers when includeInactiveCustomers changes
+  useEffect(() => {
+    loadCustomers(includeInactiveCustomers);
+  }, [includeInactiveCustomers, loadCustomers]);
 
   // ==========================================================================
   // ACTION HANDLERS
@@ -284,6 +332,35 @@ export default function ServicePlanBuilder() {
     } catch (err) {
       console.error('Failed to delete option:', err);
     }
+  };
+
+  const handleDeletePlan = async () => {
+    if (!servicePlan) return;
+
+    if (!window.confirm(`Are you sure you want to delete "${servicePlan.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      await servicePlansApi.delete(servicePlan.id);
+      setServicePlan(null);
+      setViewMode('setup');
+      await loadServicePlans();
+      navigate('/service-plans');
+    } catch (err) {
+      console.error('Failed to delete plan:', err);
+      setError('Failed to delete plan');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClearPlan = () => {
+    setServicePlan(null);
+    setViewMode('setup');
+    setComparison(null);
+    navigate('/service-plans');
   };
 
   const handleSetAssignments = async (optionId: string, assignments: AssignmentInput[]) => {
@@ -414,18 +491,55 @@ export default function ServicePlanBuilder() {
           <label className="block text-sm font-medium text-steel-700 mb-1">
             Customer *
           </label>
-          <select
-            value={createForm.customerId}
-            onChange={(e) => setCreateForm({ ...createForm, customerId: e.target.value })}
-            className="w-full px-3 py-2 border border-steel-300 rounded-md focus:ring-rail-500 focus:border-rail-500"
-          >
-            <option value="">Select customer...</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          {isLoadingCustomers ? (
+            <div className="w-full px-3 py-2 border border-steel-300 rounded-md bg-steel-50 flex items-center gap-2">
+              <ArrowPathIcon className="w-4 h-4 animate-spin text-steel-400" />
+              <span className="text-steel-500">Loading customers...</span>
+            </div>
+          ) : customersError ? (
+            <div>
+              <div className="w-full px-3 py-2 border border-red-300 rounded-md bg-red-50 text-red-700 text-sm">
+                {customersError}
+              </div>
+              <button
+                type="button"
+                onClick={() => loadCustomers(includeInactiveCustomers)}
+                className="mt-2 text-sm text-rail-600 hover:text-rail-800 flex items-center gap-1"
+              >
+                <ArrowPathIcon className="w-4 h-4" />
+                Retry
+              </button>
+            </div>
+          ) : (
+            <select
+              value={createForm.customerId}
+              onChange={(e) => setCreateForm({ ...createForm, customerId: e.target.value })}
+              className="w-full px-3 py-2 border border-steel-300 rounded-md focus:ring-rail-500 focus:border-rail-500"
+            >
+              <option value="">Select customer...</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{!c.isActive ? ' (Inactive)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="mt-2 flex items-center justify-between">
+            {!isLoadingCustomers && !customersError && customers.length > 0 && (
+              <p className="text-xs text-steel-400">
+                {customers.length} customer{customers.length !== 1 ? 's' : ''} available
+              </p>
+            )}
+            <label className="flex items-center gap-2 text-xs text-steel-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeInactiveCustomers}
+                onChange={(e) => setIncludeInactiveCustomers(e.target.checked)}
+                className="rounded border-steel-300 text-rail-600 focus:ring-rail-500"
+              />
+              Include inactive customers
+            </label>
+          </div>
         </div>
 
         <div>
@@ -598,40 +712,12 @@ export default function ServicePlanBuilder() {
     if (!servicePlan) return null;
 
     const existingCarIds = new Set(servicePlan.cars.map((c) => c.carId));
-
-    // Filter cars to only show those for the selected customer
-    // Match by customerId (preferred) or by customer name (fallback for imported cars)
     const customerName = servicePlan.customer?.name;
 
-    // First, get all cars not already in the plan
-    const availableForPlan = availableCars.filter((c) => !existingCarIds.has(c.id));
-
-    // Determine filtered cars based on customer selection
-    let filteredCars: typeof availableForPlan;
-
-    if (!servicePlan.customerId && !customerName) {
-      // No customer selected - show all available cars
-      filteredCars = availableForPlan;
-    } else {
-      // Try to filter by customer
-      const customerFilteredCars = availableForPlan.filter((c) => {
-        // Match by customerId if both have it
-        if (servicePlan.customerId && c.customerId) {
-          return c.customerId === servicePlan.customerId;
-        }
-
-        // Fall back to matching by customer name (case-insensitive, with trimming)
-        if (customerName && c.customer) {
-          return c.customer.trim().toLowerCase() === customerName.trim().toLowerCase();
-        }
-
-        return false;
-      });
-
-      // Use filtered cars if we have matches, otherwise show all available
-      // (this allows users to still add cars even if customer data doesn't match perfectly)
-      filteredCars = customerFilteredCars.length > 0 ? customerFilteredCars : availableForPlan;
-    }
+    // Show ALL cars for this customer - mark which ones are already in plan
+    // Cars already in plan can be removed from the plan table, not added again
+    const carsNotInPlan = availableCars.filter((c) => !existingCarIds.has(c.id));
+    const carsInPlan = availableCars.filter((c) => existingCarIds.has(c.id));
 
     return (
       <div className="bg-white rounded-lg shadow">
@@ -645,7 +731,11 @@ export default function ServicePlanBuilder() {
           </div>
           <button
             onClick={() => {
-              loadAvailableCars();
+              // Load cars filtered by customer ID for the current service plan
+              // Using customerId is more reliable than customer name matching
+              const customerId = servicePlan.customer?.id;
+              const customerName = servicePlan.customer?.name;
+              loadAvailableCars(customerId, customerName);
               setIsAddCarsModalOpen(true);
             }}
             className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 flex items-center gap-2"
@@ -680,83 +770,127 @@ export default function ServicePlanBuilder() {
               action={{
                 label: 'Add Cars',
                 onClick: () => {
-                  loadAvailableCars();
+                  const customerId = servicePlan.customer?.id;
+                  const customerName = servicePlan.customer?.name;
+                  loadAvailableCars(customerId, customerName);
                   setIsAddCarsModalOpen(true);
                 },
               }}
             />
           ) : (
-            <table className="min-w-full divide-y divide-steel-200">
-              <thead className="bg-steel-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Railcar #
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Type
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Qual Due
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Assigned Month
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-steel-500 uppercase">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-steel-200">
-                {servicePlan.cars.map((spc) => (
-                  <tr key={spc.id} className="hover:bg-steel-50">
-                    <td className="px-4 py-3 text-sm font-medium text-steel-900">
-                      {spc.car.railcarNumber}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-steel-500">{spc.car.carType || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-steel-500">
-                      {spc.qualificationDueDate
-                        ? new Date(spc.qualificationDueDate).toLocaleDateString('en-US', {
-                            month: 'short',
-                            year: '2-digit',
-                          })
-                        : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-steel-500">
-                      {spc.userAssignedMonth
-                        ? `${MONTHS[spc.userAssignedMonth - 1]} ${spc.userAssignedYear}`
-                        : spc.autoAssignedMonth
-                        ? `${MONTHS[spc.autoAssignedMonth - 1]} ${spc.autoAssignedYear} (auto)`
-                        : '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                          spc.shoppingStatus === 'Urgent'
-                            ? 'bg-red-100 text-red-800'
-                            : spc.shoppingStatus === 'MustShop'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {spc.shoppingStatus || 'Unknown'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleRemoveCar(spc.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Remove car"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    </td>
+            <>
+              {/* Summary stats */}
+              <div className="px-4 py-3 bg-steel-50 border-b border-steel-200 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-steel-600">
+                    <span className="font-semibold text-steel-900">{servicePlan.cars.length}</span> cars selected
+                  </span>
+                  <span className="text-steel-300">|</span>
+                  <span className="text-sm text-steel-600">
+                    Urgent: <span className="font-medium text-red-600">{servicePlan.cars.filter(c => c.shoppingStatus === 'Urgent').length}</span>
+                  </span>
+                  <span className="text-sm text-steel-600">
+                    Must Shop: <span className="font-medium text-amber-600">{servicePlan.cars.filter(c => c.shoppingStatus === 'MustShop').length}</span>
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Remove all ${servicePlan.cars.length} cars from this plan?`)) {
+                      servicePlan.cars.forEach(spc => handleRemoveCar(spc.id));
+                    }
+                  }}
+                  className="text-xs text-red-600 hover:text-red-800"
+                >
+                  Clear All
+                </button>
+              </div>
+              <table className="min-w-full divide-y divide-steel-200">
+                <thead className="bg-steel-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Railcar #
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Customer
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Qual Due
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Contract Exp
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Planned Month
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-steel-500 uppercase">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-steel-200">
+                  {servicePlan.cars.map((spc) => (
+                    <tr key={spc.id} className="hover:bg-steel-50">
+                      <td className="px-4 py-3 text-sm font-medium text-steel-900">
+                        {spc.car.railcarNumber}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-steel-500">{spc.car.carType || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-steel-500">{spc.car.customer || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-steel-500">
+                        {spc.qualificationDueDate
+                          ? new Date(spc.qualificationDueDate).toLocaleDateString('en-US', {
+                              month: 'short',
+                              year: '2-digit',
+                            })
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-steel-500">
+                        {spc.contractExpiration
+                          ? new Date(spc.contractExpiration).toLocaleDateString('en-US', {
+                              month: 'short',
+                              year: '2-digit',
+                            })
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-steel-500">
+                        {spc.userAssignedMonth
+                          ? `${MONTHS[spc.userAssignedMonth - 1]} ${spc.userAssignedYear}`
+                          : spc.autoAssignedMonth
+                          ? `${MONTHS[spc.autoAssignedMonth - 1]} ${spc.autoAssignedYear} (auto)`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                            spc.shoppingStatus === 'Urgent'
+                              ? 'bg-red-100 text-red-800'
+                              : spc.shoppingStatus === 'MustShop'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {spc.shoppingStatus || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => handleRemoveCar(spc.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Remove from plan"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
 
@@ -765,9 +899,20 @@ export default function ServicePlanBuilder() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] overflow-hidden">
               <div className="p-4 border-b border-steel-200 flex justify-between items-center">
-                <h3 className="text-lg font-semibold">Add Cars to Plan</h3>
+                <div>
+                  <h3 className="text-lg font-semibold">Add Cars to Plan</h3>
+                  {customerName && (
+                    <p className="text-sm text-steel-500">
+                      Showing cars for: <span className="font-medium">{customerName}</span>
+                    </p>
+                  )}
+                </div>
                 <button
-                  onClick={() => setIsAddCarsModalOpen(false)}
+                  onClick={() => {
+                    setIsAddCarsModalOpen(false);
+                    setSelectedCarIds([]);
+                    setCarsError(null);
+                  }}
                   className="text-steel-400 hover:text-steel-600"
                 >
                   <XMarkIcon className="w-5 h-5" />
@@ -775,104 +920,211 @@ export default function ServicePlanBuilder() {
               </div>
 
               <div className="p-4 max-h-[60vh] overflow-y-auto">
-                <p className="text-sm text-steel-500 mb-4">
-                  Select cars to add to this service plan. {selectedCarIds.length} selected.
-                </p>
+                {/* Loading state */}
+                {isLoadingCars && (
+                  <div className="flex items-center justify-center py-12">
+                    <ArrowPathIcon className="w-8 h-8 animate-spin text-rail-600" />
+                    <span className="ml-3 text-steel-500">Loading available cars...</span>
+                  </div>
+                )}
 
-                <table className="min-w-full divide-y divide-steel-200">
-                  <thead className="bg-steel-50 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2 text-left">
-                        <input
-                          type="checkbox"
-                          checked={selectedCarIds.length === filteredCars.length && filteredCars.length > 0}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedCarIds(filteredCars.map((c) => c.id));
-                            } else {
-                              setSelectedCarIds([]);
-                            }
-                          }}
-                          className="rounded border-steel-300"
-                        />
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
-                        Railcar #
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
-                        Type
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
-                        Customer
-                      </th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-steel-200">
-                    {filteredCars.slice(0, 100).map((car) => (
-                      <tr
-                        key={car.id}
-                        className={`hover:bg-steel-50 cursor-pointer ${
-                          selectedCarIds.includes(car.id) ? 'bg-rail-50' : ''
-                        }`}
-                        onClick={() => {
-                          setSelectedCarIds((prev) =>
-                            prev.includes(car.id)
-                              ? prev.filter((id) => id !== car.id)
-                              : [...prev, car.id]
-                          );
-                        }}
-                      >
-                        <td className="px-4 py-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedCarIds.includes(car.id)}
-                            onChange={() => {}}
-                            className="rounded border-steel-300"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-sm font-medium text-steel-900">
-                          {car.railcarNumber}
-                        </td>
-                        <td className="px-4 py-2 text-sm text-steel-500">{car.carType || '-'}</td>
-                        <td className="px-4 py-2 text-sm text-steel-500">{car.customer || '-'}</td>
-                        <td className="px-4 py-2">
-                          <span
-                            className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                              car.shoppingStatus === 'Urgent'
-                                ? 'bg-red-100 text-red-800'
-                                : car.shoppingStatus === 'MustShop'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-green-100 text-green-800'
-                            }`}
-                          >
-                            {car.shoppingStatus || 'Unknown'}
+                {/* Error state */}
+                {!isLoadingCars && carsError && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+                    <div className="flex items-start gap-3">
+                      <ExclamationTriangleIcon className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-amber-800 font-medium">No cars available</p>
+                        <p className="text-amber-700 text-sm mt-1">{carsError}</p>
+                        {customerName && (
+                          <p className="text-amber-600 text-sm mt-2">
+                            Tip: Make sure cars are assigned to this customer in the car database.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty state (no customer selected and no cars) */}
+                {!isLoadingCars && !carsError && availableCars.length === 0 && !customerName && (
+                  <div className="text-center py-12">
+                    <TruckIcon className="w-12 h-12 mx-auto text-steel-300 mb-4" />
+                    <h4 className="text-lg font-medium text-steel-900">No available cars</h4>
+                    <p className="text-steel-500 mt-2">
+                      All cars may already be assigned to plans or scheduled.
+                    </p>
+                  </div>
+                )}
+
+                {/* Car list */}
+                {!isLoadingCars && availableCars.length > 0 && (
+                  <>
+                    {/* Summary tabs */}
+                    <div className="flex items-center gap-4 mb-4 pb-3 border-b border-steel-200">
+                      <span className="text-sm">
+                        <span className="font-semibold text-steel-900">{availableCars.length}</span> total cars for this customer
+                      </span>
+                      <span className="text-steel-300">|</span>
+                      <span className="text-sm text-green-600">
+                        <span className="font-medium">{carsNotInPlan.length}</span> available to add
+                      </span>
+                      <span className="text-sm text-rail-600">
+                        <span className="font-medium">{carsInPlan.length}</span> already in plan
+                      </span>
+                      {selectedCarIds.length > 0 && (
+                        <>
+                          <span className="text-steel-300">|</span>
+                          <span className="text-sm text-rail-700 font-medium">
+                            {selectedCarIds.length} selected
                           </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </>
+                      )}
+                    </div>
 
-                {filteredCars.length > 100 && (
-                  <p className="text-sm text-steel-500 mt-2 text-center">
-                    Showing first 100 cars. Use filters to narrow results.
-                  </p>
+                    <table className="min-w-full divide-y divide-steel-200">
+                      <thead className="bg-steel-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left">
+                            <input
+                              type="checkbox"
+                              checked={selectedCarIds.length === carsNotInPlan.length && carsNotInPlan.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedCarIds(carsNotInPlan.map((c) => c.id));
+                                } else {
+                                  setSelectedCarIds([]);
+                                }
+                              }}
+                              className="rounded border-steel-300"
+                              title="Select all available cars"
+                            />
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                            Railcar #
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                            Type
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                            Customer
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                            Status
+                          </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                            In Plan
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-steel-200">
+                        {/* Show cars already in plan first (greyed out) */}
+                        {carsInPlan.slice(0, 50).map((car) => (
+                          <tr
+                            key={car.id}
+                            className="bg-steel-50 opacity-60"
+                          >
+                            <td className="px-4 py-2">
+                              <CheckCircleIcon className="w-5 h-5 text-rail-600" />
+                            </td>
+                            <td className="px-4 py-2 text-sm font-medium text-steel-700">
+                              {car.railcarNumber}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-steel-500">{car.carType || '-'}</td>
+                            <td className="px-4 py-2 text-sm text-steel-500">{car.customer || '-'}</td>
+                            <td className="px-4 py-2">
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                  car.shoppingStatus === 'Urgent'
+                                    ? 'bg-red-100 text-red-800'
+                                    : car.shoppingStatus === 'MustShop'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-green-100 text-green-800'
+                                }`}
+                              >
+                                {car.shoppingStatus || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-rail-100 text-rail-800">
+                                In Plan
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Show available cars */}
+                        {carsNotInPlan.slice(0, 100).map((car) => (
+                          <tr
+                            key={car.id}
+                            className={`hover:bg-steel-50 cursor-pointer ${
+                              selectedCarIds.includes(car.id) ? 'bg-rail-50' : ''
+                            }`}
+                            onClick={() => {
+                              setSelectedCarIds((prev) =>
+                                prev.includes(car.id)
+                                  ? prev.filter((cId) => cId !== car.id)
+                                  : [...prev, car.id]
+                              );
+                            }}
+                          >
+                            <td className="px-4 py-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedCarIds.includes(car.id)}
+                                onChange={() => {}}
+                                className="rounded border-steel-300"
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-sm font-medium text-steel-900">
+                              {car.railcarNumber}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-steel-500">{car.carType || '-'}</td>
+                            <td className="px-4 py-2 text-sm text-steel-500">{car.customer || '-'}</td>
+                            <td className="px-4 py-2">
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                  car.shoppingStatus === 'Urgent'
+                                    ? 'bg-red-100 text-red-800'
+                                    : car.shoppingStatus === 'MustShop'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-green-100 text-green-800'
+                                }`}
+                              >
+                                {car.shoppingStatus || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className="text-xs text-steel-400">-</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {(carsNotInPlan.length > 100 || carsInPlan.length > 50) && (
+                      <p className="text-sm text-steel-500 mt-2 text-center">
+                        Showing {Math.min(carsInPlan.length, 50)} in-plan + {Math.min(carsNotInPlan.length, 100)} available cars.
+                        {carsNotInPlan.length > 100 && ` ${carsNotInPlan.length - 100} more available.`}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
               <div className="p-4 border-t border-steel-200 flex justify-end gap-3">
                 <button
-                  onClick={() => setIsAddCarsModalOpen(false)}
+                  onClick={() => {
+                    setIsAddCarsModalOpen(false);
+                    setSelectedCarIds([]);
+                    setCarsError(null);
+                  }}
                   className="px-4 py-2 border border-steel-300 rounded-md hover:bg-steel-50"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleAddCars}
-                  disabled={selectedCarIds.length === 0 || isSaving}
+                  disabled={selectedCarIds.length === 0 || isSaving || isLoadingCars}
                   className="px-4 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                   {isSaving && <ArrowPathIcon className="w-4 h-4 animate-spin" />}
@@ -1260,6 +1512,27 @@ export default function ServicePlanBuilder() {
               >
                 {servicePlan.status.charAt(0).toUpperCase() + servicePlan.status.slice(1)}
               </span>
+              {servicePlan.status === 'draft' && (
+                <>
+                  <button
+                    onClick={handleClearPlan}
+                    className="px-3 py-1.5 text-sm border border-steel-300 rounded-md hover:bg-steel-50 flex items-center gap-1"
+                    title="Go back to plan list"
+                  >
+                    <ChevronLeftIcon className="w-4 h-4" />
+                    Back to Plans
+                  </button>
+                  <button
+                    onClick={handleDeletePlan}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 text-sm text-red-600 border border-red-300 rounded-md hover:bg-red-50 flex items-center gap-1"
+                    title="Delete this draft plan"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                    Delete Plan
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1296,16 +1569,69 @@ export default function ServicePlanBuilder() {
         {viewMode === 'setup' && !servicePlan && renderPlanSetup()}
         {viewMode === 'setup' && servicePlan && (
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold mb-4">Plan Setup Complete</h2>
-            <p className="text-steel-500 mb-4">
-              Your service plan has been created. Continue to add cars.
-            </p>
-            <button
-              onClick={() => setViewMode('cars')}
-              className="px-4 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700"
-            >
-              Continue to Select Cars
-            </button>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Plan Settings</h2>
+                <p className="text-sm text-steel-500">
+                  Review or update your plan settings, then continue to add cars.
+                </p>
+              </div>
+              {servicePlan.status === 'draft' && (
+                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                  Editable
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-steel-50 rounded-lg">
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Plan Name</p>
+                <p className="font-medium">{servicePlan.name}</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Customer</p>
+                <p className="font-medium">{servicePlan.customer?.name || 'Not selected'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Car Flow Rate</p>
+                <p className="font-medium">{servicePlan.carFlowRate} cars/month</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Date Range</p>
+                <p className="font-medium">
+                  {MONTHS[servicePlan.startMonth - 1]} {servicePlan.startYear} - {MONTHS[servicePlan.endMonth - 1]} {servicePlan.endYear}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Total Car Slots</p>
+                <p className="font-medium">{servicePlan.totalCarSlots}</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Cars Added</p>
+                <p className="font-medium">{servicePlan.selectedCarCount}</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setViewMode('cars')}
+                className="px-4 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700"
+              >
+                Continue to Select Cars
+              </button>
+              {servicePlan.status === 'draft' && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('To change the customer or plan settings, you need to create a new plan. Delete this plan and start over?')) {
+                      handleDeletePlan();
+                    }
+                  }}
+                  className="px-4 py-2 text-steel-600 border border-steel-300 rounded-md hover:bg-steel-50"
+                >
+                  Start Over with New Plan
+                </button>
+              )}
+            </div>
           </div>
         )}
         {viewMode === 'cars' && renderCarSelection()}
@@ -1316,19 +1642,31 @@ export default function ServicePlanBuilder() {
       {/* Navigation */}
       {servicePlan && (
         <div className="mt-6 flex justify-between">
-          <button
-            onClick={() => {
-              const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === viewMode);
-              if (currentIndex > 0) {
-                setViewMode(WIZARD_STEPS[currentIndex - 1].id);
-              }
-            }}
-            disabled={viewMode === 'setup'}
-            className="px-4 py-2 border border-steel-300 rounded-md hover:bg-steel-50 disabled:opacity-50 flex items-center gap-2"
-          >
-            <ChevronLeftIcon className="w-4 h-4" />
-            Previous
-          </button>
+          <div className="flex gap-3">
+            {viewMode !== 'setup' && (
+              <button
+                onClick={() => {
+                  const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === viewMode);
+                  if (currentIndex > 0) {
+                    setViewMode(WIZARD_STEPS[currentIndex - 1].id);
+                  }
+                }}
+                className="px-4 py-2 border border-steel-300 rounded-md hover:bg-steel-50 flex items-center gap-2"
+              >
+                <ChevronLeftIcon className="w-4 h-4" />
+                Previous
+              </button>
+            )}
+            {viewMode !== 'setup' && servicePlan.status === 'draft' && (
+              <button
+                onClick={() => setViewMode('setup')}
+                className="px-4 py-2 text-steel-600 hover:text-steel-800 flex items-center gap-2"
+              >
+                <AdjustmentsHorizontalIcon className="w-4 h-4" />
+                Edit Plan Settings
+              </button>
+            )}
+          </div>
           <button
             onClick={() => {
               const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === viewMode);
@@ -1458,6 +1796,63 @@ function AssignShopsModal({
 
   const [bulkShopId, setBulkShopId] = useState('');
 
+  // Calculate capacity usage for each shop/month combination
+  const capacityUsage = useMemo(() => {
+    const usage = new Map<string, { count: number; shopName: string; capacity: number }>();
+
+    assignments.forEach((assignment) => {
+      if (assignment.shopId && assignment.plannedMonth && assignment.plannedYear) {
+        const key = `${assignment.shopId}-${assignment.plannedYear}-${assignment.plannedMonth}`;
+        const shop = shops.find((s) => s.id === assignment.shopId);
+        const existing = usage.get(key) || {
+          count: 0,
+          shopName: shop?.name || 'Unknown',
+          capacity: shop?.capacity || 0,
+        };
+        existing.count++;
+        usage.set(key, existing);
+      }
+    });
+
+    return usage;
+  }, [assignments, shops]);
+
+  // Find capacity warnings
+  const capacityWarnings = useMemo(() => {
+    const warnings: { shopName: string; month: number; year: number; assigned: number; capacity: number }[] = [];
+
+    capacityUsage.forEach((data, key) => {
+      if (data.count > data.capacity) {
+        const [, yearStr, monthStr] = key.split('-');
+        warnings.push({
+          shopName: data.shopName,
+          month: parseInt(monthStr),
+          year: parseInt(yearStr),
+          assigned: data.count,
+          capacity: data.capacity,
+        });
+      }
+    });
+
+    return warnings;
+  }, [capacityUsage]);
+
+  // Check if a specific shop/month is over capacity
+  const isOverCapacity = (shopId: string, month: number, year: number): boolean => {
+    const key = `${shopId}-${year}-${month}`;
+    const usage = capacityUsage.get(key);
+    if (!usage) return false;
+    return usage.count > usage.capacity;
+  };
+
+  // Get warning message for a shop/month
+  const getCapacityWarning = (shopId: string, month: number, year: number): string | null => {
+    const key = `${shopId}-${year}-${month}`;
+    const usage = capacityUsage.get(key);
+    if (!usage || usage.count <= usage.capacity) return null;
+    return `${usage.count}/${usage.capacity} capacity`;
+  };
+
   const handleBulkAssign = () => {
     if (!bulkShopId) return;
 
@@ -1485,6 +1880,12 @@ function AssignShopsModal({
     onSave(optionId, Array.from(assignments.values()));
   };
 
+  // Check if all cars have shops assigned
+  const unassignedCount = servicePlan.cars.filter((spc) => {
+    const assignment = assignments.get(spc.id);
+    return !assignment?.shopId;
+  }).length;
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden">
@@ -1495,25 +1896,68 @@ function AssignShopsModal({
           </button>
         </div>
 
+        {/* Capacity Warnings */}
+        {capacityWarnings.length > 0 && (
+          <div className="p-4 bg-red-50 border-b border-red-200">
+            <div className="flex items-start gap-3">
+              <ExclamationTriangleIcon className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-red-800 font-medium">Capacity exceeded</p>
+                <ul className="text-red-700 text-sm mt-1 list-disc list-inside">
+                  {capacityWarnings.map((w, i) => (
+                    <li key={i}>
+                      {w.shopName} in {MONTHS[w.month - 1]} {w.year}: {w.assigned} cars assigned but capacity is {w.capacity}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-red-600 text-sm mt-2">
+                  Please reassign some cars to different shops or months to avoid capacity conflicts.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Summary and bulk actions */}
         <div className="p-4 border-b border-steel-200 bg-steel-50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-steel-600">
+                <span className="font-semibold text-steel-900">{servicePlan.cars.length}</span> cars total
+              </span>
+              <span className="text-steel-300">|</span>
+              <span className="text-green-600">
+                <span className="font-medium">{assignments.size}</span> assigned
+              </span>
+              <span className="text-amber-600">
+                <span className="font-medium">{unassignedCount}</span> unassigned
+              </span>
+            </div>
+            <button
+              onClick={() => setAssignments(new Map())}
+              className="text-xs text-red-600 hover:text-red-800"
+            >
+              Clear All Assignments
+            </button>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-steel-700">Bulk assign all cars to:</span>
             <select
               value={bulkShopId}
               onChange={(e) => setBulkShopId(e.target.value)}
-              className="px-3 py-2 border border-steel-300 rounded-md"
+              className="px-3 py-2 border border-steel-300 rounded-md text-sm"
             >
               <option value="">Select shop...</option>
               {shops.map((shop) => (
                 <option key={shop.id} value={shop.id}>
-                  {shop.name} ({shop.code})
+                  {shop.name} ({shop.code}) - Capacity: {shop.capacity}/month
                 </option>
               ))}
             </select>
             <button
               onClick={handleBulkAssign}
               disabled={!bulkShopId}
-              className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 disabled:opacity-50"
+              className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 disabled:opacity-50 text-sm"
             >
               Apply to All
             </button>
@@ -1524,29 +1968,62 @@ function AssignShopsModal({
           <table className="min-w-full divide-y divide-steel-200">
             <thead className="bg-steel-50 sticky top-0">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Railcar #
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                  Type
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                  Status
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Month
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Shop
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Est. Cost
+                </th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-steel-500 uppercase">
+                  Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-steel-200">
               {servicePlan.cars.map((spc) => {
                 const assignment = assignments.get(spc.id);
+                const hasCapacityWarning = assignment?.shopId && assignment?.plannedMonth && assignment?.plannedYear
+                  ? isOverCapacity(assignment.shopId, assignment.plannedMonth, assignment.plannedYear)
+                  : false;
+                const warningText = assignment?.shopId && assignment?.plannedMonth && assignment?.plannedYear
+                  ? getCapacityWarning(assignment.shopId, assignment.plannedMonth, assignment.plannedYear)
+                  : null;
+                const isAssigned = !!assignment?.shopId;
+
                 return (
-                  <tr key={spc.id} className="hover:bg-steel-50">
-                    <td className="px-4 py-2 text-sm font-medium text-steel-900">
+                  <tr key={spc.id} className={`hover:bg-steel-50 ${hasCapacityWarning ? 'bg-red-50' : ''} ${!isAssigned ? 'bg-amber-50/50' : ''}`}>
+                    <td className="px-3 py-2 text-sm font-medium text-steel-900">
                       {spc.car.railcarNumber}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-3 py-2 text-sm text-steel-500">
+                      {spc.car.carType || '-'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                          spc.shoppingStatus === 'Urgent'
+                            ? 'bg-red-100 text-red-800'
+                            : spc.shoppingStatus === 'MustShop'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-green-100 text-green-800'
+                        }`}
+                      >
+                        {spc.shoppingStatus || 'Unknown'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
                       <div className="flex gap-2">
                         <select
                           value={assignment?.plannedMonth || spc.autoAssignedMonth || ''}
@@ -1594,36 +2071,58 @@ function AssignShopsModal({
                         </select>
                       </div>
                     </td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={assignment?.shopId || ''}
-                        onChange={(e) => {
-                          const shop = shops.find((s) => s.id === e.target.value);
-                          const newAssignments = new Map(assignments);
-                          const existing = newAssignments.get(spc.id) || {
-                            servicePlanCarId: spc.id,
-                            shopId: '',
-                            plannedMonth: spc.autoAssignedMonth || servicePlan.startMonth,
-                            plannedYear: spc.autoAssignedYear || servicePlan.startYear,
-                          };
-                          existing.shopId = e.target.value;
-                          existing.estimatedCost = shop?.baseCostPerCar || 15000;
-                          existing.estimatedDays = shop?.baseTurnTime || 14;
-                          newAssignments.set(spc.id, existing);
-                          setAssignments(newAssignments);
-                        }}
-                        className="px-2 py-1 border border-steel-300 rounded text-sm"
-                      >
-                        <option value="">Select shop...</option>
-                        {shops.map((shop) => (
-                          <option key={shop.id} value={shop.id}>
-                            {shop.name}
-                          </option>
-                        ))}
-                      </select>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col gap-1">
+                        <select
+                          value={assignment?.shopId || ''}
+                          onChange={(e) => {
+                            const shop = shops.find((s) => s.id === e.target.value);
+                            const newAssignments = new Map(assignments);
+                            const existing = newAssignments.get(spc.id) || {
+                              servicePlanCarId: spc.id,
+                              shopId: '',
+                              plannedMonth: spc.autoAssignedMonth || servicePlan.startMonth,
+                              plannedYear: spc.autoAssignedYear || servicePlan.startYear,
+                            };
+                            existing.shopId = e.target.value;
+                            existing.estimatedCost = shop?.baseCostPerCar || 15000;
+                            existing.estimatedDays = shop?.baseTurnTime || 14;
+                            newAssignments.set(spc.id, existing);
+                            setAssignments(newAssignments);
+                          }}
+                          className={`px-2 py-1 border rounded text-sm min-w-[180px] ${
+                            hasCapacityWarning ? 'border-red-500 bg-red-50' : !isAssigned ? 'border-amber-300 bg-amber-50' : 'border-steel-300'
+                          }`}
+                        >
+                          <option value="">Select shop...</option>
+                          {shops.map((shop) => (
+                            <option key={shop.id} value={shop.id}>
+                              {shop.name} ({shop.capacity}/mo)
+                            </option>
+                          ))}
+                        </select>
+                        {warningText && (
+                          <span className="text-xs text-red-600">{warningText}</span>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-4 py-2 text-sm text-steel-500">
+                    <td className="px-3 py-2 text-sm text-steel-500">
                       ${(assignment?.estimatedCost || 0).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {isAssigned && (
+                        <button
+                          onClick={() => {
+                            const newAssignments = new Map(assignments);
+                            newAssignments.delete(spc.id);
+                            setAssignments(newAssignments);
+                          }}
+                          className="text-red-600 hover:text-red-800"
+                          title="Clear assignment"
+                        >
+                          <XMarkIcon className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -1634,7 +2133,12 @@ function AssignShopsModal({
 
         <div className="p-4 border-t border-steel-200 flex justify-between items-center">
           <div className="text-sm text-steel-500">
-            {assignments.size} of {servicePlan.cars.length} cars assigned
+            <span className={unassignedCount > 0 ? 'text-amber-600' : ''}>
+              {assignments.size} of {servicePlan.cars.length} cars assigned
+            </span>
+            {unassignedCount > 0 && (
+              <span className="ml-2 text-amber-600">({unassignedCount} need shop assignment)</span>
+            )}
           </div>
           <div className="flex gap-3">
             <button

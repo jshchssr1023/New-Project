@@ -194,6 +194,141 @@ export interface AssignmentInput {
 }
 
 // =============================================================================
+// CONFIRMATION WORKFLOW TYPES (v2)
+// =============================================================================
+
+export interface CarMatrixData {
+  servicePlanId: string;
+  planName: string;
+  planVersion: number;
+  planStatus: string;
+  customer: { id: string; name: string; code: string };
+  isEditable: boolean;
+  canFinalConfirm: boolean;
+  summary: {
+    totalCars: number;
+    pendingCars: number;
+    confirmedCars: number;
+  };
+  cars: CarMatrixCar[];
+  shops: { id: string; name: string; code: string; location: string }[];
+}
+
+export interface CarMatrixCar {
+  id: string;
+  carId: string;
+  railcarNumber: string;
+  carType: string;
+  status: 'pending' | 'confirmed' | 'deleted';
+  isLocked: boolean;
+  assignedShopId: string | null;
+  assignedShopName: string | null;
+  assignedShopCode: string | null;
+  plannedMonth: number | null;
+  plannedYear: number | null;
+  plannedMonthLabel: string | null;
+  shopReason: string;
+  qualificationDueDate: string | null;
+  contractExpiration: string | null;
+  shoppingStatus: string;
+  confirmedAt: string | null;
+  confirmedById: string | null;
+  addedAt: string;
+}
+
+export interface CarConfirmationResult {
+  id: string;
+  carId: string;
+  railcarNumber: string;
+  status: string;
+  confirmedAt: string;
+  confirmedById: string;
+  message?: string;
+}
+
+export interface CarDeletionResult {
+  id: string;
+  carId: string;
+  railcarNumber: string;
+  deletedAt: string;
+  deletedById: string;
+  deleteReason: string;
+  message?: string;
+}
+
+export interface ConfirmationSummary {
+  servicePlanId: string;
+  planName: string;
+  planVersion: number;
+  customer: { id: string; name: string; code: string };
+  totals: {
+    confirmedCars: number;
+    pendingCars: number;
+    deletedCars: number;
+    totalCars: number;
+  };
+  confirmedCarsByShop: {
+    shopId: string;
+    shopName: string;
+    shopCode: string;
+    carCount: number;
+    cars: {
+      carId: string;
+      railcarNumber: string;
+      plannedMonth: number;
+      plannedYear: number;
+    }[];
+  }[];
+  confirmedCarsByMonth: {
+    month: number;
+    year: number;
+    monthLabel: string;
+    carCount: number;
+  }[];
+  pendingCars: {
+    id: string;
+    carId: string;
+    railcarNumber: string;
+    carType: string;
+    assignedShopId: string | null;
+    assignedShopName: string | null;
+    plannedMonth: number | null;
+    plannedYear: number | null;
+  }[];
+}
+
+export interface FinalConfirmationResult {
+  servicePlan: ServicePlan;
+  scheduledCars: number;
+  archivedDraftPlans: number;
+  message: string;
+}
+
+export interface AuditEvent {
+  id: string;
+  servicePlanId: string;
+  eventType: string;
+  planVersion: number;
+  servicePlanCarId: string | null;
+  carId: string | null;
+  railcarNumber: string | null;
+  eventDetails: string;
+  performedById: string;
+  performedByName: string;
+  performedAt: string;
+  companyId: string;
+}
+
+export interface PlanReportFilters {
+  status?: string;
+  customerId?: string;
+  plannerId?: string;
+  shopId?: string;
+  month?: number;
+  year?: number;
+}
+
+// =============================================================================
 // API CLIENT
 // =============================================================================
 
@@ -510,6 +645,206 @@ export const servicePlansApi = {
       { approvedBy }
     );
     return response.data;
+  },
+
+  // ===========================================================================
+  // CONFIRMATION WORKFLOW (v2) - Car Matrix Operations
+  // ===========================================================================
+
+  /**
+   * Get Car Matrix data for a service plan
+   * The Car Matrix is the ONLY place where confirmation can occur
+   */
+  getCarMatrix: async (servicePlanId: string): Promise<CarMatrixData> => {
+    const response = await apiClient.get<CarMatrixData>(
+      `/service-plan-confirmation/${servicePlanId}/car-matrix`
+    );
+    return response.data;
+  },
+
+  /**
+   * Add a car to plan with assignment (v2)
+   */
+  addCarWithAssignment: async (
+    servicePlanId: string,
+    input: {
+      carId: string;
+      assignedShopId?: string;
+      plannedMonth?: number;
+      plannedYear?: number;
+      shopReason?: string;
+    }
+  ): Promise<ServicePlanCar> => {
+    const response = await apiClient.post<ServicePlanCar>(
+      `/service-plan-confirmation/${servicePlanId}/cars/v2`,
+      input
+    );
+    return response.data;
+  },
+
+  /**
+   * Update car assignment (shop, month, reason)
+   * Only for pending cars
+   */
+  updateCarAssignment: async (
+    servicePlanId: string,
+    servicePlanCarId: string,
+    updates: {
+      assignedShopId?: string;
+      plannedMonth?: number;
+      plannedYear?: number;
+      shopReason?: string;
+    }
+  ): Promise<ServicePlanCar> => {
+    const response = await apiClient.put<ServicePlanCar>(
+      `/service-plan-confirmation/${servicePlanId}/cars/${servicePlanCarId}/assignment`,
+      updates
+    );
+    return response.data;
+  },
+
+  /**
+   * Confirm a single car (locks it)
+   */
+  confirmCar: async (
+    servicePlanId: string,
+    servicePlanCarId: string
+  ): Promise<CarConfirmationResult> => {
+    const response = await apiClient.post<CarConfirmationResult>(
+      `/service-plan-confirmation/${servicePlanId}/cars/${servicePlanCarId}/confirm`
+    );
+    return response.data;
+  },
+
+  /**
+   * Confirm multiple cars at once
+   */
+  confirmCarsBulk: async (
+    servicePlanId: string,
+    servicePlanCarIds: string[]
+  ): Promise<{ message: string; results: CarConfirmationResult[] }> => {
+    const response = await apiClient.post<{ message: string; results: CarConfirmationResult[] }>(
+      `/service-plan-confirmation/${servicePlanId}/cars/confirm-bulk`,
+      { servicePlanCarIds }
+    );
+    return response.data;
+  },
+
+  /**
+   * Delete a car from the plan (requires secondary confirmation)
+   */
+  deleteCarWithConfirmation: async (
+    servicePlanId: string,
+    servicePlanCarId: string,
+    deleteReason: string,
+    secondaryConfirmation: boolean
+  ): Promise<CarDeletionResult> => {
+    const response = await apiClient.delete<CarDeletionResult>(
+      `/service-plan-confirmation/${servicePlanId}/cars/${servicePlanCarId}`,
+      { data: { deleteReason, secondaryConfirmation } }
+    );
+    return response.data;
+  },
+
+  // ===========================================================================
+  // CONFIRMATION SUMMARY AND FINAL CONFIRMATION
+  // ===========================================================================
+
+  /**
+   * Get confirmation summary for review before final confirmation
+   */
+  getConfirmationSummary: async (servicePlanId: string): Promise<ConfirmationSummary> => {
+    const response = await apiClient.get<ConfirmationSummary>(
+      `/service-plan-confirmation/${servicePlanId}/confirmation-summary`
+    );
+    return response.data;
+  },
+
+  /**
+   * Final confirmation of the plan - sends confirmed cars to Master Schedule
+   */
+  finalConfirm: async (servicePlanId: string): Promise<FinalConfirmationResult> => {
+    const response = await apiClient.post<FinalConfirmationResult>(
+      `/service-plan-confirmation/${servicePlanId}/final-confirm`
+    );
+    return response.data;
+  },
+
+  // ===========================================================================
+  // REPORTING
+  // ===========================================================================
+
+  /**
+   * Get all confirmed plans
+   */
+  getConfirmedPlans: async (filters?: PlanReportFilters): Promise<ServicePlan[]> => {
+    const params = new URLSearchParams();
+    if (filters?.customerId) params.append('customerId', filters.customerId);
+    if (filters?.plannerId) params.append('plannerId', filters.plannerId);
+    if (filters?.shopId) params.append('shopId', filters.shopId);
+    if (filters?.month) params.append('month', filters.month.toString());
+    if (filters?.year) params.append('year', filters.year.toString());
+
+    const response = await apiClient.get<ServicePlan[]>(
+      `/service-plan-confirmation/reports/confirmed${params.toString() ? `?${params.toString()}` : ''}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Get all pending/draft plans
+   */
+  getPendingPlans: async (filters?: PlanReportFilters): Promise<ServicePlan[]> => {
+    const params = new URLSearchParams();
+    if (filters?.customerId) params.append('customerId', filters.customerId);
+    if (filters?.plannerId) params.append('plannerId', filters.plannerId);
+
+    const response = await apiClient.get<ServicePlan[]>(
+      `/service-plan-confirmation/reports/pending${params.toString() ? `?${params.toString()}` : ''}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Get detailed plan report
+   */
+  getPlanReport: async (servicePlanId: string): Promise<ServicePlan & { summary: any }> => {
+    const response = await apiClient.get<ServicePlan & { summary: any }>(
+      `/service-plan-confirmation/${servicePlanId}/report`
+    );
+    return response.data;
+  },
+
+  // ===========================================================================
+  // AUDIT
+  // ===========================================================================
+
+  /**
+   * Get audit history for a service plan
+   */
+  getAuditHistory: async (
+    servicePlanId: string,
+    options?: { limit?: number; offset?: number; eventType?: string }
+  ): Promise<AuditEvent[]> => {
+    const params = new URLSearchParams();
+    if (options?.limit) params.append('limit', options.limit.toString());
+    if (options?.offset) params.append('offset', options.offset.toString());
+    if (options?.eventType) params.append('eventType', options.eventType);
+
+    const response = await apiClient.get<AuditEvent[]>(
+      `/service-plan-confirmation/${servicePlanId}/audit${params.toString() ? `?${params.toString()}` : ''}`
+    );
+    return response.data;
+  },
+
+  /**
+   * Check if customer has a final confirmed plan
+   */
+  hasCustomerFinalConfirmedPlan: async (customerId: string): Promise<boolean> => {
+    const response = await apiClient.get<{ hasFinalConfirmed: boolean }>(
+      `/service-plan-confirmation/customer/${customerId}/has-final-confirmed`
+    );
+    return response.data.hasFinalConfirmed;
   },
 };
 

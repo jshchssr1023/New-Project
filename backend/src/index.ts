@@ -32,6 +32,7 @@ import adminRoutes from './routes/admin';
 import publicApiV1 from './routes/api/v1';
 import planProposalsRoutes from './routes/planProposals';
 import servicePlansRoutes from './routes/servicePlans';
+import servicePlanConfirmationRoutes from './routes/servicePlanConfirmation';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 import { initializeShoppingStatusJob, getShoppingStatusJob } from './jobs/shoppingStatusJob';
@@ -153,6 +154,7 @@ app.use('/api/shop-networks', apiRateLimit);
 app.use('/api/admin', apiRateLimit);
 app.use('/api/proposals', apiRateLimit);
 app.use('/api/service-plans', apiRateLimit);
+app.use('/api/service-plan-confirmation', apiRateLimit);
 app.use('/api/v1', apiRateLimit);
 
 // Routes
@@ -177,6 +179,7 @@ app.use('/api/shop-networks', shopNetworksRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/proposals', planProposalsRoutes);
 app.use('/api/service-plans', servicePlansRoutes);
+app.use('/api/service-plan-confirmation', servicePlanConfirmationRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);

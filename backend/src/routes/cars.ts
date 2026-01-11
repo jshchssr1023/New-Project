@@ -377,6 +377,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     pageSize = '20',
     status,
     customer,
+    customerId, // Filter by customer ID (FK) - more reliable than customer name
     reasonShopped,
     carType,
     shoppingStatus,
@@ -401,7 +402,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const where: Record<string, unknown> = {
       companyId: req.user!.companyId,
       ...(statusFilter && { status: statusFilter }),
-      ...(customer && { customer: customer as string }),
+      ...(customerId && { customerId: customerId as string }), // Filter by FK (more reliable)
+      ...(customer && !customerId && { customer: { equals: customer as string, mode: 'insensitive' } }), // Fallback to name
       ...(reasonShopped && { reasonsShopped: reasonShopped as string }),
       ...(carType && { carType: carType as string }),
       ...(shoppingStatus && { shoppingStatus: shoppingStatus as string }),

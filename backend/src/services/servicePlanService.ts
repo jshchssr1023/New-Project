@@ -262,6 +262,9 @@ export class ServicePlanService {
       return null;
     }
 
+    // Debug logging
+    console.log(`[ServicePlanService] getServicePlan ${id}: selectedCarCount=${servicePlan.selectedCarCount}, cars.length=${servicePlan.cars?.length || 0}`);
+
     return servicePlan as ServicePlanWithDetails;
   }
 
