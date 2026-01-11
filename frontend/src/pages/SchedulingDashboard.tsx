@@ -37,7 +37,7 @@ import type { WorkflowCounts, SchedulingItem, PlanPDFData } from '../components/
 import { carsApi, shopsApi } from '../services/api';
 import proposalsApi from '../services/api/proposals';
 import { getShoppingStatus } from '../components/cars/ShoppingStatusBadge';
-import type { Car, Scenario, Shop } from '../types';
+import type { Car, Shop } from '../types';
 
 interface SchedulingFilters {
   customer: string;
@@ -53,7 +53,6 @@ export default function SchedulingDashboard() {
 
   // Data state
   const [cars, setCars] = useState<Car[]>([]);
-  const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [customers, setCustomers] = useState<string[]>([]);
 
@@ -81,7 +80,6 @@ export default function SchedulingDashboard() {
       ]);
 
       setCars(carsRes.data);
-      setScenarios([]); // Scenarios feature removed - use Service Plans instead
       setShops(shopsRes);
 
       // Extract unique customers
@@ -99,22 +97,22 @@ export default function SchedulingDashboard() {
     loadData();
   }, [loadData]);
 
-  // Compute workflow counts
+  // Compute workflow counts using car data and active plans
   const workflowCounts = useMemo<WorkflowCounts>(() => {
-    const draftScenarios = scenarios.filter(s => s.status === 'draft').length;
-    const sentScenarios = scenarios.filter(s => s.status === 'sent' || s.status === 'analyzing').length;
-    const approvedScenarios = scenarios.filter(s => s.status === 'approved' || s.status === 'completed').length;
-    const carsInShop = cars.filter(c => c.status === 'in_shop' || c.status === 'in_service').length;
-    const completedCars = cars.filter(c => c.status === 'completed').length;
+    // Count cars with active plans (planned or in progress)
+    const carsWithPlans = cars.filter(c => c.activePlan && c.activePlan.status === 'Planned').length;
+    const carsInProgress = cars.filter(c => c.activePlan && c.activePlan.status === 'InProgress').length;
+    const carsInShop = cars.filter(c => c.status === 'in_shop' || c.status === 'in_service' || c.status === 'Arrived').length;
+    const completedCars = cars.filter(c => c.status === 'Complete' || c.status === 'completed').length;
 
     return {
-      plan: draftScenarios,
-      communicate: sentScenarios,
-      schedule: approvedScenarios,
+      plan: carsWithPlans,
+      communicate: 0, // Scenarios feature removed
+      schedule: carsInProgress,
       execute: carsInShop,
       closeOut: completedCars,
     };
-  }, [scenarios, cars]);
+  }, [cars]);
 
   // Compute needs scheduling items
   const needsSchedulingItems = useMemo<SchedulingItem[]>(() => {
@@ -169,8 +167,8 @@ export default function SchedulingDashboard() {
         carNumber: car.railcarNumber,
         customer: car.customer || 'Unknown',
         status: 'scheduled' as const,
-        scheduledMonth: car.scheduledMonth || (car as any).plannedMonth,
-        shopName: car.assignedShopName || shops.find(s => s.id === car.assignedShopId)?.name,
+        scheduledMonth: car.activePlan?.plannedDate || (car.activePlan ? `${car.activePlan.plannedMonth}/${car.activePlan.plannedYear}` : ''),
+        shopName: car.activePlan?.shopName || shops.find(s => s.id === car.assignedShopId)?.name,
       }));
   }, [cars, shops, filters, searchQuery]);
 
@@ -242,35 +240,32 @@ export default function SchedulingDashboard() {
   };
 
   // Create PDF data from scenario
-  const createPlanPDFData = (scenario: Scenario): PlanPDFData => {
+  // Create PDF data from cars with active plans (scenarios removed)
+  const createPlanPDFDataFromCars = (carsWithPlans: Car[]): PlanPDFData => {
+    const uniqueShops = new Set(carsWithPlans.map(c => c.activePlan?.shopId).filter(Boolean));
     return {
-      planName: scenario.name,
-      planNumber: `SCN-${scenario.id.slice(0, 8).toUpperCase()}`,
+      planName: 'Scheduled Cars Export',
+      planNumber: `EXP-${new Date().toISOString().slice(0, 10)}`,
       version: 1,
-      status: scenario.status === 'approved' ? 'approved' : scenario.status === 'completed' ? 'scheduled' : 'draft',
-      createdAt: scenario.createdAt,
-      customer: scenario.customer ? {
-        name: scenario.customer,
-        code: scenario.projectNumber,
-      } : undefined,
+      status: 'scheduled',
+      createdAt: new Date().toISOString(),
       summary: {
-        totalCars: scenario.scenarioCars?.length || 0,
-        totalShops: new Set(scenario.scenarioCars?.map(c => c.shopId).filter(Boolean)).size,
-        estimatedCost: scenario.totalEstimatedCost,
-        planningHorizonStart: scenario.scenarioCars?.[0]?.plannedMonth,
-        planningHorizonEnd: scenario.scenarioCars?.[scenario.scenarioCars.length - 1]?.plannedMonth,
+        totalCars: carsWithPlans.length,
+        totalShops: uniqueShops.size,
+        estimatedCost: 0, // Not tracked at car level
+        planningHorizonStart: carsWithPlans[0]?.activePlan?.plannedDate,
+        planningHorizonEnd: carsWithPlans[carsWithPlans.length - 1]?.activePlan?.plannedDate,
       },
-      cars: scenario.scenarioCars?.map(sc => ({
-        id: sc.id,
-        carNumber: sc.car?.railcarNumber || 'Unknown',
-        customer: sc.car?.customer || scenario.customer || 'Unknown',
-        scheduledMonth: sc.plannedMonth,
-        shopName: sc.shop?.name,
-        workType: sc.workType || 'Qualification',
-        estimatedCost: sc.estimatedCost,
-        status: sc.status || 'planned',
-      })) || [],
-      notes: scenario.notes,
+      cars: carsWithPlans.map(car => ({
+        id: car.id,
+        carNumber: car.railcarNumber || 'Unknown',
+        customer: car.customer || 'Unknown',
+        scheduledMonth: car.activePlan?.plannedDate || '',
+        shopName: car.activePlan?.shopName,
+        workType: 'Qualification',
+        estimatedCost: 0,
+        status: car.activePlan?.status?.toLowerCase() || 'planned',
+      })),
     };
   };
 
@@ -486,56 +481,15 @@ export default function SchedulingDashboard() {
           </div>
         </div>
 
-        <div className="divide-y divide-steel-100">
-          {scenarios.slice(0, 5).map((scenario) => (
-            <div
-              key={scenario.id}
-              className="flex items-center justify-between px-4 py-3 hover:bg-steel-50 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div>
-                  <p className="font-medium text-steel-900">{scenario.name}</p>
-                  <p className="text-xs text-steel-500">
-                    {scenario.customer || 'Multiple Customers'} • {scenario.scenarioCars?.length || 0} cars
-                  </p>
-                </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  scenario.status === 'approved' ? 'bg-green-100 text-green-800' :
-                  scenario.status === 'completed' ? 'bg-indigo-100 text-indigo-800' :
-                  scenario.status === 'analyzing' ? 'bg-amber-100 text-amber-800' :
-                  'bg-steel-100 text-steel-800'
-                }`}>
-                  {scenario.status}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <ExportPlanButton
-                  planData={createPlanPDFData(scenario)}
-                  variant="icon"
-                />
-                <button
-                  onClick={() => navigate(`/scenarios/${scenario.id}`)}
-                  className="p-2 text-steel-500 hover:text-rail-600 hover:bg-steel-100 rounded-lg transition-colors"
-                  title="View Details"
-                >
-                  <ChevronRightIcon className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-          ))}
-
-          {scenarios.length === 0 && (
-            <div className="text-center py-8">
-              <ClipboardDocumentListIcon className="h-12 w-12 text-steel-300 mx-auto mb-2" />
-              <p className="text-sm text-steel-500">No plans created yet</p>
-              <button
-                onClick={() => navigate('/scenarios')}
-                className="mt-3 text-sm font-medium text-rail-600 hover:text-rail-800"
-              >
-                Create your first plan
-              </button>
-            </div>
-          )}
+        <div className="text-center py-8">
+          <ClipboardDocumentListIcon className="h-12 w-12 text-steel-300 mx-auto mb-2" />
+          <p className="text-sm text-steel-500">Use Service Plans to schedule cars</p>
+          <button
+            onClick={() => navigate('/service-plans')}
+            className="mt-3 text-sm font-medium text-rail-600 hover:text-rail-800"
+          >
+            Go to Service Plans
+          </button>
         </div>
       </div>
 

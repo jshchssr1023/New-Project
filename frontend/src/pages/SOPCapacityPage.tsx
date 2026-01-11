@@ -449,7 +449,7 @@ export default function SOPCapacityPage() {
             <div className="flex justify-between">
               <span className="text-blue-600">Locations:</span>
               <span className="font-semibold text-blue-900">
-                {AITX_NETWORK.locations.length}
+                {AITX_NETWORK?.locations?.length || 0}
               </span>
             </div>
             <div className="flex justify-between">
@@ -467,7 +467,7 @@ export default function SOPCapacityPage() {
             <div className="flex justify-between">
               <span className="text-blue-600">Annual Target:</span>
               <span className="font-semibold text-blue-900">
-                {AITX_NETWORK.annualTargetVolume.toLocaleString()}
+                {(AITX_NETWORK?.annualTargetVolume || 0).toLocaleString()}
               </span>
             </div>
           </div>

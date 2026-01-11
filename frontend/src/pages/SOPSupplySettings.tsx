@@ -33,7 +33,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { sopCommitmentApi } from '../services/carFlowApi';
 import { shopsApi } from '../services/api';
-import type { SOPCommitment, CreateSOPCommitmentRequest } from '../types/carFlow';
+import type { SOPCommitment, CreateSOPCommitmentRequest } from '../services/carFlowApi';
 import type { Shop } from '../types';
 import {
   useShopNetworks,

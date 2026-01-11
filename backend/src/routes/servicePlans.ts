@@ -18,11 +18,36 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { servicePlanService } from '../services/servicePlanService';
 import { servicePlanExportService } from '../services/servicePlanExportService';
 import logger from '../utils/logger';
+import { prisma } from '../services/db';
 
 const router = Router();
 
 // Apply authentication to all routes
 router.use(authenticate);
+
+// =============================================================================
+// CUSTOMER ROUTES
+// =============================================================================
+
+/**
+ * GET /service-plans/customers
+ * Get all active customers for the company
+ */
+router.get('/customers', async (req: AuthRequest, res: Response) => {
+  try {
+    const customers = await prisma.customer.findMany({
+      where: {
+        companyId: req.user!.companyId,
+        isActive: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+    res.json(customers);
+  } catch (error) {
+    logger.error('Get customers error', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
 
 // =============================================================================
 // SERVICE PLAN ROUTES

@@ -5,7 +5,7 @@ import { capacityApi, carFlowPlanApi } from '../services/carFlowApi';
 import { Slicer, SlicerBar, ShopCard, ShopCardGrid } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
 import type { Shop } from '../types';
-import type { CarFlowPlan } from '../types/carFlow';
+import type { CarFlowPlan } from '../services/carFlowApi';
 
 type ViewMode = 'cards' | 'list' | 'network';
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
@@ -359,15 +359,15 @@ export default function ShopManagement() {
     try {
       const currentYear = new Date().getFullYear();
       const data = await capacityApi.get({ year: currentYear });
-      if (data?.capacity) {
+      if (data?.shops) {
         const capacityMap: Record<string, any[]> = {};
-        data.capacity.forEach((shopCapacity: any) => {
-          capacityMap[shopCapacity.shopId] = Object.entries(shopCapacity.months || {}).map(([month, values]: [string, any]) => ({
-            month: parseInt(month),
-            year: currentYear,
-            committed: values.committed || 0,
-            planned: values.planned || 0,
-            available: values.available || 0,
+        data.shops.forEach((shopCapacity) => {
+          capacityMap[shopCapacity.id] = (shopCapacity.months || []).map((m) => ({
+            month: m.month,
+            year: m.year,
+            committed: m.scheduled || 0,
+            planned: m.scheduled || 0,
+            available: m.available || 0,
           }));
         });
         setCapacityData(capacityMap);

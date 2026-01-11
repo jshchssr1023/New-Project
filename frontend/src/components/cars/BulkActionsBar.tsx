@@ -1,4 +1,4 @@
-import { DocumentPlusIcon, CalendarDaysIcon } from '@heroicons/react/24/outline';
+import { DocumentPlusIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../../types';
 
 interface ServicePlanOption {
@@ -13,7 +13,6 @@ interface BulkActionsBarProps {
   onBulkStatusUpdate: (status: Car['status']) => void;
   onBulkDelete: () => void;
   onClearSelection: () => void;
-  onUseInCarFlow: () => void;
   servicePlans?: ServicePlanOption[];
   onAddToServicePlan?: (servicePlanId: string) => void;
   isExporting?: boolean;
@@ -25,7 +24,6 @@ export default function BulkActionsBar({
   onBulkStatusUpdate,
   onBulkDelete,
   onClearSelection,
-  onUseInCarFlow,
   servicePlans = [],
   onAddToServicePlan,
   isExporting = false,
@@ -37,18 +35,7 @@ export default function BulkActionsBar({
       <span className="text-sm font-medium text-rail-700">{selectedCount} selected</span>
       <div className="h-4 w-px bg-rail-300" />
 
-      {/* Primary Action: Plan Selected Cars */}
-      <button
-        onClick={onUseInCarFlow}
-        className="flex items-center text-sm text-white font-medium bg-rail-600 hover:bg-rail-700 px-3 py-1.5 rounded shadow-sm"
-      >
-        <CalendarDaysIcon className="h-4 w-4 mr-1.5" />
-        Plan Selected Cars
-      </button>
-
-      <div className="h-4 w-px bg-rail-300" />
-
-      {/* Add to Service Plan Dropdown */}
+      {/* Primary Action: Add to Service Plan Dropdown */}
       <div className="flex items-center">
         <DocumentPlusIcon className="h-4 w-4 mr-1 text-rail-600" />
         <select

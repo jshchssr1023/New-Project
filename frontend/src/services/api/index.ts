@@ -24,7 +24,7 @@ export { plansApi } from './plans';
 export { analyticsApi } from './analytics';
 export { usersApi, permissionsApi, auditApi } from './users';
 export { reportsApi } from './reports';
-export { sopApi, leaseQualificationApi, shopRulesApi } from './sop';
+export { sopApi, leaseQualificationApi } from './sop';
 
 // Proposal & Scheduling Queue API
 export { default as proposalsApi } from './proposals';
@@ -78,11 +78,6 @@ export type {
   ImportSessionData,
   ShopHistoryEntry,
   MasterPlanAuditEntry,
-  ShopRuleCondition,
-  ShopRuleAction,
-  ShopRuleSchema,
-  ShopRule,
-  RuleTestResult,
   // Plan Proposal types
   ProposalStatus,
   PlanProposal,

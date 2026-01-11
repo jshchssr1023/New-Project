@@ -12,7 +12,7 @@
  * - api/analytics.ts - Dashboard and analytics
  * - api/users.ts - User management (admin CRUD, permissions, audit)
  * - api/reports.ts - Custom reports (templates, scheduled reports)
- * - api/sop.ts - S&OP (allocations, lease qualification, shop rules)
+ * - api/sop.ts - S&OP (allocations, lease qualification)
  * - api/servicePlans.ts - Service Plan Builder (customer proposals)
  * - api/types.ts - Shared API types
  */
@@ -42,7 +42,6 @@ export {
   reportsApi,
   sopApi,
   leaseQualificationApi,
-  shopRulesApi,
   servicePlansApi,
 } from './api/index';
 
@@ -79,9 +78,4 @@ export type {
   ImportSessionData,
   ShopHistoryEntry,
   MasterPlanAuditEntry,
-  ShopRuleCondition,
-  ShopRuleAction,
-  ShopRuleSchema,
-  ShopRule,
-  RuleTestResult,
 } from './api/index';
