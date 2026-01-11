@@ -674,8 +674,11 @@ function createTableHandler(tableName: string) {
       const now = new Date().toISOString();
       let count = 0;
 
-      // Tables that use 'addedAt' instead of 'createdAt'
-      const TABLES_WITH_ADDED_AT = new Set(['ServicePlanCar']);
+      // Tables with custom timestamp columns (instead of createdAt/updatedAt)
+      const CUSTOM_TIMESTAMP_TABLES: Record<string, { created?: string; skipUpdated?: boolean }> = {
+        'ServicePlanCar': { created: 'addedAt', skipUpdated: true },
+        'CapacityReservation': { created: 'reservedAt', skipUpdated: true },
+      };
 
       for (const item of options.data) {
         // Generate UUID if no id provided
@@ -683,15 +686,25 @@ function createTableHandler(tableName: string) {
           item.id = uuidv4();
         }
         // Add timestamps - use correct column names based on table
-        if (TABLES_WITH_ADDED_AT.has(tableName)) {
-          if (!item.addedAt) {
-            item.addedAt = now;
+        const customTimestamps = CUSTOM_TIMESTAMP_TABLES[tableName];
+        if (customTimestamps) {
+          // Use custom timestamp column
+          const createdCol = customTimestamps.created || 'createdAt';
+          if (!item[createdCol]) {
+            item[createdCol] = now;
           }
-        } else if (!item.createdAt) {
-          item.createdAt = now;
-        }
-        if (!item.updatedAt) {
-          item.updatedAt = now;
+          // Only add updatedAt if not skipped
+          if (!customTimestamps.skipUpdated && !item.updatedAt) {
+            item.updatedAt = now;
+          }
+        } else {
+          // Default behavior
+          if (!item.createdAt) {
+            item.createdAt = now;
+          }
+          if (!item.updatedAt) {
+            item.updatedAt = now;
+          }
         }
 
         const keys = Object.keys(item);
