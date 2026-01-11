@@ -880,6 +880,123 @@ function createTableHandler(tableName: string) {
 
         return result;
       });
+    },
+
+    aggregate: async (options: { where?: WhereClause; _count?: { [key: string]: boolean } | true; _sum?: { [key: string]: boolean }; _avg?: { [key: string]: boolean }; _min?: { [key: string]: boolean }; _max?: { [key: string]: boolean } }) => {
+      const { sql: whereClause, params } = buildWhereClause(options.where);
+
+      // Build SELECT clause with aggregations
+      const selectParts: string[] = [];
+
+      // Handle _count aggregation
+      if (options._count) {
+        if (options._count === true) {
+          selectParts.push(`COUNT(*) as "_count"`);
+        } else {
+          for (const [field, enabled] of Object.entries(options._count)) {
+            if (enabled) {
+              validateColumnName(field);
+              selectParts.push(`COUNT("${field}") as "_count_${field}"`);
+            }
+          }
+        }
+      }
+
+      // Handle _sum aggregation
+      if (options._sum) {
+        for (const [field, enabled] of Object.entries(options._sum)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`COALESCE(SUM("${field}"), 0) as "_sum_${field}"`);
+          }
+        }
+      }
+
+      // Handle _avg aggregation
+      if (options._avg) {
+        for (const [field, enabled] of Object.entries(options._avg)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`AVG("${field}") as "_avg_${field}"`);
+          }
+        }
+      }
+
+      // Handle _min aggregation
+      if (options._min) {
+        for (const [field, enabled] of Object.entries(options._min)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MIN("${field}") as "_min_${field}"`);
+          }
+        }
+      }
+
+      // Handle _max aggregation
+      if (options._max) {
+        for (const [field, enabled] of Object.entries(options._max)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MAX("${field}") as "_max_${field}"`);
+          }
+        }
+      }
+
+      if (selectParts.length === 0) {
+        selectParts.push('1');
+      }
+
+      const query = `SELECT ${selectParts.join(', ')} FROM "${tableName}" ${whereClause}`;
+      const row = db.prepare(query).get(...params) as any;
+
+      // Transform result to match Prisma's aggregate output format
+      const result: any = {};
+
+      // Add _count result
+      if (options._count) {
+        if (options._count === true) {
+          result._count = row['_count'] || 0;
+        } else {
+          result._count = {};
+          for (const field of Object.keys(options._count)) {
+            result._count[field] = row[`_count_${field}`] || 0;
+          }
+        }
+      }
+
+      // Add _sum result
+      if (options._sum) {
+        result._sum = {};
+        for (const field of Object.keys(options._sum)) {
+          result._sum[field] = row[`_sum_${field}`] || 0;
+        }
+      }
+
+      // Add _avg result
+      if (options._avg) {
+        result._avg = {};
+        for (const field of Object.keys(options._avg)) {
+          result._avg[field] = row[`_avg_${field}`] || null;
+        }
+      }
+
+      // Add _min result
+      if (options._min) {
+        result._min = {};
+        for (const field of Object.keys(options._min)) {
+          result._min[field] = row[`_min_${field}`] || null;
+        }
+      }
+
+      // Add _max result
+      if (options._max) {
+        result._max = {};
+        for (const field of Object.keys(options._max)) {
+          result._max[field] = row[`_max_${field}`] || null;
+        }
+      }
+
+      return result;
     }
   };
 }
