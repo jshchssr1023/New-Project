@@ -401,7 +401,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const where: Record<string, unknown> = {
       companyId: req.user!.companyId,
       ...(statusFilter && { status: statusFilter }),
-      ...(customer && { customer: customer as string }),
+      ...(customer && { customer: { equals: customer as string, mode: 'insensitive' } }),
       ...(reasonShopped && { reasonsShopped: reasonShopped as string }),
       ...(carType && { carType: carType as string }),
       ...(shoppingStatus && { shoppingStatus: shoppingStatus as string }),
