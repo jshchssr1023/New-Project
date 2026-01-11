@@ -423,10 +423,16 @@ export class ServicePlanService {
       return [];
     }
 
-    // Get car details for metadata
+    // Get car details for metadata - only include cars that exist in the database
     const cars = await this.prismaClient.car.findMany({
       where: { id: { in: newCarIds } },
     });
+
+    // If no valid cars found, return early
+    if (cars.length === 0) {
+      console.warn(`[ServicePlanService] No valid cars found for IDs: ${newCarIds.join(', ')}`);
+      return [];
+    }
 
     // Auto-distribute cars across months
     const distribution = this.autoDistributeCars(
@@ -438,7 +444,7 @@ export class ServicePlanService {
       servicePlan.carFlowRate
     );
 
-    // Create service plan cars
+    // Create service plan cars data
     const createData = cars.map((car) => ({
       servicePlanId,
       carId: car.id,
@@ -449,43 +455,47 @@ export class ServicePlanService {
       shoppingStatus: car.shoppingStatus,
     }));
 
-    await this.prismaClient.servicePlanCar.createMany({
-      data: createData,
-    });
+    // Use transaction to ensure data consistency between car records and count
+    const createdCars = await this.prismaClient.$transaction(async (tx) => {
+      // Create service plan car records
+      await tx.servicePlanCar.createMany({
+        data: createData,
+      });
 
-    // Update car count
-    await this.prismaClient.servicePlan.update({
-      where: { id: servicePlanId },
-      data: {
-        selectedCarCount: {
-          increment: newCarIds.length,
-        },
-      },
-    });
-
-    // Fetch and return the created records
-    const createdCars = await this.prismaClient.servicePlanCar.findMany({
-      where: {
-        servicePlanId,
-        carId: { in: newCarIds },
-      },
-      include: {
-        car: {
-          select: {
-            id: true,
-            railcarNumber: true,
-            carType: true,
-            customer: true,
-            customerId: true,
-            shoppingStatus: true,
-            tankQualification: true,
-            contractExpiration: true,
+      // Update car count with ACTUAL number of cars created (not requested)
+      await tx.servicePlan.update({
+        where: { id: servicePlanId },
+        data: {
+          selectedCarCount: {
+            increment: createData.length,
           },
         },
-      },
+      });
+
+      // Fetch and return the created records
+      return tx.servicePlanCar.findMany({
+        where: {
+          servicePlanId,
+          carId: { in: cars.map((c) => c.id) },
+        },
+        include: {
+          car: {
+            select: {
+              id: true,
+              railcarNumber: true,
+              carType: true,
+              customer: true,
+              customerId: true,
+              shoppingStatus: true,
+              tankQualification: true,
+              contractExpiration: true,
+            },
+          },
+        },
+      });
     });
 
-    console.log(`[ServicePlanService] Added ${newCarIds.length} cars to service plan ${servicePlanId}`);
+    console.log(`[ServicePlanService] Added ${createData.length} cars to service plan ${servicePlanId}`);
     return createdCars as ServicePlanCarWithDetails[];
   }
 
