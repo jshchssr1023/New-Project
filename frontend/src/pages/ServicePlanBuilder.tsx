@@ -714,8 +714,10 @@ export default function ServicePlanBuilder() {
     const existingCarIds = new Set(servicePlan.cars.map((c) => c.carId));
     const customerName = servicePlan.customer?.name;
 
-    // Filter out cars already in this plan - API already filters by customer
-    const filteredCars = availableCars.filter((c) => !existingCarIds.has(c.id));
+    // Show ALL cars for this customer - mark which ones are already in plan
+    // Cars already in plan can be removed from the plan table, not added again
+    const carsNotInPlan = availableCars.filter((c) => !existingCarIds.has(c.id));
+    const carsInPlan = availableCars.filter((c) => existingCarIds.has(c.id));
 
     return (
       <div className="bg-white rounded-lg shadow">
@@ -768,84 +770,127 @@ export default function ServicePlanBuilder() {
               action={{
                 label: 'Add Cars',
                 onClick: () => {
+                  const customerId = servicePlan.customer?.id;
                   const customerName = servicePlan.customer?.name;
-                  loadAvailableCars(customerName);
+                  loadAvailableCars(customerId, customerName);
                   setIsAddCarsModalOpen(true);
                 },
               }}
             />
           ) : (
-            <table className="min-w-full divide-y divide-steel-200">
-              <thead className="bg-steel-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Railcar #
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Type
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Qual Due
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Assigned Month
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-steel-500 uppercase">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-steel-200">
-                {servicePlan.cars.map((spc) => (
-                  <tr key={spc.id} className="hover:bg-steel-50">
-                    <td className="px-4 py-3 text-sm font-medium text-steel-900">
-                      {spc.car.railcarNumber}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-steel-500">{spc.car.carType || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-steel-500">
-                      {spc.qualificationDueDate
-                        ? new Date(spc.qualificationDueDate).toLocaleDateString('en-US', {
-                            month: 'short',
-                            year: '2-digit',
-                          })
-                        : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-steel-500">
-                      {spc.userAssignedMonth
-                        ? `${MONTHS[spc.userAssignedMonth - 1]} ${spc.userAssignedYear}`
-                        : spc.autoAssignedMonth
-                        ? `${MONTHS[spc.autoAssignedMonth - 1]} ${spc.autoAssignedYear} (auto)`
-                        : '-'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                          spc.shoppingStatus === 'Urgent'
-                            ? 'bg-red-100 text-red-800'
-                            : spc.shoppingStatus === 'MustShop'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {spc.shoppingStatus || 'Unknown'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleRemoveCar(spc.id)}
-                        className="text-red-600 hover:text-red-800"
-                        title="Remove car"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    </td>
+            <>
+              {/* Summary stats */}
+              <div className="px-4 py-3 bg-steel-50 border-b border-steel-200 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm text-steel-600">
+                    <span className="font-semibold text-steel-900">{servicePlan.cars.length}</span> cars selected
+                  </span>
+                  <span className="text-steel-300">|</span>
+                  <span className="text-sm text-steel-600">
+                    Urgent: <span className="font-medium text-red-600">{servicePlan.cars.filter(c => c.shoppingStatus === 'Urgent').length}</span>
+                  </span>
+                  <span className="text-sm text-steel-600">
+                    Must Shop: <span className="font-medium text-amber-600">{servicePlan.cars.filter(c => c.shoppingStatus === 'MustShop').length}</span>
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Remove all ${servicePlan.cars.length} cars from this plan?`)) {
+                      servicePlan.cars.forEach(spc => handleRemoveCar(spc.id));
+                    }
+                  }}
+                  className="text-xs text-red-600 hover:text-red-800"
+                >
+                  Clear All
+                </button>
+              </div>
+              <table className="min-w-full divide-y divide-steel-200">
+                <thead className="bg-steel-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Railcar #
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Type
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Customer
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Qual Due
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Contract Exp
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Planned Month
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-steel-500 uppercase">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-steel-500 uppercase">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="bg-white divide-y divide-steel-200">
+                  {servicePlan.cars.map((spc) => (
+                    <tr key={spc.id} className="hover:bg-steel-50">
+                      <td className="px-4 py-3 text-sm font-medium text-steel-900">
+                        {spc.car.railcarNumber}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-steel-500">{spc.car.carType || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-steel-500">{spc.car.customer || '-'}</td>
+                      <td className="px-4 py-3 text-sm text-steel-500">
+                        {spc.qualificationDueDate
+                          ? new Date(spc.qualificationDueDate).toLocaleDateString('en-US', {
+                              month: 'short',
+                              year: '2-digit',
+                            })
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-steel-500">
+                        {spc.contractExpiration
+                          ? new Date(spc.contractExpiration).toLocaleDateString('en-US', {
+                              month: 'short',
+                              year: '2-digit',
+                            })
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-steel-500">
+                        {spc.userAssignedMonth
+                          ? `${MONTHS[spc.userAssignedMonth - 1]} ${spc.userAssignedYear}`
+                          : spc.autoAssignedMonth
+                          ? `${MONTHS[spc.autoAssignedMonth - 1]} ${spc.autoAssignedYear} (auto)`
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                            spc.shoppingStatus === 'Urgent'
+                              ? 'bg-red-100 text-red-800'
+                              : spc.shoppingStatus === 'MustShop'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-green-100 text-green-800'
+                          }`}
+                        >
+                          {spc.shoppingStatus || 'Unknown'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => handleRemoveCar(spc.id)}
+                          className="text-red-600 hover:text-red-800"
+                          title="Remove from plan"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
 
@@ -913,11 +958,29 @@ export default function ServicePlanBuilder() {
                 )}
 
                 {/* Car list */}
-                {!isLoadingCars && filteredCars.length > 0 && (
+                {!isLoadingCars && availableCars.length > 0 && (
                   <>
-                    <p className="text-sm text-steel-500 mb-4">
-                      {filteredCars.length} car{filteredCars.length !== 1 ? 's' : ''} available. {selectedCarIds.length} selected.
-                    </p>
+                    {/* Summary tabs */}
+                    <div className="flex items-center gap-4 mb-4 pb-3 border-b border-steel-200">
+                      <span className="text-sm">
+                        <span className="font-semibold text-steel-900">{availableCars.length}</span> total cars for this customer
+                      </span>
+                      <span className="text-steel-300">|</span>
+                      <span className="text-sm text-green-600">
+                        <span className="font-medium">{carsNotInPlan.length}</span> available to add
+                      </span>
+                      <span className="text-sm text-rail-600">
+                        <span className="font-medium">{carsInPlan.length}</span> already in plan
+                      </span>
+                      {selectedCarIds.length > 0 && (
+                        <>
+                          <span className="text-steel-300">|</span>
+                          <span className="text-sm text-rail-700 font-medium">
+                            {selectedCarIds.length} selected
+                          </span>
+                        </>
+                      )}
+                    </div>
 
                     <table className="min-w-full divide-y divide-steel-200">
                       <thead className="bg-steel-50 sticky top-0">
@@ -925,15 +988,16 @@ export default function ServicePlanBuilder() {
                           <th className="px-4 py-2 text-left">
                             <input
                               type="checkbox"
-                              checked={selectedCarIds.length === filteredCars.length && filteredCars.length > 0}
+                              checked={selectedCarIds.length === carsNotInPlan.length && carsNotInPlan.length > 0}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelectedCarIds(filteredCars.map((c) => c.id));
+                                  setSelectedCarIds(carsNotInPlan.map((c) => c.id));
                                 } else {
                                   setSelectedCarIds([]);
                                 }
                               }}
                               className="rounded border-steel-300"
+                              title="Select all available cars"
                             />
                           </th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
@@ -948,10 +1012,48 @@ export default function ServicePlanBuilder() {
                           <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                             Status
                           </th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                            In Plan
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-steel-200">
-                        {filteredCars.slice(0, 100).map((car) => (
+                        {/* Show cars already in plan first (greyed out) */}
+                        {carsInPlan.slice(0, 50).map((car) => (
+                          <tr
+                            key={car.id}
+                            className="bg-steel-50 opacity-60"
+                          >
+                            <td className="px-4 py-2">
+                              <CheckCircleIcon className="w-5 h-5 text-rail-600" />
+                            </td>
+                            <td className="px-4 py-2 text-sm font-medium text-steel-700">
+                              {car.railcarNumber}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-steel-500">{car.carType || '-'}</td>
+                            <td className="px-4 py-2 text-sm text-steel-500">{car.customer || '-'}</td>
+                            <td className="px-4 py-2">
+                              <span
+                                className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
+                                  car.shoppingStatus === 'Urgent'
+                                    ? 'bg-red-100 text-red-800'
+                                    : car.shoppingStatus === 'MustShop'
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-green-100 text-green-800'
+                                }`}
+                              >
+                                {car.shoppingStatus || 'Unknown'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className="inline-flex px-2 py-1 text-xs font-medium rounded-full bg-rail-100 text-rail-800">
+                                In Plan
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Show available cars */}
+                        {carsNotInPlan.slice(0, 100).map((car) => (
                           <tr
                             key={car.id}
                             className={`hover:bg-steel-50 cursor-pointer ${
@@ -991,14 +1093,18 @@ export default function ServicePlanBuilder() {
                                 {car.shoppingStatus || 'Unknown'}
                               </span>
                             </td>
+                            <td className="px-4 py-2">
+                              <span className="text-xs text-steel-400">-</span>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
 
-                    {filteredCars.length > 100 && (
+                    {(carsNotInPlan.length > 100 || carsInPlan.length > 50) && (
                       <p className="text-sm text-steel-500 mt-2 text-center">
-                        Showing first 100 cars. {filteredCars.length - 100} more available.
+                        Showing {Math.min(carsInPlan.length, 50)} in-plan + {Math.min(carsNotInPlan.length, 100)} available cars.
+                        {carsNotInPlan.length > 100 && ` ${carsNotInPlan.length - 100} more available.`}
                       </p>
                     )}
                   </>
@@ -1812,13 +1918,34 @@ function AssignShopsModal({
           </div>
         )}
 
+        {/* Summary and bulk actions */}
         <div className="p-4 border-b border-steel-200 bg-steel-50">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-steel-600">
+                <span className="font-semibold text-steel-900">{servicePlan.cars.length}</span> cars total
+              </span>
+              <span className="text-steel-300">|</span>
+              <span className="text-green-600">
+                <span className="font-medium">{assignments.size}</span> assigned
+              </span>
+              <span className="text-amber-600">
+                <span className="font-medium">{unassignedCount}</span> unassigned
+              </span>
+            </div>
+            <button
+              onClick={() => setAssignments(new Map())}
+              className="text-xs text-red-600 hover:text-red-800"
+            >
+              Clear All Assignments
+            </button>
+          </div>
           <div className="flex items-center gap-4">
             <span className="text-sm font-medium text-steel-700">Bulk assign all cars to:</span>
             <select
               value={bulkShopId}
               onChange={(e) => setBulkShopId(e.target.value)}
-              className="px-3 py-2 border border-steel-300 rounded-md"
+              className="px-3 py-2 border border-steel-300 rounded-md text-sm"
             >
               <option value="">Select shop...</option>
               {shops.map((shop) => (
@@ -1830,7 +1957,7 @@ function AssignShopsModal({
             <button
               onClick={handleBulkAssign}
               disabled={!bulkShopId}
-              className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 disabled:opacity-50"
+              className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 disabled:opacity-50 text-sm"
             >
               Apply to All
             </button>
@@ -1841,17 +1968,26 @@ function AssignShopsModal({
           <table className="min-w-full divide-y divide-steel-200">
             <thead className="bg-steel-50 sticky top-0">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Railcar #
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                  Type
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                  Status
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Month
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Shop
                 </th>
-                <th className="px-4 py-2 text-left text-xs font-medium text-steel-500 uppercase">
+                <th className="px-3 py-2 text-left text-xs font-medium text-steel-500 uppercase">
                   Est. Cost
+                </th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-steel-500 uppercase">
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -1864,13 +2000,30 @@ function AssignShopsModal({
                 const warningText = assignment?.shopId && assignment?.plannedMonth && assignment?.plannedYear
                   ? getCapacityWarning(assignment.shopId, assignment.plannedMonth, assignment.plannedYear)
                   : null;
+                const isAssigned = !!assignment?.shopId;
 
                 return (
-                  <tr key={spc.id} className={`hover:bg-steel-50 ${hasCapacityWarning ? 'bg-red-50' : ''}`}>
-                    <td className="px-4 py-2 text-sm font-medium text-steel-900">
+                  <tr key={spc.id} className={`hover:bg-steel-50 ${hasCapacityWarning ? 'bg-red-50' : ''} ${!isAssigned ? 'bg-amber-50/50' : ''}`}>
+                    <td className="px-3 py-2 text-sm font-medium text-steel-900">
                       {spc.car.railcarNumber}
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-3 py-2 text-sm text-steel-500">
+                      {spc.car.carType || '-'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                          spc.shoppingStatus === 'Urgent'
+                            ? 'bg-red-100 text-red-800'
+                            : spc.shoppingStatus === 'MustShop'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-green-100 text-green-800'
+                        }`}
+                      >
+                        {spc.shoppingStatus || 'Unknown'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
                       <div className="flex gap-2">
                         <select
                           value={assignment?.plannedMonth || spc.autoAssignedMonth || ''}
@@ -1918,7 +2071,7 @@ function AssignShopsModal({
                         </select>
                       </div>
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-3 py-2">
                       <div className="flex flex-col gap-1">
                         <select
                           value={assignment?.shopId || ''}
@@ -1937,14 +2090,14 @@ function AssignShopsModal({
                             newAssignments.set(spc.id, existing);
                             setAssignments(newAssignments);
                           }}
-                          className={`px-2 py-1 border rounded text-sm ${
-                            hasCapacityWarning ? 'border-red-500 bg-red-50' : 'border-steel-300'
+                          className={`px-2 py-1 border rounded text-sm min-w-[180px] ${
+                            hasCapacityWarning ? 'border-red-500 bg-red-50' : !isAssigned ? 'border-amber-300 bg-amber-50' : 'border-steel-300'
                           }`}
                         >
                           <option value="">Select shop...</option>
                           {shops.map((shop) => (
                             <option key={shop.id} value={shop.id}>
-                              {shop.name}
+                              {shop.name} ({shop.capacity}/mo)
                             </option>
                           ))}
                         </select>
@@ -1953,8 +2106,23 @@ function AssignShopsModal({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-sm text-steel-500">
+                    <td className="px-3 py-2 text-sm text-steel-500">
                       ${(assignment?.estimatedCost || 0).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {isAssigned && (
+                        <button
+                          onClick={() => {
+                            const newAssignments = new Map(assignments);
+                            newAssignments.delete(spc.id);
+                            setAssignments(newAssignments);
+                          }}
+                          className="text-red-600 hover:text-red-800"
+                          title="Clear assignment"
+                        >
+                          <XMarkIcon className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
