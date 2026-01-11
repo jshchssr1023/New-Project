@@ -96,6 +96,7 @@ export class ServicePlanExportService {
       size: 'LETTER',
       layout: 'landscape',
       margins: { top: 50, bottom: 50, left: 50, right: 50 },
+      bufferPages: true, // Required for switchToPage() to add footers
       info: {
         Title: `Service Plan: ${servicePlan.name}`,
         Author: options.branding === 'aitx' ? 'AITX Chronos' : 'Service Plan Proposal',
