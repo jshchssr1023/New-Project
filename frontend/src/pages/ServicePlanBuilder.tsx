@@ -947,7 +947,7 @@ export default function ServicePlanBuilder() {
                 )}
 
                 {/* Empty state (no customer selected and no cars) */}
-                {!isLoadingCars && !carsError && filteredCars.length === 0 && !customerName && (
+                {!isLoadingCars && !carsError && availableCars.length === 0 && !customerName && (
                   <div className="text-center py-12">
                     <TruckIcon className="w-12 h-12 mx-auto text-steel-300 mb-4" />
                     <h4 className="text-lg font-medium text-steel-900">No available cars</h4>
