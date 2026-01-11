@@ -321,6 +321,35 @@ export default function ServicePlanBuilder() {
     }
   };
 
+  const handleDeletePlan = async () => {
+    if (!servicePlan) return;
+
+    if (!window.confirm(`Are you sure you want to delete "${servicePlan.name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      await servicePlansApi.delete(servicePlan.id);
+      setServicePlan(null);
+      setViewMode('setup');
+      await loadServicePlans();
+      navigate('/service-plans');
+    } catch (err) {
+      console.error('Failed to delete plan:', err);
+      setError('Failed to delete plan');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleClearPlan = () => {
+    setServicePlan(null);
+    setViewMode('setup');
+    setComparison(null);
+    navigate('/service-plans');
+  };
+
   const handleSetAssignments = async (optionId: string, assignments: AssignmentInput[]) => {
     if (!servicePlan) return;
 
@@ -1351,6 +1380,27 @@ export default function ServicePlanBuilder() {
               >
                 {servicePlan.status.charAt(0).toUpperCase() + servicePlan.status.slice(1)}
               </span>
+              {servicePlan.status === 'draft' && (
+                <>
+                  <button
+                    onClick={handleClearPlan}
+                    className="px-3 py-1.5 text-sm border border-steel-300 rounded-md hover:bg-steel-50 flex items-center gap-1"
+                    title="Go back to plan list"
+                  >
+                    <ChevronLeftIcon className="w-4 h-4" />
+                    Back to Plans
+                  </button>
+                  <button
+                    onClick={handleDeletePlan}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 text-sm text-red-600 border border-red-300 rounded-md hover:bg-red-50 flex items-center gap-1"
+                    title="Delete this draft plan"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                    Delete Plan
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1387,16 +1437,69 @@ export default function ServicePlanBuilder() {
         {viewMode === 'setup' && !servicePlan && renderPlanSetup()}
         {viewMode === 'setup' && servicePlan && (
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold mb-4">Plan Setup Complete</h2>
-            <p className="text-steel-500 mb-4">
-              Your service plan has been created. Continue to add cars.
-            </p>
-            <button
-              onClick={() => setViewMode('cars')}
-              className="px-4 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700"
-            >
-              Continue to Select Cars
-            </button>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Plan Settings</h2>
+                <p className="text-sm text-steel-500">
+                  Review or update your plan settings, then continue to add cars.
+                </p>
+              </div>
+              {servicePlan.status === 'draft' && (
+                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                  Editable
+                </span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-steel-50 rounded-lg">
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Plan Name</p>
+                <p className="font-medium">{servicePlan.name}</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Customer</p>
+                <p className="font-medium">{servicePlan.customer?.name || 'Not selected'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Car Flow Rate</p>
+                <p className="font-medium">{servicePlan.carFlowRate} cars/month</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Date Range</p>
+                <p className="font-medium">
+                  {MONTHS[servicePlan.startMonth - 1]} {servicePlan.startYear} - {MONTHS[servicePlan.endMonth - 1]} {servicePlan.endYear}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Total Car Slots</p>
+                <p className="font-medium">{servicePlan.totalCarSlots}</p>
+              </div>
+              <div>
+                <p className="text-xs text-steel-500 uppercase">Cars Added</p>
+                <p className="font-medium">{servicePlan.selectedCarCount}</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setViewMode('cars')}
+                className="px-4 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700"
+              >
+                Continue to Select Cars
+              </button>
+              {servicePlan.status === 'draft' && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('To change the customer or plan settings, you need to create a new plan. Delete this plan and start over?')) {
+                      handleDeletePlan();
+                    }
+                  }}
+                  className="px-4 py-2 text-steel-600 border border-steel-300 rounded-md hover:bg-steel-50"
+                >
+                  Start Over with New Plan
+                </button>
+              )}
+            </div>
           </div>
         )}
         {viewMode === 'cars' && renderCarSelection()}
@@ -1407,19 +1510,31 @@ export default function ServicePlanBuilder() {
       {/* Navigation */}
       {servicePlan && (
         <div className="mt-6 flex justify-between">
-          <button
-            onClick={() => {
-              const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === viewMode);
-              if (currentIndex > 0) {
-                setViewMode(WIZARD_STEPS[currentIndex - 1].id);
-              }
-            }}
-            disabled={viewMode === 'setup'}
-            className="px-4 py-2 border border-steel-300 rounded-md hover:bg-steel-50 disabled:opacity-50 flex items-center gap-2"
-          >
-            <ChevronLeftIcon className="w-4 h-4" />
-            Previous
-          </button>
+          <div className="flex gap-3">
+            {viewMode !== 'setup' && (
+              <button
+                onClick={() => {
+                  const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === viewMode);
+                  if (currentIndex > 0) {
+                    setViewMode(WIZARD_STEPS[currentIndex - 1].id);
+                  }
+                }}
+                className="px-4 py-2 border border-steel-300 rounded-md hover:bg-steel-50 flex items-center gap-2"
+              >
+                <ChevronLeftIcon className="w-4 h-4" />
+                Previous
+              </button>
+            )}
+            {viewMode !== 'setup' && servicePlan.status === 'draft' && (
+              <button
+                onClick={() => setViewMode('setup')}
+                className="px-4 py-2 text-steel-600 hover:text-steel-800 flex items-center gap-2"
+              >
+                <AdjustmentsHorizontalIcon className="w-4 h-4" />
+                Edit Plan Settings
+              </button>
+            )}
+          </div>
           <button
             onClick={() => {
               const currentIndex = WIZARD_STEPS.findIndex((s) => s.id === viewMode);
