@@ -290,7 +290,7 @@ export const customersApi = {
    * Get all active customers
    */
   getAll: async (): Promise<Customer[]> => {
-    const response = await apiClient.get<Customer[]>('/car-flow/customers');
+    const response = await apiClient.get<Customer[]>('/service-plans/customers');
     return response.data;
   },
 };
