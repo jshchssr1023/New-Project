@@ -1740,23 +1740,19 @@ async function main() {
 
   console.log(`✓ Created ${customerRecords.length} customer records`);
 
-  // Build customer name to ID map for linking cars
-  const customerNameToId = new Map<string, string>();
-  for (const customer of customerRecords) {
-    customerNameToId.set(customer.name.toLowerCase(), customer.id);
-  }
-
   // Update cars to link to customer IDs
+  // Note: updateMany doesn't support mode:'insensitive', so we match exact names
+  // Since we extracted names from the same car data, they should match exactly
   console.log('   Linking cars to customer records...');
   let linkedCount = 0;
-  for (const [customerName, customerId] of customerNameToId) {
+  for (const customer of customerRecords) {
     const result = await prisma.car.updateMany({
       where: {
         companyId: company.id,
-        customer: { equals: customerName, mode: 'insensitive' },
+        customer: customer.name, // Exact match - names came from this data
         customerId: null, // Only update cars not already linked
       },
-      data: { customerId },
+      data: { customerId: customer.id },
     });
     linkedCount += result.count;
   }
