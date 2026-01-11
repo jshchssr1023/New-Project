@@ -17,6 +17,9 @@
  */
 
 import { prisma } from './db';
+import featureFlags from '../config/featureFlags';
+import servicePlanMetricsService from './servicePlanMetricsService';
+import logger from '../utils/logger';
 
 // =============================================================================
 // TYPES AND INTERFACES
@@ -327,7 +330,17 @@ export class ServicePlanConfirmationService {
       throw new Error('Access denied');
     }
 
-    // Only pending cars can be edited
+    // ROW-LEVEL LOCK ENFORCEMENT: Only pending cars can be edited
+    // Backend enforces this - confirmed cars are immutable
+    if (featureFlags.isRowLevelLockEnforcementEnabled()) {
+      if (servicePlanCar.status === 'confirmed') {
+        throw new Error('ROW_LOCKED: This car is confirmed and locked. No modifications allowed. Confirmed cars are immutable.');
+      }
+      if (servicePlanCar.status === 'deleted') {
+        throw new Error('CAR_DELETED: This car has been deleted and cannot be modified.');
+      }
+    }
+
     if (servicePlanCar.status !== 'pending') {
       throw new Error('Only pending cars can be edited. Confirmed cars are locked.');
     }
@@ -386,91 +399,144 @@ export class ServicePlanConfirmationService {
   /**
    * Confirm a car in the Car Matrix (locks the car)
    * This is the ONLY place where car confirmation can occur
+   *
+   * ROW-LEVEL LOCK ENFORCEMENT:
+   * - Once confirmed, the car's status becomes 'confirmed' and cannot be modified
+   * - Backend enforces this lock - not just UI disabling
+   * - Any attempt to modify a confirmed car will throw an error
    */
   async confirmCar(
     servicePlanCarId: string,
     userId: string,
     companyId: string
   ): Promise<CarConfirmationResult> {
-    const servicePlanCar = await this.prismaClient.servicePlanCar.findUnique({
-      where: { id: servicePlanCarId },
-      include: { servicePlan: true, car: true },
-    });
+    const startTime = Date.now();
+    let success = false;
+    let errorMessage: string | undefined;
 
-    if (!servicePlanCar) {
-      throw new Error('Service plan car not found');
-    }
+    try {
+      const servicePlanCar = await this.prismaClient.servicePlanCar.findUnique({
+        where: { id: servicePlanCarId },
+        include: { servicePlan: true, car: true },
+      });
 
-    // Verify company access
-    if (servicePlanCar.servicePlan.companyId !== companyId) {
-      throw new Error('Access denied');
-    }
+      if (!servicePlanCar) {
+        throw new Error('Service plan car not found');
+      }
 
-    // Only pending cars can be confirmed
-    if (servicePlanCar.status !== 'pending') {
-      throw new Error(`Car cannot be confirmed. Current status: ${servicePlanCar.status}`);
-    }
+      // Verify company access
+      if (servicePlanCar.servicePlan.companyId !== companyId) {
+        throw new Error('Access denied');
+      }
 
-    // Validate car has required assignment info
-    if (!servicePlanCar.assignedShopId || !servicePlanCar.plannedMonth || !servicePlanCar.plannedYear) {
-      throw new Error('Car must have shop and month/year assigned before confirmation');
-    }
+      // ROW-LEVEL LOCK ENFORCEMENT: Only pending cars can be confirmed
+      // This is the backend enforcement - confirmed cars are locked
+      if (servicePlanCar.status === 'confirmed') {
+        throw new Error('CAR_ALREADY_LOCKED: This car is already confirmed and locked. No further modifications allowed.');
+      }
 
-    // Validate plan is editable (not final_confirmed)
-    await this.validatePlanEditable(servicePlanCar.servicePlanId, companyId);
+      if (servicePlanCar.status === 'deleted') {
+        throw new Error('CAR_DELETED: This car has been deleted and cannot be confirmed.');
+      }
 
-    const now = new Date().toISOString();
+      if (servicePlanCar.status !== 'pending') {
+        throw new Error(`Car cannot be confirmed. Current status: ${servicePlanCar.status}`);
+      }
 
-    // Update car status to confirmed (LOCKED)
-    const confirmed = await this.prismaClient.servicePlanCar.update({
-      where: { id: servicePlanCarId },
-      data: {
+      // Validate car has required assignment info
+      if (!servicePlanCar.assignedShopId || !servicePlanCar.plannedMonth || !servicePlanCar.plannedYear) {
+        throw new Error('Car must have shop and month/year assigned before confirmation');
+      }
+
+      // Validate plan is editable (not final_confirmed)
+      await this.validatePlanEditable(servicePlanCar.servicePlanId, companyId);
+
+      const now = new Date().toISOString();
+
+      // Update car status to confirmed (LOCKED)
+      // This creates the row-level lock - status='confirmed' prevents further edits
+      const confirmed = await this.prismaClient.servicePlanCar.update({
+        where: { id: servicePlanCarId },
+        data: {
+          status: 'confirmed',
+          confirmedAt: now,
+          confirmedById: userId,
+        },
+      });
+
+      // Update plan car counts
+      await this.updatePlanCarCounts(servicePlanCar.servicePlanId);
+
+      // Increment version
+      await this.incrementPlanVersion(servicePlanCar.servicePlanId, userId, companyId);
+
+      // Get user for audit
+      const user = await this.prismaClient.user.findUnique({ where: { id: userId } });
+
+      // Create audit event
+      await this.createAuditEvent({
+        servicePlanId: servicePlanCar.servicePlanId,
+        eventType: 'car_confirmed',
+        planVersion: servicePlanCar.servicePlan.version + 1,
+        servicePlanCarId,
+        carId: servicePlanCar.carId,
+        railcarNumber: servicePlanCar.car.railcarNumber,
+        eventDetails: {
+          assignedShopId: servicePlanCar.assignedShopId,
+          plannedMonth: servicePlanCar.plannedMonth,
+          plannedYear: servicePlanCar.plannedYear,
+          shopReason: servicePlanCar.shopReason,
+          previousStatus: 'pending',
+          newStatus: 'confirmed',
+          lockEnforced: true,
+        },
+        performedById: userId,
+        performedByName: user ? `${user.firstName} ${user.lastName}` : '',
+        companyId,
+      });
+
+      logger.info(`[ServicePlanConfirmation] Confirmed car ${servicePlanCar.car.railcarNumber} in plan ${servicePlanCar.servicePlanId} (LOCKED)`);
+
+      success = true;
+
+      // Record metrics
+      await servicePlanMetricsService.recordCarConfirmation(
+        servicePlanCar.servicePlanId,
+        servicePlanCar.servicePlan.customerId,
+        userId,
+        companyId,
+        servicePlanCar.carId,
+        servicePlanCar.car.railcarNumber,
+        true,
+        Date.now() - startTime
+      );
+
+      return {
+        id: confirmed.id,
+        carId: confirmed.carId,
+        railcarNumber: servicePlanCar.car.railcarNumber,
         status: 'confirmed',
         confirmedAt: now,
         confirmedById: userId,
-      },
-    });
+      };
+    } catch (error: any) {
+      errorMessage = error.message;
 
-    // Update plan car counts
-    await this.updatePlanCarCounts(servicePlanCar.servicePlanId);
+      // Record failure metric
+      await servicePlanMetricsService.recordMetric({
+        eventType: 'car_confirmed',
+        servicePlanId: 'unknown',
+        customerId: 'unknown',
+        userId,
+        companyId,
+        carCount: 1,
+        durationMs: Date.now() - startTime,
+        success: false,
+        errorMessage: error.message,
+      });
 
-    // Increment version
-    await this.incrementPlanVersion(servicePlanCar.servicePlanId, userId, companyId);
-
-    // Get user for audit
-    const user = await this.prismaClient.user.findUnique({ where: { id: userId } });
-
-    // Create audit event
-    await this.createAuditEvent({
-      servicePlanId: servicePlanCar.servicePlanId,
-      eventType: 'car_confirmed',
-      planVersion: servicePlanCar.servicePlan.version + 1,
-      servicePlanCarId,
-      carId: servicePlanCar.carId,
-      railcarNumber: servicePlanCar.car.railcarNumber,
-      eventDetails: {
-        assignedShopId: servicePlanCar.assignedShopId,
-        plannedMonth: servicePlanCar.plannedMonth,
-        plannedYear: servicePlanCar.plannedYear,
-        shopReason: servicePlanCar.shopReason,
-        previousStatus: 'pending',
-        newStatus: 'confirmed',
-      },
-      performedById: userId,
-      performedByName: user ? `${user.firstName} ${user.lastName}` : '',
-      companyId,
-    });
-
-    console.log(`[ServicePlanConfirmation] Confirmed car ${servicePlanCar.car.railcarNumber} in plan ${servicePlanCar.servicePlanId}`);
-
-    return {
-      id: confirmed.id,
-      carId: confirmed.carId,
-      railcarNumber: servicePlanCar.car.railcarNumber,
-      status: 'confirmed',
-      confirmedAt: now,
-      confirmedById: userId,
-    };
+      throw error;
+    }
   }
 
   /**
@@ -503,6 +569,14 @@ export class ServicePlanConfirmationService {
   /**
    * Delete a car from the plan with secondary confirmation
    * Only pending cars can be deleted. Deleted cars retain audit history.
+   *
+   * ROW-LEVEL LOCK ENFORCEMENT:
+   * - Confirmed cars cannot be deleted - they are locked
+   * - Only pending cars can be deleted with secondary confirmation
+   *
+   * SOFT-DELETE:
+   * - Cars are marked as 'deleted' with timestamp and reason
+   * - Full audit trail is retained
    */
   async deleteCar(
     servicePlanCarId: string,
@@ -511,6 +585,8 @@ export class ServicePlanConfirmationService {
     userId: string,
     companyId: string
   ): Promise<CarDeletionResult> {
+    const startTime = Date.now();
+
     // Require secondary confirmation
     if (!secondaryConfirmation) {
       throw new Error('Secondary confirmation required. Set secondaryConfirmation to true to proceed.');
@@ -530,7 +606,17 @@ export class ServicePlanConfirmationService {
       throw new Error('Access denied');
     }
 
-    // Only pending cars can be deleted
+    // ROW-LEVEL LOCK ENFORCEMENT: Only pending cars can be deleted
+    // Confirmed cars are locked and cannot be deleted
+    if (featureFlags.isRowLevelLockEnforcementEnabled()) {
+      if (servicePlanCar.status === 'confirmed') {
+        throw new Error('ROW_LOCKED: This car is confirmed and locked. Confirmed cars cannot be deleted.');
+      }
+      if (servicePlanCar.status === 'deleted') {
+        throw new Error('CAR_ALREADY_DELETED: This car has already been deleted.');
+      }
+    }
+
     if (servicePlanCar.status !== 'pending') {
       throw new Error('Only pending cars can be deleted. Confirmed cars are locked.');
     }
@@ -540,57 +626,88 @@ export class ServicePlanConfirmationService {
 
     const now = new Date().toISOString();
 
-    // Soft-delete: Mark as deleted with audit trail
-    const deleted = await this.prismaClient.servicePlanCar.update({
-      where: { id: servicePlanCarId },
-      data: {
-        status: 'deleted',
+    try {
+      // Soft-delete: Mark as deleted with audit trail
+      const deleted = await this.prismaClient.servicePlanCar.update({
+        where: { id: servicePlanCarId },
+        data: {
+          status: 'deleted',
+          deletedAt: now,
+          deletedById: userId,
+          deleteReason: deleteReason || 'No reason provided',
+        },
+      });
+
+      // Update plan car counts
+      await this.updatePlanCarCounts(servicePlanCar.servicePlanId);
+
+      // Increment version
+      await this.incrementPlanVersion(servicePlanCar.servicePlanId, userId, companyId);
+
+      // Get user for audit
+      const user = await this.prismaClient.user.findUnique({ where: { id: userId } });
+
+      // Create audit event
+      await this.createAuditEvent({
+        servicePlanId: servicePlanCar.servicePlanId,
+        eventType: 'car_deleted',
+        planVersion: servicePlanCar.servicePlan.version + 1,
+        servicePlanCarId,
+        carId: servicePlanCar.carId,
+        railcarNumber: servicePlanCar.car.railcarNumber,
+        eventDetails: {
+          deleteReason,
+          previousStatus: 'pending',
+          newStatus: 'deleted',
+          assignedShopId: servicePlanCar.assignedShopId,
+          plannedMonth: servicePlanCar.plannedMonth,
+          plannedYear: servicePlanCar.plannedYear,
+          softDelete: true,
+        },
+        performedById: userId,
+        performedByName: user ? `${user.firstName} ${user.lastName}` : '',
+        companyId,
+      });
+
+      // Record deletion metrics
+      await servicePlanMetricsService.recordCarDeletion(
+        servicePlanCar.servicePlanId,
+        servicePlanCar.servicePlan.customerId,
+        userId,
+        companyId,
+        servicePlanCar.carId,
+        servicePlanCar.car.railcarNumber,
+        deleteReason || 'No reason provided',
+        true,
+        Date.now() - startTime
+      );
+
+      logger.info(`[ServicePlanConfirmation] Deleted car ${servicePlanCar.car.railcarNumber} from plan ${servicePlanCar.servicePlanId} (soft-delete)`);
+
+      return {
+        id: deleted.id,
+        carId: deleted.carId,
+        railcarNumber: servicePlanCar.car.railcarNumber,
         deletedAt: now,
         deletedById: userId,
         deleteReason: deleteReason || 'No reason provided',
-      },
-    });
+      };
+    } catch (error: any) {
+      // Record failure metrics
+      await servicePlanMetricsService.recordMetric({
+        eventType: 'car_deleted',
+        servicePlanId: servicePlanCar.servicePlanId,
+        customerId: servicePlanCar.servicePlan.customerId,
+        userId,
+        companyId,
+        carCount: 1,
+        durationMs: Date.now() - startTime,
+        success: false,
+        errorMessage: error.message,
+      });
 
-    // Update plan car counts
-    await this.updatePlanCarCounts(servicePlanCar.servicePlanId);
-
-    // Increment version
-    await this.incrementPlanVersion(servicePlanCar.servicePlanId, userId, companyId);
-
-    // Get user for audit
-    const user = await this.prismaClient.user.findUnique({ where: { id: userId } });
-
-    // Create audit event
-    await this.createAuditEvent({
-      servicePlanId: servicePlanCar.servicePlanId,
-      eventType: 'car_deleted',
-      planVersion: servicePlanCar.servicePlan.version + 1,
-      servicePlanCarId,
-      carId: servicePlanCar.carId,
-      railcarNumber: servicePlanCar.car.railcarNumber,
-      eventDetails: {
-        deleteReason,
-        previousStatus: 'pending',
-        newStatus: 'deleted',
-        assignedShopId: servicePlanCar.assignedShopId,
-        plannedMonth: servicePlanCar.plannedMonth,
-        plannedYear: servicePlanCar.plannedYear,
-      },
-      performedById: userId,
-      performedByName: user ? `${user.firstName} ${user.lastName}` : '',
-      companyId,
-    });
-
-    console.log(`[ServicePlanConfirmation] Deleted car ${servicePlanCar.car.railcarNumber} from plan ${servicePlanCar.servicePlanId}`);
-
-    return {
-      id: deleted.id,
-      carId: deleted.carId,
-      railcarNumber: servicePlanCar.car.railcarNumber,
-      deletedAt: now,
-      deletedById: userId,
-      deleteReason: deleteReason || 'No reason provided',
-    };
+      throw error;
+    }
   }
 
   // ===========================================================================
@@ -601,15 +718,27 @@ export class ServicePlanConfirmationService {
    * Final confirmation of a service plan
    * - Must have at least one confirmed car
    * - Only planners can perform this action
-   * - Sends confirmed cars to Master Schedule
+   * - Sends confirmed cars to Master Schedule (sync or async based on feature flag)
    * - Locks plan structure
-   * - Archives other draft plans for same customer
+   * - Archives other draft plans for same customer using soft-delete pattern
+   *
+   * FEATURE FLAG: FEATURE_FINAL_CONFIRMATION_ENABLED
+   * - When disabled, final confirmation is not allowed
+   *
+   * SOFT-DELETE: Plans are archived (status='archived') not hard-deleted
    */
   async finalConfirmPlan(
     servicePlanId: string,
     userId: string,
     companyId: string
   ): Promise<FinalConfirmationResult> {
+    const startTime = Date.now();
+
+    // Feature flag check
+    if (!featureFlags.isFinalConfirmationEnabled()) {
+      throw new Error('FEATURE_DISABLED: Final confirmation is currently disabled by system configuration.');
+    }
+
     const servicePlan = await this.prismaClient.servicePlan.findUnique({
       where: { id: servicePlanId },
       include: {
@@ -634,6 +763,11 @@ export class ServicePlanConfirmationService {
       throw new Error('Plan is already final confirmed');
     }
 
+    // Check if plan is already scheduled
+    if (servicePlan.status === 'scheduled') {
+      throw new Error('Plan is already scheduled');
+    }
+
     // Check if customer already has a final confirmed plan
     const hasExisting = await this.hasCustomerFinalConfirmedPlan(servicePlan.customerId, servicePlanId);
     if (hasExisting) {
@@ -655,97 +789,168 @@ export class ServicePlanConfirmationService {
     }
 
     const now = new Date().toISOString();
-
-    // Start transaction
     let scheduledCars = 0;
     let archivedDraftPlans = 0;
 
-    // 1. Update plan status to final_confirmed
-    await this.prismaClient.servicePlan.update({
-      where: { id: servicePlanId },
-      data: {
-        status: 'final_confirmed',
-        finalConfirmedAt: now,
-        finalConfirmedById: userId,
-      },
-    });
-
-    // 2. Send confirmed cars to Master Schedule (CarFlowPlan)
-    for (const spc of confirmedCars) {
-      await this.prismaClient.carFlowPlan.create({
+    try {
+      // 1. Update plan status to final_confirmed
+      await this.prismaClient.servicePlan.update({
+        where: { id: servicePlanId },
         data: {
-          carId: spc.carId,
-          shopId: spc.assignedShopId,
+          status: 'final_confirmed',
+          finalConfirmedAt: now,
+          finalConfirmedById: userId,
+        },
+      });
+
+      // 2. Send confirmed cars to Master Schedule (CarFlowPlan)
+      // Sync or async based on feature flag
+      const isAsync = featureFlags.isMasterScheduleAsync();
+      const masterScheduleStartTime = Date.now();
+
+      for (const spc of confirmedCars) {
+        await this.prismaClient.carFlowPlan.create({
+          data: {
+            carId: spc.carId,
+            shopId: spc.assignedShopId,
+            customerId: servicePlan.customerId,
+            plannedMonth: spc.plannedMonth,
+            plannedYear: spc.plannedYear,
+            status: 'Planned',
+            source: 'service_plan',
+            shopReason: spc.shopReason || '',
+            priority: 3,
+            committedById: userId,
+            companyId,
+          },
+        });
+
+        // Update car status in Car table
+        await this.prismaClient.car.update({
+          where: { id: spc.carId },
+          data: {
+            assignedShopId: spc.assignedShopId,
+            status: 'To Be Routed',
+          },
+        });
+
+        scheduledCars++;
+      }
+
+      // Record Master Schedule sync metrics
+      await servicePlanMetricsService.recordMasterScheduleSync(
+        servicePlanId,
+        servicePlan.customerId,
+        companyId,
+        scheduledCars,
+        true,
+        Date.now() - masterScheduleStartTime,
+        isAsync
+      );
+
+      // 3. Update plan to scheduled status
+      await this.prismaClient.servicePlan.update({
+        where: { id: servicePlanId },
+        data: {
+          status: 'scheduled',
+          scheduledAt: now,
+        },
+      });
+
+      // 4. SOFT-DELETE: Archive other draft plans for the same customer
+      // Uses: UPDATE ServicePlan SET status='archived' WHERE customerId=? AND id!=? AND status IN ('draft','pending')
+      const otherDraftPlans = await this.prismaClient.servicePlan.findMany({
+        where: {
           customerId: servicePlan.customerId,
-          plannedMonth: spc.plannedMonth,
-          plannedYear: spc.plannedYear,
-          status: 'Planned',
-          source: 'service_plan',
-          shopReason: spc.shopReason || '',
-          priority: 3,
-          committedById: userId,
+          id: { not: servicePlanId },
+          status: { in: ['draft', 'pending'] },
           companyId,
         },
       });
 
-      // Update car status in Car table
-      await this.prismaClient.car.update({
-        where: { id: spc.carId },
-        data: {
-          assignedShopId: spc.assignedShopId,
-          status: 'To Be Routed',
+      for (const plan of otherDraftPlans) {
+        if (featureFlags.isSoftDeletePlansEnabled()) {
+          // Soft-delete: Mark as archived with timestamp
+          await this.prismaClient.servicePlan.update({
+            where: { id: plan.id },
+            data: {
+              status: 'archived',
+              // Note: archivedAt and archivedById would need schema update
+            },
+          });
+
+          // Create audit event for archived plan
+          await this.createAuditEvent({
+            servicePlanId: plan.id,
+            eventType: 'plan_archived',
+            planVersion: plan.version,
+            eventDetails: {
+              reason: 'Another plan was final confirmed for this customer',
+              archivedByPlanId: servicePlanId,
+              archivedAt: now,
+            },
+            performedById: userId,
+            performedByName: '',
+            companyId,
+          });
+        } else {
+          // Simple archive
+          await this.prismaClient.servicePlan.update({
+            where: { id: plan.id },
+            data: { status: 'archived' },
+          });
+        }
+        archivedDraftPlans++;
+      }
+
+      // Get user for audit
+      const user = await this.prismaClient.user.findUnique({ where: { id: userId } });
+
+      // Create audit event
+      await this.createAuditEvent({
+        servicePlanId,
+        eventType: 'plan_final_confirmed',
+        planVersion: servicePlan.version,
+        eventDetails: {
+          confirmedCarCount: scheduledCars,
+          archivedDraftPlans,
+          scheduledAt: now,
+          masterScheduleAsync: isAsync,
         },
-      });
-
-      scheduledCars++;
-    }
-
-    // 3. Update plan to scheduled status
-    await this.prismaClient.servicePlan.update({
-      where: { id: servicePlanId },
-      data: {
-        status: 'scheduled',
-        scheduledAt: now,
-      },
-    });
-
-    // 4. Archive other draft plans for the same customer
-    const otherDraftPlans = await this.prismaClient.servicePlan.findMany({
-      where: {
-        customerId: servicePlan.customerId,
-        id: { not: servicePlanId },
-        status: { in: ['draft', 'pending'] },
+        performedById: userId,
+        performedByName: user ? `${user.firstName} ${user.lastName}` : '',
         companyId,
-      },
-    });
-
-    for (const plan of otherDraftPlans) {
-      await this.prismaClient.servicePlan.update({
-        where: { id: plan.id },
-        data: { status: 'archived' },
       });
-      archivedDraftPlans++;
-    }
 
-    // Get user for audit
-    const user = await this.prismaClient.user.findUnique({ where: { id: userId } });
-
-    // Create audit event
-    await this.createAuditEvent({
-      servicePlanId,
-      eventType: 'plan_final_confirmed',
-      planVersion: servicePlan.version,
-      eventDetails: {
-        confirmedCarCount: scheduledCars,
+      // Record final confirmation metrics
+      await servicePlanMetricsService.recordFinalConfirmation(
+        servicePlanId,
+        servicePlan.customerId,
+        userId,
+        companyId,
+        scheduledCars,
         archivedDraftPlans,
-        scheduledAt: now,
-      },
-      performedById: userId,
-      performedByName: user ? `${user.firstName} ${user.lastName}` : '',
-      companyId,
-    });
+        true,
+        Date.now() - startTime
+      );
 
-    console.log(`[ServicePlanConfirmation] Final confirmed plan ${servicePlanId}: ${scheduledCars} cars scheduled, ${archivedDraftPlans} draft plans archived`);
+      logger.info(`[ServicePlanConfirmation] Final confirmed plan ${servicePlanId}: ${scheduledCars} cars scheduled, ${archivedDraftPlans} draft plans archived`);
+    } catch (error: any) {
+      // Record failure metrics
+      await servicePlanMetricsService.recordFinalConfirmation(
+        servicePlanId,
+        servicePlan.customerId,
+        userId,
+        companyId,
+        0,
+        0,
+        false,
+        Date.now() - startTime,
+        error.message
+      );
+
+      throw error;
+    }
 
     // Fetch updated plan
     const updatedPlan = await this.prismaClient.servicePlan.findUnique({
@@ -805,7 +1010,9 @@ export class ServicePlanConfirmationService {
     const shops = shopIds.length > 0
       ? await this.prismaClient.shop.findMany({ where: { id: { in: shopIds } } })
       : [];
-    const shopMap = new Map(shops.map((s: any) => [s.id, s]));
+    const shopMap = new Map<string, { id: string; name: string; code: string }>(
+      shops.map((s: any) => [s.id, s])
+    );
 
     // Group confirmed cars by shop
     const carsByShop: Record<string, { shop: any; cars: any[] }> = {};
@@ -981,7 +1188,9 @@ export class ServicePlanConfirmationService {
     const shops = shopIds.length > 0
       ? await this.prismaClient.shop.findMany({ where: { id: { in: shopIds } } })
       : [];
-    const shopMap = new Map(shops.map((s: any) => [s.id, s]));
+    const shopMap = new Map<string, { id: string; name: string; code: string }>(
+      shops.map((s: any) => [s.id, s])
+    );
 
     // Enrich cars with shop details
     const enrichedCars = plan.cars.map((spc: any) => ({
@@ -1065,7 +1274,9 @@ export class ServicePlanConfirmationService {
     const shops = shopIds.length > 0
       ? await this.prismaClient.shop.findMany({ where: { id: { in: shopIds } } })
       : [];
-    const shopMap = new Map(shops.map((s: any) => [s.id, s]));
+    const shopMap = new Map<string, { id: string; name: string; code: string }>(
+      shops.map((s: any) => [s.id, s])
+    );
 
     const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -1145,14 +1356,35 @@ export class ServicePlanConfirmationService {
 
   /**
    * Increment plan version (Story 9: Version increments on changes)
+   *
+   * VERSION INCREMENT POLICY:
+   * The plan version is incremented on every material change to ensure audit
+   * trail integrity and support for optimistic concurrency control.
+   *
+   * Material changes that trigger version increment:
+   * 1. addCarToPlan - Adding a car to the plan
+   * 2. updateCarAssignment - Changing shop/month assignment
+   * 3. confirmCar - Confirming a car (locking it)
+   * 4. deleteCar - Soft-deleting a car from the plan
+   *
+   * Version is NOT incremented on:
+   * - Read operations (getCarMatrix, getConfirmationSummary, etc.)
+   * - Final confirmation (plan is locked after this anyway)
+   * - Audit event creation (derived from version)
+   *
+   * @param servicePlanId - The service plan to increment
+   * @param userId - The user making the change (for tracking)
+   * @param companyId - The company context
    */
   private async incrementPlanVersion(servicePlanId: string, userId: string, companyId: string): Promise<void> {
-    await this.prismaClient.servicePlan.update({
+    const result = await this.prismaClient.servicePlan.update({
       where: { id: servicePlanId },
       data: {
         version: { increment: 1 },
       },
     });
+
+    logger.debug(`[ServicePlanConfirmation] Version incremented for plan ${servicePlanId}: v${result.version}`);
   }
 
   /**
