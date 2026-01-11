@@ -565,7 +565,13 @@ export default function ServicePlanBuilder() {
         </div>
       </div>
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          onClick={() => navigate('/service-plans')}
+          className="px-4 py-2 border border-steel-300 rounded-md hover:bg-steel-50"
+        >
+          Cancel
+        </button>
         <button
           onClick={handleCreatePlan}
           disabled={!createForm.name || createForm.carFlowRate < 1 || isSaving}
@@ -590,25 +596,36 @@ export default function ServicePlanBuilder() {
     // Filter cars to only show those for the selected customer
     // Match by customerId (preferred) or by customer name (fallback for imported cars)
     const customerName = servicePlan.customer?.name;
-    const filteredCars = availableCars.filter((c) => {
-      // Exclude cars already in the plan
-      if (existingCarIds.has(c.id)) return false;
 
-      // If no customer is selected for this plan, show all available cars
-      if (!servicePlan.customerId && !customerName) return true;
+    // First, get all cars not already in the plan
+    const availableForPlan = availableCars.filter((c) => !existingCarIds.has(c.id));
 
-      // Match by customerId if both have it
-      if (servicePlan.customerId && c.customerId) {
-        return c.customerId === servicePlan.customerId;
-      }
+    // Determine filtered cars based on customer selection
+    let filteredCars: typeof availableForPlan;
 
-      // Fall back to matching by customer name (case-insensitive)
-      if (customerName && c.customer) {
-        return c.customer.toLowerCase() === customerName.toLowerCase();
-      }
+    if (!servicePlan.customerId && !customerName) {
+      // No customer selected - show all available cars
+      filteredCars = availableForPlan;
+    } else {
+      // Try to filter by customer
+      const customerFilteredCars = availableForPlan.filter((c) => {
+        // Match by customerId if both have it
+        if (servicePlan.customerId && c.customerId) {
+          return c.customerId === servicePlan.customerId;
+        }
 
-      return false;
-    });
+        // Fall back to matching by customer name (case-insensitive, with trimming)
+        if (customerName && c.customer) {
+          return c.customer.trim().toLowerCase() === customerName.trim().toLowerCase();
+        }
+
+        return false;
+      });
+
+      // Use filtered cars if we have matches, otherwise show all available
+      // (this allows users to still add cars even if customer data doesn't match perfectly)
+      filteredCars = customerFilteredCars.length > 0 ? customerFilteredCars : availableForPlan;
+    }
 
     return (
       <div className="bg-white rounded-lg shadow">
