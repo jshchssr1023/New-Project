@@ -31,15 +31,24 @@ router.use(authenticate);
 
 /**
  * GET /service-plans/customers
- * Get all active customers for the company
+ * Get customers for the company
+ * @query includeInactive - If 'true', includes inactive customers (default: false)
  */
 router.get('/customers', async (req: AuthRequest, res: Response) => {
   try {
+    const includeInactive = req.query.includeInactive === 'true';
+
+    const whereClause: { companyId: string; isActive?: boolean } = {
+      companyId: req.user!.companyId,
+    };
+
+    // Only filter by isActive if not including inactive customers
+    if (!includeInactive) {
+      whereClause.isActive = true;
+    }
+
     const customers = await prisma.customer.findMany({
-      where: {
-        companyId: req.user!.companyId,
-        isActive: true,
-      },
+      where: whereClause,
       orderBy: { name: 'asc' },
     });
     res.json(customers);

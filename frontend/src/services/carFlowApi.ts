@@ -287,10 +287,13 @@ export const shoppingStatusApi = {
 
 export const customersApi = {
   /**
-   * Get all active customers
+   * Get customers
+   * @param includeInactive - If true, includes inactive customers (default: false)
    */
-  getAll: async (): Promise<Customer[]> => {
-    const response = await apiClient.get<Customer[]>('/service-plans/customers');
+  getAll: async (includeInactive = false): Promise<Customer[]> => {
+    const response = await apiClient.get<Customer[]>('/service-plans/customers', {
+      params: includeInactive ? { includeInactive: 'true' } : undefined,
+    });
     return response.data;
   },
 };

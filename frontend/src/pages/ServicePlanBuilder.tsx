@@ -118,6 +118,7 @@ export default function ServicePlanBuilder() {
   const [isLoadingCars, setIsLoadingCars] = useState(false);
   const [customersError, setCustomersError] = useState<string | null>(null);
   const [carsError, setCarsError] = useState<string | null>(null);
+  const [includeInactiveCustomers, setIncludeInactiveCustomers] = useState(false);
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -175,15 +176,19 @@ export default function ServicePlanBuilder() {
     }
   }, []);
 
-  const loadCustomers = useCallback(async () => {
+  const loadCustomers = useCallback(async (includeInactive = false) => {
     try {
       setIsLoadingCustomers(true);
       setCustomersError(null);
-      // Use dedicated customers API to get all active customers
-      const customerList = await customersApi.getAll();
+      // Use dedicated customers API to get customers
+      const customerList = await customersApi.getAll(includeInactive);
       setCustomers(customerList);
       if (customerList.length === 0) {
-        setCustomersError('No active customers found. Please add customers first.');
+        setCustomersError(
+          includeInactive
+            ? 'No customers found. Please add customers first.'
+            : 'No active customers found. Try including inactive customers or add new ones.'
+        );
       }
     } catch (err) {
       console.error('Failed to load customers:', err);
@@ -235,7 +240,7 @@ export default function ServicePlanBuilder() {
   useEffect(() => {
     const init = async () => {
       // Load base data in parallel - don't load cars yet (will load when customer is selected)
-      await Promise.all([loadServicePlans(), loadCustomers(), loadShops()]);
+      await Promise.all([loadServicePlans(), loadCustomers(includeInactiveCustomers), loadShops()]);
       if (id) {
         await loadServicePlan(id);
         setViewMode('cars');
@@ -243,7 +248,13 @@ export default function ServicePlanBuilder() {
       setIsLoading(false);
     };
     init();
-  }, [id, loadServicePlans, loadServicePlan, loadCustomers, loadShops]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, loadServicePlans, loadServicePlan, loadShops]);
+
+  // Reload customers when includeInactiveCustomers changes
+  useEffect(() => {
+    loadCustomers(includeInactiveCustomers);
+  }, [includeInactiveCustomers, loadCustomers]);
 
   // ==========================================================================
   // ACTION HANDLERS
@@ -490,7 +501,7 @@ export default function ServicePlanBuilder() {
               </div>
               <button
                 type="button"
-                onClick={loadCustomers}
+                onClick={() => loadCustomers(includeInactiveCustomers)}
                 className="mt-2 text-sm text-rail-600 hover:text-rail-800 flex items-center gap-1"
               >
                 <ArrowPathIcon className="w-4 h-4" />
@@ -506,16 +517,27 @@ export default function ServicePlanBuilder() {
               <option value="">Select customer...</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name}
+                  {c.name}{!c.isActive ? ' (Inactive)' : ''}
                 </option>
               ))}
             </select>
           )}
-          {!isLoadingCustomers && !customersError && customers.length > 0 && (
-            <p className="text-xs text-steel-400 mt-1">
-              {customers.length} customer{customers.length !== 1 ? 's' : ''} available
-            </p>
-          )}
+          <div className="mt-2 flex items-center justify-between">
+            {!isLoadingCustomers && !customersError && customers.length > 0 && (
+              <p className="text-xs text-steel-400">
+                {customers.length} customer{customers.length !== 1 ? 's' : ''} available
+              </p>
+            )}
+            <label className="flex items-center gap-2 text-xs text-steel-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeInactiveCustomers}
+                onChange={(e) => setIncludeInactiveCustomers(e.target.checked)}
+                className="rounded border-steel-300 text-rail-600 focus:ring-rail-500"
+              />
+              Include inactive customers
+            </label>
+          </div>
         </div>
 
         <div>
