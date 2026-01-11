@@ -1689,18 +1689,47 @@ async function main() {
   // LEASE QUALIFICATION ENGINE DATA
   // ==========================================================================
 
-  // Create Customer master records
+  // Create Customer master records - extract unique customers from imported cars
+  console.log('\n👥 Creating customer records from car data...');
+
+  // Get all unique customer names from the imported cars
+  const uniqueCustomerNames = await prisma.car.findMany({
+    where: { companyId: company.id },
+    select: { customer: true },
+    distinct: ['customer'],
+  });
+
+  // Filter out empty customer names and get unique list
+  const customerNamesFromCars = uniqueCustomerNames
+    .map(c => c.customer?.trim())
+    .filter((name): name is string => !!name && name.length > 0);
+
+  // Use customers from cars if available, otherwise fall back to static list
+  const customerNamesToCreate = customerNamesFromCars.length > 0
+    ? customerNamesFromCars
+    : customers; // fallback to static list
+
+  console.log(`   Found ${customerNamesToCreate.length} unique customers to create`);
+
   const customerRecords = await Promise.all(
-    customers.map(async (name, index) => {
-      const code = name.replace(/\s+/g, '').substring(0, 4).toUpperCase();
-      return prisma.customer.create({
-        data: {
+    customerNamesToCreate.map(async (name, index) => {
+      const code = name.replace(/\s+/g, '').substring(0, 8).toUpperCase();
+      return prisma.customer.upsert({
+        where: {
+          // Use compound unique constraint: @@unique([code, companyId])
+          code_companyId: { code, companyId: company.id },
+        },
+        update: {
+          name,
+          isActive: true,
+        },
+        create: {
           id: uuidv4(),
           name,
           code,
           contactName: `Contact for ${name}`,
-          contactEmail: `contact@${code.toLowerCase()}.com`,
-          contactPhone: `(555) ${100 + index}-${1000 + index}`,
+          contactEmail: `contact@${code.toLowerCase().substring(0, 10)}@example.com`,
+          contactPhone: `(555) ${String(100 + (index % 900)).padStart(3, '0')}-${String(1000 + (index % 9000)).padStart(4, '0')}`,
           address: `${100 + index} Industrial Blvd, Houston, TX`,
           isActive: true,
           companyId: company.id,
@@ -1710,6 +1739,24 @@ async function main() {
   );
 
   console.log(`✓ Created ${customerRecords.length} customer records`);
+
+  // Update cars to link to customer IDs
+  // Note: updateMany doesn't support mode:'insensitive', so we match exact names
+  // Since we extracted names from the same car data, they should match exactly
+  console.log('   Linking cars to customer records...');
+  let linkedCount = 0;
+  for (const customer of customerRecords) {
+    const result = await prisma.car.updateMany({
+      where: {
+        companyId: company.id,
+        customer: customer.name, // Exact match - names came from this data
+        customerId: null, // Only update cars not already linked
+      },
+      data: { customerId: customer.id },
+    });
+    linkedCount += result.count;
+  }
+  console.log(`✓ Linked ${linkedCount} cars to customer records`);
 
   // Create Lease Contracts (upcoming releases within 6 months)
   // Note: 'now' is already declared at the top of the seed function
