@@ -674,13 +674,20 @@ function createTableHandler(tableName: string) {
       const now = new Date().toISOString();
       let count = 0;
 
+      // Tables that use 'addedAt' instead of 'createdAt'
+      const TABLES_WITH_ADDED_AT = new Set(['ServicePlanCar']);
+
       for (const item of options.data) {
         // Generate UUID if no id provided
         if (!item.id) {
           item.id = uuidv4();
         }
-        // Add timestamps
-        if (!item.createdAt) {
+        // Add timestamps - use correct column names based on table
+        if (TABLES_WITH_ADDED_AT.has(tableName)) {
+          if (!item.addedAt) {
+            item.addedAt = now;
+          }
+        } else if (!item.createdAt) {
           item.createdAt = now;
         }
         if (!item.updatedAt) {
