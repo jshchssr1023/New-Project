@@ -13,12 +13,10 @@ const ShopManagement = lazy(() => import('./pages/ShopManagement'));
 const ShopNetworks = lazy(() => import('./pages/ShopNetworks'));
 const CarsPage = lazy(() => import('./pages/CarsPage'));
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
-const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
 const ServicePlanBuilder = lazy(() => import('./pages/ServicePlanBuilder'));
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
-const RuleBuilder = lazy(() => import('./pages/RuleBuilder'));
 const ImportExport = lazy(() => import('./pages/ImportExport'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
@@ -99,11 +97,9 @@ export default function App() {
             <Route path="shop-networks" element={<ShopNetworks />} />
             <Route path="cars" element={<CarsPage />} />
             <Route path="planning" element={<PlanningGrid />} />
-            <Route path="car-flow" element={<CarFlowPlanning />} />
             <Route path="service-plans" element={<ServicePlanBuilder />} />
             <Route path="service-plans/:id" element={<ServicePlanBuilder />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
-            <Route path="rules" element={<RuleBuilder />} />
 
             {/* S&OP Planning Module Routes */}
             <Route path="sop-review" element={<SOPReviewDashboard />} />
