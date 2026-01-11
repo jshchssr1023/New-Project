@@ -181,7 +181,8 @@ export default function ServicePlanBuilder() {
 
   const loadAvailableCars = useCallback(async () => {
     try {
-      const response = await carsApi.getAll();
+      // Request all cars with a large page size to get the full list
+      const response = await carsApi.getAll({ pageSize: 10000 });
       setAvailableCars(response.data || []);
     } catch (err) {
       console.error('Failed to load cars:', err);
@@ -389,25 +390,29 @@ export default function ServicePlanBuilder() {
 
   const renderPlanSetup = () => (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-lg font-semibold text-steel-900 mb-4">Create Service Plan</h2>
+      <h2 className="text-lg font-semibold text-steel-900 mb-2">Create Customer Proposal</h2>
+      <p className="text-sm text-steel-500 mb-6">
+        Create a proposal with multiple service options for your customer to compare.
+        You'll select their cars, then create different scheduling options (e.g., "5 cars/week at 2 shops" vs "10 cars/week at 4 shops").
+      </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
           <label className="block text-sm font-medium text-steel-700 mb-1">
-            Plan Name *
+            Proposal Name *
           </label>
           <input
             type="text"
             value={createForm.name}
             onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
             className="w-full px-3 py-2 border border-steel-300 rounded-md focus:ring-rail-500 focus:border-rail-500"
-            placeholder="Q1 2026 Tank Car Service Plan"
+            placeholder="Q1 2026 Service Proposal"
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-steel-700 mb-1">
-            Customer
+            Customer *
           </label>
           <select
             value={createForm.customerId}
@@ -438,7 +443,7 @@ export default function ServicePlanBuilder() {
 
         <div>
           <label className="block text-sm font-medium text-steel-700 mb-1">
-            Cars per Month *
+            Estimated Cars per Month
           </label>
           <input
             type="number"
@@ -449,11 +454,12 @@ export default function ServicePlanBuilder() {
             }
             className="w-full px-3 py-2 border border-steel-300 rounded-md focus:ring-rail-500 focus:border-rail-500"
           />
+          <p className="text-xs text-steel-400 mt-1">Used to estimate total capacity needed</p>
         </div>
 
         <div>
           <label className="block text-sm font-medium text-steel-700 mb-1">
-            Start Date *
+            Planning Window Start
           </label>
           <div className="flex gap-2">
             <select
@@ -487,7 +493,7 @@ export default function ServicePlanBuilder() {
 
         <div>
           <label className="block text-sm font-medium text-steel-700 mb-1">
-            End Date *
+            Planning Window End
           </label>
           <div className="flex gap-2">
             <select
@@ -888,9 +894,9 @@ export default function ServicePlanBuilder() {
         {/* Header */}
         <div className="bg-white rounded-lg shadow p-4 flex justify-between items-center">
           <div>
-            <h2 className="text-lg font-semibold text-steel-900">Plan Options</h2>
+            <h2 className="text-lg font-semibold text-steel-900">Service Options</h2>
             <p className="text-sm text-steel-500">
-              Create different shop configurations for comparison
+              Create different options for the customer to compare (e.g., "5 cars/week at 2 shops" vs "10 cars/week at 4 shops")
             </p>
           </div>
           <button
@@ -898,7 +904,7 @@ export default function ServicePlanBuilder() {
             className="px-3 py-2 bg-rail-600 text-white rounded-md hover:bg-rail-700 flex items-center gap-2"
           >
             <PlusIcon className="w-4 h-4" />
-            Add Option
+            Create Option
           </button>
         </div>
 
@@ -1362,12 +1368,15 @@ function CreateOptionModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
         <div className="p-4 border-b border-steel-200 flex justify-between items-center">
-          <h3 className="text-lg font-semibold">Create Plan Option</h3>
+          <h3 className="text-lg font-semibold">Create Service Option</h3>
           <button onClick={onClose} className="text-steel-400 hover:text-steel-600">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
         <div className="p-4 space-y-4">
+          <p className="text-sm text-steel-500">
+            Create an option to present to the customer. After creating, you'll configure which shops handle the cars and when.
+          </p>
           <div>
             <label className="block text-sm font-medium text-steel-700 mb-1">
               Option Name *
@@ -1377,7 +1386,7 @@ function CreateOptionModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 border border-steel-300 rounded-md"
-              placeholder="Option A - All to ABC Rail"
+              placeholder="Option A - Fast Track (10 cars/week)"
             />
           </div>
           <div>
@@ -1389,7 +1398,7 @@ function CreateOptionModal({
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
               className="w-full px-3 py-2 border border-steel-300 rounded-md"
-              placeholder="Describe this option..."
+              placeholder="e.g., 10 cars per week across 4 shops, completed in 5 weeks"
             />
           </div>
         </div>
