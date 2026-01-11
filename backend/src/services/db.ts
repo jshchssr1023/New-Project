@@ -25,6 +25,7 @@ const ALLOWED_TABLES = new Set([
   'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
   // Service Plan Builder tables
   'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment',
+  'CapacityReservation', 'ServicePlanAuditEvent',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -330,22 +331,33 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
   ServicePlan: {
     company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
     customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
-    creator: { table: 'User', foreignKey: 'id', localKey: 'createdBy', type: 'belongsTo' },
+    creator: { table: 'User', foreignKey: 'id', localKey: 'createdById', type: 'belongsTo' },
     cars: { table: 'ServicePlanCar', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
     options: { table: 'PlanOption', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+    auditEvents: { table: 'ServicePlanAuditEvent', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
   },
   ServicePlanCar: {
     servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
     car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    assignedShop: { table: 'Shop', foreignKey: 'id', localKey: 'assignedShopId', type: 'belongsTo' },
+    optionAssignments: { table: 'PlanOptionAssignment', foreignKey: 'servicePlanCarId', localKey: 'id', type: 'hasMany' },
   },
   PlanOption: {
     servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
-    assignments: { table: 'PlanOptionAssignment', foreignKey: 'optionId', localKey: 'id', type: 'hasMany' },
+    assignments: { table: 'PlanOptionAssignment', foreignKey: 'planOptionId', localKey: 'id', type: 'hasMany' },
+    capacityReservations: { table: 'CapacityReservation', foreignKey: 'planOptionId', localKey: 'id', type: 'hasMany' },
   },
   PlanOptionAssignment: {
-    option: { table: 'PlanOption', foreignKey: 'id', localKey: 'optionId', type: 'belongsTo' },
-    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
+    servicePlanCar: { table: 'ServicePlanCar', foreignKey: 'id', localKey: 'servicePlanCarId', type: 'belongsTo' },
     shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  CapacityReservation: {
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  ServicePlanAuditEvent: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
   },
 };
 
@@ -917,6 +929,8 @@ export const prisma = {
   servicePlanCar: createTableHandler('ServicePlanCar'),
   planOption: createTableHandler('PlanOption'),
   planOptionAssignment: createTableHandler('PlanOptionAssignment'),
+  capacityReservation: createTableHandler('CapacityReservation'),
+  servicePlanAuditEvent: createTableHandler('ServicePlanAuditEvent'),
 
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),

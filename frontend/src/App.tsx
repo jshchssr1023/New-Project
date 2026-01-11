@@ -15,6 +15,8 @@ const CarsPage = lazy(() => import('./pages/CarsPage'));
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
 const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
 const ServicePlanBuilder = lazy(() => import('./pages/ServicePlanBuilder'));
+const ServicePlanConfirmation = lazy(() => import('./pages/ServicePlanConfirmation'));
+const ServicePlanReports = lazy(() => import('./pages/ServicePlanReports'));
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -102,6 +104,8 @@ export default function App() {
             <Route path="car-flow" element={<CarFlowPlanning />} />
             <Route path="service-plans" element={<ServicePlanBuilder />} />
             <Route path="service-plans/:id" element={<ServicePlanBuilder />} />
+            <Route path="service-plan-confirmation/:id" element={<ServicePlanConfirmation />} />
+            <Route path="service-plan-reports" element={<ServicePlanReports />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
             <Route path="rules" element={<RuleBuilder />} />
 
