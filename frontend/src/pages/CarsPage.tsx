@@ -416,7 +416,8 @@ export default function CarsPage() {
       await servicePlansApi.addCars(servicePlanId, carIds);
       showToast(`Added ${carIds.length} car(s) to service plan`, 'success');
       clearSelection();
-      navigate(`/service-plans/${servicePlanId}`);
+      // Navigate to the confirmation page which has the CarMatrix for month/year assignment
+      navigate(`/service-plan-confirmation/${servicePlanId}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to add cars to service plan';
       showToast(message, 'error');
