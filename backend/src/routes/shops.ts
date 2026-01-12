@@ -602,51 +602,76 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
 // Update shop
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
-  const {
-    name, code, location, city, state, region, network, servingRailroad,
-    capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
-    capabilities, certifications, preferredCustomers,
-    contactName, contactEmail, contactPhone, notes, isActive
-  } = req.body;
 
   try {
-    const result = await prisma.shop.updateMany({
+    // Verify shop exists and belongs to this company
+    const existingShop = await prisma.shop.findFirst({
       where: {
         id: req.params.id,
         companyId: req.user!.companyId,
       },
-      data: {
-        name,
-        code,
-        location,
-        city,
-        state,
-        region,
-        network,
-        servingRailroad,
-        capacity,
-        baseCostPerCar,
-        costMultiplier,
-        baseTurnTime,
-        turnTimeMultiplier,
-        capabilities: capabilities ? JSON.stringify(capabilities) : undefined,
-        certifications: certifications ? JSON.stringify(certifications) : undefined,
-        preferredCustomers: preferredCustomers ? JSON.stringify(preferredCustomers) : undefined,
-        contactName,
-        contactEmail,
-        contactPhone,
-        notes,
-        isActive,
-      },
     });
 
-    if (result.count === 0) {
+    if (!existingShop) {
       res.status(404).json({ message: 'Shop not found' });
       return;
     }
 
-    const updatedShop = await prisma.shop.findUnique({
+    // Build update data object - only include fields that are actually provided
+    const updateData: Record<string, any> = {};
+
+    // Basic fields - only set if provided (not undefined)
+    if (req.body.name !== undefined) updateData.name = req.body.name;
+    if (req.body.code !== undefined) updateData.code = req.body.code;
+    if (req.body.location !== undefined) updateData.location = req.body.location;
+    if (req.body.city !== undefined) updateData.city = req.body.city;
+    if (req.body.state !== undefined) updateData.state = req.body.state;
+    if (req.body.region !== undefined) updateData.region = req.body.region;
+    if (req.body.network !== undefined) updateData.network = req.body.network;
+    if (req.body.servingRailroad !== undefined) updateData.servingRailroad = req.body.servingRailroad;
+    if (req.body.capacity !== undefined) updateData.capacity = req.body.capacity;
+    if (req.body.baseCostPerCar !== undefined) updateData.baseCostPerCar = req.body.baseCostPerCar;
+    if (req.body.costMultiplier !== undefined) updateData.costMultiplier = req.body.costMultiplier;
+    if (req.body.baseTurnTime !== undefined) updateData.baseTurnTime = req.body.baseTurnTime;
+    if (req.body.turnTimeMultiplier !== undefined) updateData.turnTimeMultiplier = req.body.turnTimeMultiplier;
+    if (req.body.contactName !== undefined) updateData.contactName = req.body.contactName;
+    if (req.body.contactEmail !== undefined) updateData.contactEmail = req.body.contactEmail;
+    if (req.body.contactPhone !== undefined) updateData.contactPhone = req.body.contactPhone;
+    if (req.body.notes !== undefined) updateData.notes = req.body.notes;
+    if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
+
+    // JSON array fields - stringify if provided
+    if (req.body.capabilities !== undefined) {
+      updateData.capabilities = Array.isArray(req.body.capabilities)
+        ? JSON.stringify(req.body.capabilities)
+        : req.body.capabilities;
+    }
+    if (req.body.certifications !== undefined) {
+      updateData.certifications = Array.isArray(req.body.certifications)
+        ? JSON.stringify(req.body.certifications)
+        : req.body.certifications;
+    }
+    if (req.body.preferredCustomers !== undefined) {
+      updateData.preferredCustomers = Array.isArray(req.body.preferredCustomers)
+        ? JSON.stringify(req.body.preferredCustomers)
+        : req.body.preferredCustomers;
+    }
+
+    // Shop hierarchy and tier fields
+    if (req.body.parentShopId !== undefined) updateData.parentShopId = req.body.parentShopId || null;
+    if (req.body.isParent !== undefined) updateData.isParent = req.body.isParent;
+    if (req.body.isAitxInternal !== undefined) updateData.isAitxInternal = req.body.isAitxInternal;
+    if (req.body.networkTier !== undefined) updateData.networkTier = req.body.networkTier;
+    if (req.body.annualTargetVolume !== undefined) updateData.annualTargetVolume = req.body.annualTargetVolume;
+    if (req.body.laborRate !== undefined) updateData.laborRate = req.body.laborRate;
+    if (req.body.costIndex !== undefined) updateData.costIndex = req.body.costIndex;
+
+    logger.info('Updating shop:', { id: req.params.id, updateData });
+
+    // Use update() for single record updates
+    const updatedShop = await prisma.shop.update({
       where: { id: req.params.id },
+      data: updateData,
     });
 
     res.json(updatedShop);
