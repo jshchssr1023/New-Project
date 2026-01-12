@@ -149,7 +149,7 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
         source: 'manual',
         shopReason: shopReason || null,
         notes: notes || null,
-        createdById: req.user!.id,
+        committedById: req.user!.id,
       },
       include: {
         car: {
@@ -331,7 +331,7 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
             source: 'bulk',
             shopReason: assignment.shopReason || null,
             notes: assignment.notes || null,
-            createdById: req.user!.id,
+            committedById: req.user!.id,
           },
           include: {
             car: {
@@ -662,7 +662,7 @@ router.post('/sop-commitments', async (req: AuthRequest, res: Response) => {
         month,
         committedVolume,
         companyId: req.user!.companyId,
-        createdById: req.user!.id,
+        committedById: req.user!.id,
         updatedById: req.user!.id,
       },
       update: {
@@ -742,7 +742,7 @@ router.post('/sop-commitments/batch', async (req: AuthRequest, res: Response) =>
             month: c.month,
             committedVolume: c.committedVolume,
             companyId,
-            createdById: req.user!.id,
+            committedById: req.user!.id,
             updatedById: req.user!.id,
           },
           update: {

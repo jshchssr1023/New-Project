@@ -330,7 +330,7 @@ router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
             source: 'master_plan',
             estimatedCost: estimatedCost || null,
             notes: `Created from Plan: ${plan.name}`,
-            createdById: req.user!.id,
+            committedById: req.user!.id,
           },
         });
       }

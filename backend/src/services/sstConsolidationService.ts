@@ -121,7 +121,7 @@ export async function migratePlanAssignmentsToCarFlowPlan(
             source: 'migration',
             estimatedCost: assignment.estimatedCost,
             notes: assignment.notes || null,
-            createdById: userId,
+            committedById: userId,
           },
         });
 
