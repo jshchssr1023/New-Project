@@ -606,15 +606,29 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     name, code, location, city, state, region, network, servingRailroad,
     capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
     capabilities, certifications, preferredCustomers,
-    contactName, contactEmail, contactPhone, notes, isActive
+    contactName, contactEmail, contactPhone, notes, isActive,
+    // Shop hierarchy and tier fields
+    parentShopId, isParent, isAitxInternal, networkTier,
+    annualTargetVolume, laborRate, costIndex
   } = req.body;
 
   try {
-    const result = await prisma.shop.updateMany({
+    // Verify shop exists and belongs to this company
+    const existingShop = await prisma.shop.findFirst({
       where: {
         id: req.params.id,
         companyId: req.user!.companyId,
       },
+    });
+
+    if (!existingShop) {
+      res.status(404).json({ message: 'Shop not found' });
+      return;
+    }
+
+    // Use update() instead of updateMany() for single record updates
+    const updatedShop = await prisma.shop.update({
+      where: { id: req.params.id },
       data: {
         name,
         code,
@@ -637,16 +651,15 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
         contactPhone,
         notes,
         isActive,
+        // Shop hierarchy and tier fields
+        parentShopId: parentShopId || null,
+        isParent: isParent ?? existingShop.isParent,
+        isAitxInternal: isAitxInternal ?? existingShop.isAitxInternal,
+        networkTier: networkTier ?? existingShop.networkTier,
+        annualTargetVolume: annualTargetVolume ?? existingShop.annualTargetVolume,
+        laborRate: laborRate ?? existingShop.laborRate,
+        costIndex: costIndex ?? existingShop.costIndex,
       },
-    });
-
-    if (result.count === 0) {
-      res.status(404).json({ message: 'Shop not found' });
-      return;
-    }
-
-    const updatedShop = await prisma.shop.findUnique({
-      where: { id: req.params.id },
     });
 
     res.json(updatedShop);
