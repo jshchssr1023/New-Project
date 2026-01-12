@@ -847,3 +847,1052 @@ This schema design provides:
 | **Confirmed Assignments** | `RailcarScheduleEntry` | Deducts capacity, full work order tracking |
 | **Planned Forecasts** | `RailcarPlanEntry` | S&OP visibility without capacity deduction |
 | **S&OP Integration** | `SOPShopTarget` | Target vs. actual tracking per period |
+
+---
+
+## 11. Core Business Logic Rules
+
+### 11.1 Railcar Assignment & Capacity Deduction
+
+When a railcar is **confirmed** for a shop visit, the system must:
+
+```
+PROCEDURE ConfirmRailcarAssignment(carId, shopId, year, month, workType, estimatedDays)
+
+  // Step 1: Validate inputs
+  1. Verify car exists and is not already scheduled for same shop/month
+  2. Verify shop exists and is active
+  3. Verify shop tier supports requested workType (via ShopTier capabilities)
+  4. Verify shop has required certifications for car type (via ShopCapabilityProfile)
+
+  // Step 2: Check capacity availability
+  5. GET monthlyCapacity = ShopMonthlyCapacity WHERE shopId, year, month
+  6. IF monthlyCapacity does not exist:
+       CREATE monthlyCapacity with baseCapacity = shop.capacity
+  7. CALCULATE effectiveCapacity = monthlyCapacity.adjustedCapacity ?? monthlyCapacity.baseCapacity
+  8. CALCULATE available = effectiveCapacity - monthlyCapacity.confirmedCount
+
+  // Step 3: Capacity validation (with planned visibility)
+  9. IF available <= 0:
+       RETURN ERROR "Shop is at capacity for {month}/{year}"
+  10. CALCULATE projectedTotal = monthlyCapacity.confirmedCount + monthlyCapacity.plannedCount + 1
+  11. IF projectedTotal > effectiveCapacity:
+       WARN "Confirming this will exceed planned capacity. {projectedTotal} vs {effectiveCapacity}"
+
+  // Step 4: Create schedule entry (deducts capacity)
+  12. CREATE RailcarScheduleEntry {
+        carId, shopId, scheduledYear: year, scheduledMonth: month,
+        workType, estimatedDays, status: "SCHEDULED",
+        confirmedAt: NOW(), confirmedBy: currentUser
+      }
+
+  // Step 5: Update capacity counters (CRITICAL - capacity deduction)
+  13. UPDATE ShopMonthlyCapacity SET
+        confirmedCount = confirmedCount + 1,
+        confirmedDays = confirmedDays + estimatedDays,
+        availableCapacity = effectiveCapacity - (confirmedCount + 1),
+        utilizationPercent = ((confirmedCount + 1) / baseCapacity) * 100,
+        totalCommitted = (confirmedCount + 1) + plannedCount,
+        projectedUtilization = (totalCommitted / baseCapacity) * 100,
+        isOverCapacity = (confirmedCount + 1) > baseCapacity,
+        isAtRisk = totalCommitted > baseCapacity,
+        lastCalculatedAt = NOW()
+      WHERE shopId, year, month
+
+  // Step 6: If plan entry existed, convert it
+  14. IF RailcarPlanEntry exists for (carId, shopId, year, month):
+        UPDATE RailcarPlanEntry SET
+          status = "CONVERTED",
+          convertedToScheduleId = newScheduleEntry.id,
+          convertedAt = NOW()
+        UPDATE ShopMonthlyCapacity SET
+          plannedCount = plannedCount - 1
+          // Recalculate projectedUtilization
+
+  // Step 7: Update hierarchy roll-up (if child shop)
+  15. CALL RecalculateParentCapacity(shopId, year, month)
+
+  // Step 8: Check S&OP target progress
+  16. UPDATE SOPShopTarget SET
+        actualCarsProcessed = (SELECT COUNT FROM RailcarScheduleEntry
+                               WHERE status IN ('COMPLETE') AND shopId, year, month)
+      WHERE shopId, year, month
+
+  // Step 9: Audit trail
+  17. CREATE AuditLog {
+        action: "RAILCAR_CONFIRMED",
+        entityType: "RailcarScheduleEntry",
+        entityId: newScheduleEntry.id,
+        changes: { carId, shopId, month, year, workType },
+        userId: currentUser
+      }
+
+  RETURN SUCCESS with scheduleEntry.id
+END PROCEDURE
+```
+
+### 11.2 Planned Entry Creation (No Capacity Deduction)
+
+```
+PROCEDURE CreatePlannedEntry(carId?, shopId, year, month, workType, source, count = 1)
+
+  // Step 1: Validate
+  1. Verify shop exists and is active
+  2. IF carId provided, verify car exists
+
+  // Step 2: Get or create monthly capacity record
+  3. GET monthlyCapacity = ShopMonthlyCapacity WHERE shopId, year, month
+  4. IF not exists: CREATE with baseCapacity from shop
+
+  // Step 3: Create plan entry (NO capacity deduction)
+  5. CREATE RailcarPlanEntry {
+        carId: carId ?? NULL,  // Can be null for bulk/generic plans
+        plannedCarCount: carId ? 1 : count,
+        shopId, plannedYear: year, plannedMonth: month,
+        workType, planSource: source,
+        confidence: "MEDIUM", probabilityPercent: 50,
+        status: "PLANNED"
+      }
+
+  // Step 4: Update planned counters (visibility only)
+  6. UPDATE ShopMonthlyCapacity SET
+        plannedCount = plannedCount + (carId ? 1 : count),
+        totalCommitted = confirmedCount + (plannedCount + count),
+        projectedUtilization = (totalCommitted / baseCapacity) * 100,
+        isAtRisk = totalCommitted > baseCapacity
+      WHERE shopId, year, month
+
+  // Step 5: Update hierarchy for visibility
+  7. CALL RecalculateParentPlanned(shopId, year, month)
+
+  RETURN planEntry.id
+END PROCEDURE
+```
+
+### 11.3 Capacity Cancellation/Release
+
+```
+PROCEDURE CancelScheduleEntry(scheduleEntryId, reason)
+
+  // Step 1: Get entry details
+  1. GET entry = RailcarScheduleEntry WHERE id = scheduleEntryId
+  2. IF entry.status IN ('COMPLETE', 'CANCELLED'):
+       RETURN ERROR "Cannot cancel completed/cancelled entry"
+
+  // Step 2: Update entry status
+  3. UPDATE RailcarScheduleEntry SET
+        status = "CANCELLED",
+        notes = notes + " | Cancelled: " + reason
+      WHERE id = scheduleEntryId
+
+  // Step 3: Release capacity (CRITICAL - reverse deduction)
+  4. UPDATE ShopMonthlyCapacity SET
+        confirmedCount = confirmedCount - 1,
+        confirmedDays = confirmedDays - entry.estimatedDays,
+        availableCapacity = availableCapacity + 1,
+        utilizationPercent = ((confirmedCount - 1) / baseCapacity) * 100,
+        totalCommitted = totalCommitted - 1,
+        isOverCapacity = (confirmedCount - 1) > baseCapacity
+      WHERE shopId = entry.shopId, year = entry.scheduledYear, month = entry.scheduledMonth
+
+  // Step 4: Update hierarchy
+  5. CALL RecalculateParentCapacity(entry.shopId, entry.scheduledYear, entry.scheduledMonth)
+
+  // Step 5: Audit
+  6. CREATE AuditLog { action: "SCHEDULE_CANCELLED", ... }
+
+  RETURN SUCCESS
+END PROCEDURE
+```
+
+---
+
+## 12. Hierarchy Roll-Up Logic
+
+### 12.1 Capacity Aggregation from Children to Parent
+
+```
+PROCEDURE RecalculateParentCapacity(childShopId, year, month)
+
+  // Step 1: Find all parent relationships
+  1. GET hierarchies = ShopHierarchy WHERE
+       childShopId = childShopId AND
+       isActive = TRUE AND
+       includeInCapacityRollup = TRUE AND
+       effectiveFrom <= NOW() AND (effectiveTo IS NULL OR effectiveTo >= NOW())
+
+  // Step 2: For each parent, recalculate
+  2. FOR EACH hierarchy IN hierarchies:
+
+     parentShopId = hierarchy.parentShopId
+     sharePercent = hierarchy.capacitySharePercent / 100.0
+
+     // Get child capacity for this period
+     childCapacity = ShopMonthlyCapacity WHERE shopId = childShopId, year, month
+
+     // Get or create parent monthly capacity
+     parentCapacity = ShopMonthlyCapacity WHERE shopId = parentShopId, year, month
+     IF not exists: CREATE parentCapacity
+
+     // Sum all children's capacity for this parent
+     allChildRelationships = ShopHierarchy WHERE
+       parentShopId = parentShopId AND includeInCapacityRollup = TRUE AND isActive = TRUE
+
+     childrenConfirmedTotal = 0
+     childrenPlannedTotal = 0
+     childrenBaseTotal = 0
+
+     FOR EACH childRel IN allChildRelationships:
+       childCap = ShopMonthlyCapacity WHERE shopId = childRel.childShopId, year, month
+       IF childCap exists:
+         shareMultiplier = childRel.capacitySharePercent / 100.0
+         childrenConfirmedTotal += childCap.confirmedCount * shareMultiplier
+         childrenPlannedTotal += childCap.plannedCount * shareMultiplier
+         childrenBaseTotal += childCap.baseCapacity * shareMultiplier
+
+     // Update parent with network totals
+     UPDATE ShopMonthlyCapacity SET
+       childrenConfirmed = ROUND(childrenConfirmedTotal),
+       childrenPlanned = ROUND(childrenPlannedTotal),
+       networkTotalCapacity = baseCapacity + ROUND(childrenBaseTotal),
+       networkAvailable = availableCapacity + ROUND(childrenBaseTotal - childrenConfirmedTotal)
+     WHERE shopId = parentShopId, year, month
+
+  // Step 3: Recursively update grandparents
+  3. FOR EACH hierarchy IN hierarchies:
+       parentHierarchies = ShopHierarchy WHERE childShopId = hierarchy.parentShopId
+       IF parentHierarchies exists:
+         CALL RecalculateParentCapacity(hierarchy.parentShopId, year, month)
+
+END PROCEDURE
+```
+
+### 12.2 Network Capacity View Query
+
+```sql
+-- Get network-wide capacity view for a parent shop
+WITH RECURSIVE ShopTree AS (
+  -- Base: the parent shop
+  SELECT
+    s.id, s.name, s.code, 0 AS depth,
+    s.id AS rootId,
+    100.0 AS effectiveSharePercent
+  FROM Shop s
+  WHERE s.id = :parentShopId
+
+  UNION ALL
+
+  -- Recursive: all children
+  SELECT
+    child.id, child.name, child.code, st.depth + 1,
+    st.rootId,
+    st.effectiveSharePercent * (h.capacitySharePercent / 100.0)
+  FROM ShopTree st
+  JOIN ShopHierarchy h ON h.parentShopId = st.id
+  JOIN Shop child ON child.id = h.childShopId
+  WHERE h.isActive = TRUE
+    AND h.includeInCapacityRollup = TRUE
+    AND h.effectiveFrom <= CURRENT_DATE
+    AND (h.effectiveTo IS NULL OR h.effectiveTo >= CURRENT_DATE)
+)
+SELECT
+  st.id,
+  st.name,
+  st.code,
+  st.depth,
+  st.effectiveSharePercent,
+  smc.baseCapacity,
+  smc.confirmedCount,
+  smc.plannedCount,
+  smc.availableCapacity,
+  ROUND(smc.baseCapacity * st.effectiveSharePercent / 100) AS contributedCapacity,
+  ROUND(smc.confirmedCount * st.effectiveSharePercent / 100) AS contributedConfirmed,
+  ROUND(smc.availableCapacity * st.effectiveSharePercent / 100) AS contributedAvailable
+FROM ShopTree st
+LEFT JOIN ShopMonthlyCapacity smc ON smc.shopId = st.id
+  AND smc.year = :year AND smc.month = :month
+ORDER BY st.depth, st.name;
+```
+
+---
+
+## 13. Tier-Based Routing & Capability Matching
+
+### 13.1 Work Type to Tier Matching
+
+```
+FUNCTION GetEligibleShops(carId, workType, region?, preferredNetworkId?)
+
+  // Step 1: Determine required capabilities for work type
+  1. CASE workType:
+       "QUAL" | "QUALIFICATION" → requiredCaps = { canPerformTankRequalification: true, canPerformHydroTesting: true }
+       "REPAIR_HEAVY" → requiredCaps = { canPerformHeavyRepair: true, canPerformWelding: true }
+       "REPAIR_LIGHT" → requiredCaps = { canPerformRepairs: true }
+       "WHEEL" → requiredCaps = { canPerformWheelWork: true }
+       "PM" → requiredCaps = { canPerformPreventiveMaint: true }
+       "RULE88B" → requiredCaps = { canPerformRule88B: true }
+       "LINING" → requiredCaps = { canPerformLiningWork: true }
+       DEFAULT → requiredCaps = {}
+
+  // Step 2: Get car details for validation
+  2. GET car = Car WHERE id = carId
+  3. carRequirements = {
+       assetClass: car.carType,
+       commodity: car.commodity,
+       isHazmat: car.isHazmat,
+       customerId: car.customerId
+     }
+
+  // Step 3: Find matching tiers
+  4. matchingTiers = SELECT * FROM ShopTier WHERE
+       isActive = TRUE AND
+       (requiredCaps fields all TRUE) AND
+       companyId = currentCompanyId
+     ORDER BY routingPriority ASC
+
+  // Step 4: Find shops with matching tiers and capabilities
+  5. eligibleShops = SELECT s.*, t.tierLevel, t.name as tierName
+     FROM Shop s
+     JOIN ShopTier t ON s.tierId = t.id
+     LEFT JOIN ShopCapabilityProfile cp ON cp.shopId = s.id
+     WHERE
+       s.isActive = TRUE AND
+       s.tierId IN (matchingTiers.ids) AND
+       (region IS NULL OR s.region = region) AND
+       (preferredNetworkId IS NULL OR s.networkId = preferredNetworkId) AND
+       -- Capability profile validation
+       (cp.id IS NULL OR (
+         carRequirements.assetClass IN (JSON_PARSE(cp.allowedAssetClasses)) AND
+         carRequirements.customerId NOT IN (JSON_PARSE(cp.excludedCustomers))
+       ))
+     ORDER BY
+       t.routingPriority ASC,
+       s.networkTier ASC,
+       s.costIndex ASC
+
+  // Step 5: Check capacity availability for each
+  6. FOR EACH shop IN eligibleShops:
+       monthlyCapacity = GetMonthlyCapacity(shop.id, targetYear, targetMonth)
+       shop.availableCapacity = monthlyCapacity.availableCapacity
+       shop.projectedUtilization = monthlyCapacity.projectedUtilization
+       shop.canAccept = monthlyCapacity.availableCapacity > 0
+
+  RETURN eligibleShops filtered by canAccept = TRUE
+END FUNCTION
+```
+
+### 13.2 Tier Escalation Logic
+
+```
+PROCEDURE EscalateWorkToHigherTier(scheduleEntryId, reason)
+
+  // Step 1: Get current assignment
+  1. GET entry = RailcarScheduleEntry WHERE id = scheduleEntryId
+  2. GET currentShop = Shop WHERE id = entry.shopId
+  3. GET currentTier = ShopTier WHERE id = currentShop.tierId
+
+  // Step 2: Find escalation targets
+  4. escalationTierCodes = JSON_PARSE(currentTier.canEscalateTo)
+  5. IF escalationTierCodes IS EMPTY:
+       RETURN ERROR "No escalation path defined for tier {currentTier.code}"
+
+  // Step 3: Find available shops in higher tiers
+  6. escalationShops = SELECT s.* FROM Shop s
+       JOIN ShopTier t ON s.tierId = t.id
+       WHERE t.code IN (escalationTierCodes)
+         AND s.isActive = TRUE
+         AND s.region = currentShop.region  // Prefer same region
+       ORDER BY t.tierLevel ASC, s.costIndex ASC
+
+  // Step 4: Check capacity and create new assignment
+  7. FOR EACH targetShop IN escalationShops:
+       capacity = GetMonthlyCapacity(targetShop.id, entry.scheduledYear, entry.scheduledMonth)
+       IF capacity.availableCapacity > 0:
+         // Cancel original
+         CALL CancelScheduleEntry(entry.id, "Escalated to " + targetShop.code)
+         // Create new at higher tier
+         newEntry = CALL ConfirmRailcarAssignment(
+           entry.carId, targetShop.id, entry.scheduledYear, entry.scheduledMonth,
+           entry.workType, entry.estimatedDays
+         )
+         newEntry.notes = "Escalated from " + currentShop.code + ": " + reason
+         RETURN newEntry
+
+  RETURN ERROR "No capacity available in escalation tier shops"
+END PROCEDURE
+```
+
+---
+
+## 14. S&OP Target Integration
+
+### 14.1 Target Setting from S&OP Process
+
+```
+PROCEDURE SetSOPTargets(shopId, year, month, targets)
+
+  // Step 1: Validate inputs
+  1. Verify shop exists
+  2. Validate targets object has required fields
+
+  // Step 2: Create or update SOPShopTarget
+  3. UPSERT SOPShopTarget {
+       shopId, year, month,
+       targetCarsProcessed: targets.carsProcessed,
+       targetQualifications: targets.qualifications,
+       targetRepairs: targets.repairs,
+       targetBacklogEnd: targets.backlogGoal,
+       backlogReductionGoal: targets.backlogReduction,
+       targetTurnTimeDays: targets.turnTime,
+       targetOnTimePercent: targets.onTimeTarget,
+       fleetAvailabilityTarget: targets.fleetAvailability,
+       planVersion: targets.planVersion,
+       approvedBy: currentUser,
+       approvedAt: NOW()
+     }
+
+  // Step 3: Sync to ShopMonthlyCapacity for quick access
+  4. UPDATE ShopMonthlyCapacity SET
+       sopTargetCount = targets.carsProcessed,
+       baseCapacity = GREATEST(baseCapacity, targets.carsProcessed)  // Ensure capacity >= target
+     WHERE shopId, year, month
+
+  // Step 4: Create planned entries for target gap
+  5. currentConfirmed = ShopMonthlyCapacity.confirmedCount
+  6. gap = targets.carsProcessed - currentConfirmed
+  7. IF gap > 0:
+       CREATE RailcarPlanEntry {
+         carId: NULL,  // Generic volume
+         plannedCarCount: gap,
+         shopId, plannedYear: year, plannedMonth: month,
+         workType: "MIXED",
+         planSource: "SOP",
+         planSourceId: sopTarget.id,
+         planSourceName: "S&OP Plan " + targets.planVersion,
+         confidence: "COMMITTED",
+         probabilityPercent: 90
+       }
+       UPDATE ShopMonthlyCapacity SET
+         plannedCount = plannedCount + gap
+
+  // Step 5: Check for target conflicts
+  8. IF targets.carsProcessed > shop.capacity * 1.1:
+       WARN "S&OP target exceeds shop capacity by >10%"
+       CREATE Notification for shop manager
+
+  RETURN sopTarget.id
+END PROCEDURE
+```
+
+### 14.2 S&OP Progress Tracking
+
+```
+PROCEDURE UpdateSOPProgress(shopId, year, month)
+
+  // Step 1: Get current actuals
+  1. completedCount = SELECT COUNT(*) FROM RailcarScheduleEntry
+       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+         AND status = 'COMPLETE'
+
+  2. qualCount = SELECT COUNT(*) FROM RailcarScheduleEntry
+       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+         AND status = 'COMPLETE' AND workType = 'QUAL'
+
+  3. repairCount = SELECT COUNT(*) FROM RailcarScheduleEntry
+       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+         AND status = 'COMPLETE' AND workType IN ('REPAIR', 'REPAIR_HEAVY', 'REPAIR_LIGHT')
+
+  4. avgTurnTime = SELECT AVG(actualDays) FROM RailcarScheduleEntry
+       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+         AND status = 'COMPLETE' AND actualDays IS NOT NULL
+
+  5. onTimeCount = SELECT COUNT(*) FROM RailcarScheduleEntry
+       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+         AND status = 'COMPLETE'
+         AND (dueDate IS NULL OR actualCompletionDate <= dueDate)
+
+  // Step 2: Calculate performance metrics
+  6. onTimePercent = (onTimeCount / completedCount) * 100 IF completedCount > 0 ELSE 0
+
+  // Step 3: Update SOPShopTarget
+  7. GET target = SOPShopTarget WHERE shopId, year, month
+  8. IF target exists:
+       UPDATE SOPShopTarget SET
+         actualCarsProcessed = completedCount,
+         actualQualifications = qualCount,
+         actualRepairs = repairCount,
+         actualTurnTimeDays = avgTurnTime,
+         actualOnTimePercent = onTimePercent,
+         isOnTrack = (completedCount >= target.targetCarsProcessed * (dayOfMonth / daysInMonth)),
+         riskLevel = CASE
+           WHEN completedCount < target.targetCarsProcessed * 0.5 THEN 'HIGH'
+           WHEN completedCount < target.targetCarsProcessed * 0.75 THEN 'MEDIUM'
+           WHEN completedCount < target.targetCarsProcessed * 0.9 THEN 'LOW'
+           ELSE 'NONE'
+         END
+       WHERE shopId, year, month
+
+  // Step 4: Update monthly capacity S&OP progress
+  9. UPDATE ShopMonthlyCapacity SET
+       sopTargetProgress = (completedCount / sopTargetCount) * 100
+     WHERE shopId, year, month AND sopTargetCount > 0
+
+  RETURN { completedCount, target.targetCarsProcessed, isOnTrack: target.isOnTrack }
+END PROCEDURE
+```
+
+### 14.3 S&OP Warning/Alert Generation
+
+```
+PROCEDURE CheckSOPAlerts(shopId, year, month)
+
+  alerts = []
+
+  // Step 1: Get data
+  1. GET target = SOPShopTarget WHERE shopId, year, month
+  2. GET capacity = ShopMonthlyCapacity WHERE shopId, year, month
+  3. GET shop = Shop WHERE id = shopId
+
+  // Step 2: Check planned vs target
+  4. IF capacity.totalCommitted > target.targetCarsProcessed * 1.2:
+       alerts.push({
+         level: "WARNING",
+         type: "OVER_TARGET",
+         message: "Planned load ({capacity.totalCommitted}) exceeds S&OP target ({target.targetCarsProcessed}) by >20%"
+       })
+
+  // Step 3: Check under-commitment
+  5. IF capacity.totalCommitted < target.targetCarsProcessed * 0.7 AND daysRemainingInMonth > 10:
+       alerts.push({
+         level: "WARNING",
+         type: "UNDER_COMMITTED",
+         message: "Only {capacity.totalCommitted} cars planned/confirmed vs target of {target.targetCarsProcessed}"
+       })
+
+  // Step 4: Check capacity risk
+  6. IF capacity.projectedUtilization > 100:
+       alerts.push({
+         level: "CRITICAL",
+         type: "OVER_CAPACITY",
+         message: "Projected utilization {capacity.projectedUtilization}% exceeds capacity"
+       })
+
+  // Step 5: Check progress pace
+  7. expectedProgress = (dayOfMonth / daysInMonth) * target.targetCarsProcessed
+  8. IF target.actualCarsProcessed < expectedProgress * 0.8:
+       alerts.push({
+         level: "HIGH",
+         type: "BEHIND_PACE",
+         message: "Completed {target.actualCarsProcessed} vs expected {expectedProgress} at this point in month"
+       })
+
+  // Step 6: Check turn time target
+  9. IF target.actualTurnTimeDays > target.targetTurnTimeDays * 1.25:
+       alerts.push({
+         level: "MEDIUM",
+         type: "TURN_TIME",
+         message: "Actual turn time {target.actualTurnTimeDays}d exceeds target {target.targetTurnTimeDays}d"
+       })
+
+  RETURN alerts
+END PROCEDURE
+```
+
+---
+
+## 15. UI Component Recommendations
+
+### 15.1 Shop Hierarchy Tree View
+
+```tsx
+// Component: ShopHierarchyTree.tsx
+interface ShopHierarchyTreeProps {
+  rootShopId?: string;  // If null, show all root shops
+  showCapacity?: boolean;
+  onShopSelect?: (shopId: string) => void;
+}
+
+// Features:
+// - Expandable/collapsible tree structure
+// - Visual indicators for tier (color-coded badges: Tier 1 = green, Tier 2 = yellow, Tier 3 = blue)
+// - Capacity bars showing confirmed/planned/available
+// - Drag-and-drop for reordering hierarchy (admin only)
+// - Quick actions: Add child, Edit, View capacity
+
+// Visual Structure:
+// ├── 🏭 Trinity Network (TIER1) [▓▓▓▓▓▓▓░░░ 72%]
+// │   ├── 🔧 Trinity Houston (TIER1) [▓▓▓▓▓▓▓▓░░ 85%]
+// │   ├── 🔧 Trinity Dallas (TIER2) [▓▓▓▓▓░░░░░ 52%]
+// │   │   └── 🚐 Trinity Dallas Mobile (TIER3) [▓▓▓░░░░░░░ 30%]
+// │   └── 🔧 Trinity San Antonio (TIER2) [▓▓▓▓▓▓░░░░ 60%]
+// └── 🏭 Eagle Railcar Network (TIER1) [▓▓▓▓▓▓▓▓▓░ 90%]
+```
+
+### 15.2 Monthly Capacity Dashboard
+
+```tsx
+// Component: ShopCapacityDashboard.tsx
+
+// Layout:
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  Shop: Trinity Houston          Tier: 1 (Heavy/Qual)    Jan 2024   │
+// ├─────────────────────────────────────────────────────────────────────┤
+// │  CAPACITY GAUGE                    │  S&OP TARGET PROGRESS          │
+// │  ┌────────────────────┐            │  Target: 45 cars               │
+// │  │   ████████████░░░  │ 85%        │  Completed: 32 cars (71%)      │
+// │  │   42/50 confirmed  │            │  ████████████████░░░░░         │
+// │  └────────────────────┘            │  Status: ✅ On Track           │
+// │                                    │                                │
+// │  Planned: +8 (visibility)          │  Turn Time: 12.5d (target: 14) │
+// │  Total Committed: 50 (100%)        │  On-Time: 94% (target: 90%)    │
+// ├────────────────────────────────────┴────────────────────────────────┤
+// │  12-MONTH CAPACITY TIMELINE                                         │
+// │  Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec        │
+// │  ███  ███  ██░  ██░  █░░  █░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░        │
+// │  85%  78%  65%  60%  45%  40%  --   --   --   --   --   --          │
+// │  ▲ Current                                                          │
+// ├─────────────────────────────────────────────────────────────────────┤
+// │  CAPACITY BY WORK TYPE                                              │
+// │  Qualifications: ████████░░ 8/10   Repairs: ██████████ 25/25        │
+// │  PM Work:        ████░░░░░░ 4/10   Other:   █████░░░░░ 5/10         │
+// └─────────────────────────────────────────────────────────────────────┘
+
+// Color Legend:
+// - Green (▓): Confirmed capacity used
+// - Yellow (░): Planned/forecasted (no deduction)
+// - Red border: Over capacity warning
+// - Gray: Available capacity
+```
+
+### 15.3 Railcar Assignment Wizard
+
+```tsx
+// Component: RailcarAssignmentWizard.tsx
+
+// Step 1: Select Railcar(s)
+// - Search by car number, customer, shopping status
+// - Bulk select from filtered list
+// - Show car details: type, commodity, qual dates, current location
+
+// Step 2: Specify Work Scope
+// - Work type dropdown (Qual, Repair, PM, etc.)
+// - AAR defect code multi-select
+// - Estimated days/labor hours
+// - Due date (auto-populated from qual expiration if applicable)
+
+// Step 3: Find Eligible Shops
+// - Auto-filtered based on:
+//   - Tier capabilities matching work type
+//   - Car type compatibility
+//   - Customer restrictions
+//   - Available capacity for target month
+// - Sortable by: distance, cost, capacity, tier, network preference
+// - Visual capacity indicator per shop
+
+// Step 4: Confirm Assignment
+// - Show capacity impact preview
+// - Warning if exceeding planned load
+// - Option to create as Planned (no deduction) vs Confirmed (deducts)
+// - Routing instructions input
+
+// Step 5: Summary & Submit
+// - Review all details
+// - Create schedule entry + update capacity
+// - Generate routing document (optional)
+```
+
+### 15.4 Network Capacity Roll-Up View
+
+```tsx
+// Component: NetworkCapacityRollup.tsx
+
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  NETWORK: Trinity Railcar Services          Period: Q1 2024        │
+// ├─────────────────────────────────────────────────────────────────────┤
+// │                                                                     │
+// │  NETWORK TOTALS                                                     │
+// │  ┌───────────────────────────────────────────────────────────────┐ │
+// │  │  Total Capacity: 180 cars/month                               │ │
+// │  │  Confirmed: 142 (79%)  Planned: +28  Available: 38            │ │
+// │  │  S&OP Target: 165      Progress: 86%                          │ │
+// │  └───────────────────────────────────────────────────────────────┘ │
+// │                                                                     │
+// │  SHOP BREAKDOWN                            Jan    Feb    Mar       │
+// │  ─────────────────────────────────────────────────────────────────  │
+// │  Trinity Houston (T1)     Cap: 50         42     38     35        │
+// │    └─ Contribution: 100%                  ▓▓▓▓▓▓ ▓▓▓▓▓░ ▓▓▓▓░░    │
+// │                                                                     │
+// │  Trinity Dallas (T2)      Cap: 40         35     32     28        │
+// │    └─ Contribution: 100%                  ▓▓▓▓▓▓ ▓▓▓▓▓░ ▓▓▓▓░░    │
+// │    └─ Dallas Mobile (T3)  Cap: 15         8      10     12        │
+// │       └─ Contribution: 50%                ▓▓▓░░░ ▓▓▓▓░░ ▓▓▓▓▓░    │
+// │                                                                     │
+// │  Trinity San Antonio (T2) Cap: 35         28     25     22        │
+// │    └─ Contribution: 100%                  ▓▓▓▓▓░ ▓▓▓▓░░ ▓▓▓░░░    │
+// │                                                                     │
+// │  External Overflow (T3)   Cap: 40         29     20     15        │
+// │    └─ Contribution: 75%                   ▓▓▓▓░░ ▓▓▓░░░ ▓▓░░░░    │
+// │                                                                     │
+// └─────────────────────────────────────────────────────────────────────┘
+```
+
+### 15.5 S&OP Integration Dashboard
+
+```tsx
+// Component: SOPDashboard.tsx
+
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  S&OP PERFORMANCE DASHBOARD              January 2024              │
+// ├──────────────────────────┬──────────────────────────────────────────┤
+// │  NETWORK SUMMARY         │  ALERTS & ACTIONS                       │
+// │  ────────────────────    │  ─────────────────                      │
+// │  Target: 450 cars        │  ⚠️ Trinity Houston over capacity       │
+// │  Confirmed: 380 (84%)    │     Projected 52/50 for Feb             │
+// │  Completed: 285 (63%)    │                                         │
+// │  On Track: ✅ Yes        │  ⚠️ Eagle Dallas behind pace            │
+// │                          │     12 completed vs 18 expected         │
+// │  Fleet Availability      │                                         │
+// │  Target: 95%             │  ℹ️ 3P commitment gap: 15 cars          │
+// │  Actual: 93.2%           │     Need to fill by month-end           │
+// │                          │                                         │
+// ├──────────────────────────┴──────────────────────────────────────────┤
+// │  TARGET vs ACTUAL BY SHOP                                           │
+// │                                                                     │
+// │  Shop              Target  Confirmed  Completed  Status  Gap       │
+// │  ──────────────────────────────────────────────────────────────    │
+// │  Trinity Houston     45      42         32       ✅      +3        │
+// │  Trinity Dallas      40      38         28       ✅      +2        │
+// │  Eagle Railcar       50      48         30       ⚠️      -8        │
+// │  GATX Mobile         25      22         18       ✅      +3        │
+// │  3P Network          40      35         22       ⚠️      -5        │
+// │                                                                     │
+// ├─────────────────────────────────────────────────────────────────────┤
+// │  TREND CHART: Last 6 Months                                         │
+// │                                                                     │
+// │  500│         ┌─Target                                              │
+// │     │    ╱────┘                                                     │
+// │  400│   ╱  ╱──Actual                                                │
+// │     │  ╱──╱                                                         │
+// │  300│ ╱                                                             │
+// │     └──────────────────────────────────────────                     │
+// │       Aug  Sep  Oct  Nov  Dec  Jan                                  │
+// └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 16. Rail Industry Best Practices & Integration Points
+
+### 16.1 Railinc/UMLER Integration
+
+```typescript
+// Integration with AAR's Railinc UMLER database for car master data
+
+interface UMLERIntegration {
+  // Sync car master data from UMLER
+  syncCarMaster(carInitials: string, carNumber: string): Promise<UMLERCarData>;
+
+  // Validate car exists and get current status
+  validateCar(railcarNumber: string): Promise<{
+    exists: boolean;
+    currentLocation?: string;
+    lastMovement?: Date;
+    qualificationDates?: QualDates;
+  }>;
+
+  // Get qualification requirements by DOT spec
+  getQualRequirements(dotSpec: string): Promise<{
+    testInterval: number;  // months
+    requiredTests: string[];
+    certifications: string[];
+  }>;
+}
+
+// Scheduled sync job
+SCHEDULE DAILY AT 02:00:
+  FOR EACH car IN Car WHERE lastUMLERSync < (NOW - 7 DAYS):
+    umlerData = UMLERIntegration.syncCarMaster(car.carInitials, car.carNumber)
+    UPDATE Car SET
+      qualificationDates = umlerData.qualDates,
+      dotSpec = umlerData.dotSpec,
+      lastUMLERSync = NOW()
+```
+
+### 16.2 Qualification Alert System
+
+```typescript
+// Proactive alerts for upcoming qualifications
+
+PROCEDURE GenerateQualAlerts():
+
+  // 90-day warning for tank qualifications
+  upcomingQuals = SELECT * FROM Car
+    WHERE tankQualification BETWEEN NOW() AND NOW() + 90 DAYS
+      AND shoppingStatus NOT IN ('InShop', 'Planned')
+
+  FOR EACH car IN upcomingQuals:
+    daysUntilDue = DATEDIFF(car.tankQualification, NOW())
+
+    IF daysUntilDue <= 30 AND NOT hasAlert(car.id, 'QUAL_30'):
+      CREATE Alert {
+        type: "QUAL_DUE_30",
+        severity: "HIGH",
+        carId: car.id,
+        message: "Tank qualification due in {daysUntilDue} days",
+        actionRequired: "Schedule for Tier 1 shop"
+      }
+      // Auto-create planned entry if not exists
+      IF NOT RailcarPlanEntry EXISTS for car.id in next 30 days:
+        eligibleShops = GetEligibleShops(car.id, "QUAL", car.region)
+        IF eligibleShops.length > 0:
+          CREATE RailcarPlanEntry {
+            carId: car.id,
+            shopId: eligibleShops[0].id,
+            plannedMonth: MONTH(car.tankQualification),
+            workType: "QUAL",
+            planSource: "QUAL_SCHEDULE",
+            confidence: "HIGH"
+          }
+
+    ELSE IF daysUntilDue <= 60 AND NOT hasAlert(car.id, 'QUAL_60'):
+      CREATE Alert { type: "QUAL_DUE_60", severity: "MEDIUM", ... }
+
+    ELSE IF daysUntilDue <= 90 AND NOT hasAlert(car.id, 'QUAL_90'):
+      CREATE Alert { type: "QUAL_DUE_90", severity: "LOW", ... }
+```
+
+### 16.3 Demurrage Risk Monitoring
+
+```typescript
+// Monitor in-transit cars for demurrage risk
+
+PROCEDURE CheckDemurrageRisk():
+
+  inTransitCars = SELECT * FROM RailcarScheduleEntry
+    WHERE status = 'IN_TRANSIT'
+      AND inTransitSince IS NOT NULL
+
+  FOR EACH entry IN inTransitCars:
+    daysInTransit = DATEDIFF(NOW(), entry.inTransitSince)
+    expectedTransitDays = CalculateTransitTime(entry.originYard, shop.splc)
+
+    IF daysInTransit > expectedTransitDays + 3:
+      // High risk - likely incurring demurrage
+      UPDATE RailcarScheduleEntry SET
+        demurrageRiskLevel = 'HIGH',
+        demurrageAlertDate = entry.inTransitSince + expectedTransitDays
+      WHERE id = entry.id
+
+      CREATE Alert {
+        type: "DEMURRAGE_HIGH",
+        severity: "CRITICAL",
+        message: "Car {entry.carId} in transit {daysInTransit} days, expected {expectedTransitDays}"
+      }
+
+    ELSE IF daysInTransit > expectedTransitDays:
+      UPDATE RailcarScheduleEntry SET demurrageRiskLevel = 'MEDIUM'
+
+    ELSE IF daysInTransit > expectedTransitDays - 2:
+      UPDATE RailcarScheduleEntry SET demurrageRiskLevel = 'LOW'
+```
+
+### 16.4 AAR Compliance Audit Trail
+
+```typescript
+// Comprehensive audit trail for AAR compliance
+
+interface AuditEntry {
+  id: string;
+  timestamp: Date;
+  userId: string;
+  action: AuditAction;
+  entityType: 'Shop' | 'Car' | 'ScheduleEntry' | 'Qualification';
+  entityId: string;
+  previousValues: Record<string, any>;
+  newValues: Record<string, any>;
+  ipAddress: string;
+  sessionId: string;
+}
+
+// Required audit events for AAR compliance:
+// - Shop certification changes
+// - Qualification date modifications
+// - Work completion sign-offs
+// - Capacity overrides
+// - Assignment changes
+// - Tier/capability modifications
+
+TRIGGER ON UPDATE Shop:
+  IF OLD.certificationClass != NEW.certificationClass
+     OR OLD.certificationExp != NEW.certificationExp
+     OR OLD.tierId != NEW.tierId:
+    CREATE AuditEntry {
+      action: 'SHOP_CERTIFICATION_CHANGE',
+      entityType: 'Shop',
+      entityId: NEW.id,
+      previousValues: { certificationClass: OLD.certificationClass, ... },
+      newValues: { certificationClass: NEW.certificationClass, ... }
+    }
+
+TRIGGER ON UPDATE RailcarScheduleEntry:
+  IF OLD.status != NEW.status AND NEW.status = 'COMPLETE':
+    CREATE AuditEntry {
+      action: 'WORK_COMPLETED',
+      entityType: 'ScheduleEntry',
+      entityId: NEW.id,
+      newValues: {
+        completedAt: NEW.actualCompletionDate,
+        completedBy: currentUser,
+        actualDays: NEW.actualDays,
+        qualificationExtended: (NEW.workType = 'QUAL')
+      }
+    }
+```
+
+---
+
+## 17. Error Handling & Validation
+
+### 17.1 Capacity Validation Rules
+
+```typescript
+// Validation rules to prevent invalid states
+
+FUNCTION ValidateCapacityOperation(operation, shopId, year, month):
+
+  errors = []
+  warnings = []
+
+  capacity = GetMonthlyCapacity(shopId, year, month)
+  shop = GetShop(shopId)
+
+  SWITCH operation.type:
+
+    CASE 'CONFIRM_ASSIGNMENT':
+      // Rule 1: Cannot confirm if at hard capacity
+      IF capacity.confirmedCount >= capacity.baseCapacity:
+        errors.push("Shop at maximum confirmed capacity")
+
+      // Rule 2: Warn if projected exceeds capacity
+      IF capacity.totalCommitted + 1 > capacity.baseCapacity:
+        warnings.push("This will exceed projected capacity")
+
+      // Rule 3: Validate work type vs tier
+      IF NOT TierSupportsWorkType(shop.tierId, operation.workType):
+        errors.push("Shop tier does not support {operation.workType}")
+
+      // Rule 4: Check certification validity
+      IF shop.certificationExp < NOW():
+        errors.push("Shop certification has expired")
+
+      // Rule 5: Validate car eligibility
+      eligibility = ValidateCarEligibility(operation.carId, shopId)
+      IF NOT eligibility.eligible:
+        errors.push(eligibility.reason)
+
+    CASE 'ADJUST_CAPACITY':
+      // Rule: Cannot reduce below confirmed
+      IF operation.newCapacity < capacity.confirmedCount:
+        errors.push("Cannot reduce capacity below confirmed count ({capacity.confirmedCount})")
+
+    CASE 'CANCEL_ASSIGNMENT':
+      // Rule: Cannot cancel completed work
+      entry = GetScheduleEntry(operation.entryId)
+      IF entry.status = 'COMPLETE':
+        errors.push("Cannot cancel completed work")
+
+  RETURN { valid: errors.length = 0, errors, warnings }
+```
+
+### 17.2 Negative Capacity Prevention
+
+```typescript
+// Database constraints and triggers to prevent negative capacity
+
+-- PostgreSQL constraint
+ALTER TABLE ShopMonthlyCapacity
+  ADD CONSTRAINT check_non_negative_capacity
+  CHECK (confirmedCount >= 0 AND plannedCount >= 0 AND availableCapacity >= 0);
+
+-- Trigger to recalculate on any change
+CREATE OR REPLACE FUNCTION recalculate_capacity()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.availableCapacity := GREATEST(0,
+    COALESCE(NEW.adjustedCapacity, NEW.baseCapacity) - NEW.confirmedCount
+  );
+  NEW.totalCommitted := NEW.confirmedCount + NEW.plannedCount;
+  NEW.utilizationPercent := CASE
+    WHEN NEW.baseCapacity > 0
+    THEN (NEW.confirmedCount::FLOAT / NEW.baseCapacity) * 100
+    ELSE 0
+  END;
+  NEW.projectedUtilization := CASE
+    WHEN NEW.baseCapacity > 0
+    THEN (NEW.totalCommitted::FLOAT / NEW.baseCapacity) * 100
+    ELSE 0
+  END;
+  NEW.isOverCapacity := NEW.confirmedCount > NEW.baseCapacity;
+  NEW.isAtRisk := NEW.totalCommitted > NEW.baseCapacity;
+  NEW.lastCalculatedAt := NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER capacity_recalc_trigger
+  BEFORE INSERT OR UPDATE ON ShopMonthlyCapacity
+  FOR EACH ROW EXECUTE FUNCTION recalculate_capacity();
+```
+
+---
+
+## 18. Implementation Checklist
+
+### Phase 1: Database (Week 1-2)
+- [ ] Create Prisma migration for ShopTier
+- [ ] Create Prisma migration for ShopHierarchy
+- [ ] Create Prisma migration for ShopMonthlyCapacity
+- [ ] Create Prisma migration for RailcarScheduleEntry
+- [ ] Create Prisma migration for RailcarPlanEntry
+- [ ] Create Prisma migration for SOPShopTarget
+- [ ] Add new relations to Shop model
+- [ ] Create seed data for default tiers
+- [ ] Write data migration script for existing shops
+
+### Phase 2: Backend Services (Week 2-4)
+- [ ] ShopTierService (CRUD, validation)
+- [ ] ShopHierarchyService (CRUD, tree operations)
+- [ ] ShopCapacityService (calculations, roll-up)
+- [ ] RailcarScheduleService (confirm, cancel, status updates)
+- [ ] RailcarPlanService (create, convert to confirmed)
+- [ ] SOPTargetService (set targets, track progress)
+- [ ] CapacityCalculationJob (scheduled recalculation)
+- [ ] QualificationAlertJob (daily alerts)
+
+### Phase 3: API Endpoints (Week 3-4)
+- [ ] GET/POST/PUT/DELETE /shops/:id/tier
+- [ ] GET/POST/PUT/DELETE /shops/:id/hierarchy
+- [ ] GET/PUT /shops/:id/capacity/:year/:month
+- [ ] GET/POST /shops/:id/schedule
+- [ ] GET/POST /shops/:id/planned
+- [ ] GET/POST/PUT /shops/:id/sop-targets
+- [ ] GET /network/:id/capacity-rollup
+
+### Phase 4: Frontend (Week 4-6)
+- [ ] ShopHierarchyTree component
+- [ ] ShopCapacityDashboard component
+- [ ] RailcarAssignmentWizard component
+- [ ] NetworkCapacityRollup component
+- [ ] SOPDashboard component
+- [ ] Integrate with existing ShopManagement page
+- [ ] Add capacity views to PlanningGrid
+
+### Phase 5: Testing & Deployment (Week 6-7)
+- [ ] Unit tests for capacity calculations
+- [ ] Integration tests for hierarchy roll-up
+- [ ] E2E tests for assignment workflow
+- [ ] Performance testing with large shop networks
+- [ ] Documentation updates
+- [ ] Deployment to staging
+- [ ] UAT with operations team
+- [ ] Production deployment
