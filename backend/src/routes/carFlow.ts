@@ -101,14 +101,17 @@ router.get('/plans', async (req: AuthRequest, res: Response) => {
 /**
  * POST /car-flow/plans
  * Create a single car flow plan entry
+ * SST: Creates both CarFlowPlan (legacy) and UnifiedAssignment (SST)
  */
 router.post('/plans', async (req: AuthRequest, res: Response) => {
   const { carId, shopId, plannedMonth, plannedYear, shopReason, notes } = req.body;
 
   try {
+    const companyId = req.user!.companyId;
+
     // Validate car belongs to company
     const car = await prisma.car.findFirst({
-      where: { id: carId, companyId: req.user!.companyId },
+      where: { id: carId, companyId },
     });
 
     if (!car) {
@@ -117,14 +120,14 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
 
     // Validate shop belongs to company
     const shop = await prisma.shop.findFirst({
-      where: { id: shopId, companyId: req.user!.companyId },
+      where: { id: shopId, companyId },
     });
 
     if (!shop) {
       return res.status(404).json({ message: 'Shop not found' });
     }
 
-    // Check for existing active plan
+    // Check for existing active plan in CarFlowPlan
     const existingPlan = await prisma.carFlowPlan.findFirst({
       where: {
         carId,
@@ -139,6 +142,22 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Check for existing active assignment in UnifiedAssignment (SST)
+    const existingAssignment = await prisma.unifiedAssignment.findFirst({
+      where: {
+        carId,
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+      },
+    });
+
+    if (existingAssignment) {
+      return res.status(409).json({
+        message: 'Car already has an active assignment',
+        existingAssignment: { id: existingAssignment.id, status: existingAssignment.status },
+      });
+    }
+
+    // Create CarFlowPlan (legacy - will be deprecated)
     const plan = await prisma.carFlowPlan.create({
       data: {
         carId,
@@ -168,6 +187,31 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
           },
         },
       },
+    });
+
+    // SST: Create UnifiedAssignment (THE SST)
+    const assignment = await prisma.unifiedAssignment.create({
+      data: {
+        carId,
+        shopId,
+        plannedMonth,
+        plannedYear,
+        scheduledMonth: `${plannedYear}-${String(plannedMonth).padStart(2, '0')}`,
+        status: 'PENDING_REVIEW', // Plan created = pending review
+        sourceType: 'manual',
+        workType: 'full_qualification',
+        shopReason: shopReason || '',
+        notes: notes || '',
+        companyId,
+        originalAssignmentId: plan.id, // Link to CarFlowPlan for migration tracking
+      },
+    });
+
+    logger.info('Created plan with SST assignment', {
+      carFlowPlanId: plan.id,
+      unifiedAssignmentId: assignment.id,
+      carId,
+      shopId,
     });
 
     // SST: Update derived shopping status
@@ -267,6 +311,15 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
         },
         data: { status: 'Cancelled' },
       });
+
+      // SST: Also cancel existing UnifiedAssignment records
+      await prisma.unifiedAssignment.updateMany({
+        where: {
+          carId: { in: conflicts.map(c => c.carId) },
+          status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+        },
+        data: { status: 'SUPERSEDED' },
+      });
     }
 
     // Check S&OP capacity warnings
@@ -318,7 +371,7 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Create all plans
+    // Create all plans (CarFlowPlan legacy + UnifiedAssignment SST)
     const createdPlans = await prisma.$transaction(
       assignments.map(assignment =>
         prisma.carFlowPlan.create({
@@ -353,6 +406,33 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
         })
       )
     );
+
+    // SST: Create UnifiedAssignment records for each plan
+    const unifiedAssignments = await prisma.$transaction(
+      createdPlans.map(plan =>
+        prisma.unifiedAssignment.create({
+          data: {
+            carId: plan.carId,
+            shopId: plan.shopId,
+            plannedMonth: plan.plannedMonth,
+            plannedYear: plan.plannedYear,
+            scheduledMonth: `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`,
+            status: 'PENDING_REVIEW', // Bulk plans start as pending review
+            sourceType: 'manual',
+            workType: 'full_qualification',
+            shopReason: plan.shopReason || '',
+            notes: plan.notes || '',
+            companyId,
+            originalAssignmentId: plan.id, // Link to CarFlowPlan for migration tracking
+          },
+        })
+      )
+    );
+
+    logger.info('Bulk created plans with SST assignments', {
+      carFlowPlansCreated: createdPlans.length,
+      unifiedAssignmentsCreated: unifiedAssignments.length,
+    });
 
     // SST: Update derived shopping status for all affected cars
     const affectedCarIds = createdPlans.map(p => p.carId);
@@ -397,6 +477,7 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
 /**
  * PATCH /car-flow/plans/:id/cancel
  * Cancel a car flow plan
+ * SST: Also updates UnifiedAssignment status to CANCELLED
  */
 router.patch('/plans/:id/cancel', async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
@@ -444,6 +525,29 @@ router.patch('/plans/:id/cancel', async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // SST: Update UnifiedAssignment status to CANCELLED
+    const updatedAssignment = await prisma.unifiedAssignment.updateMany({
+      where: {
+        OR: [
+          { originalAssignmentId: id }, // Link via original plan ID
+          {
+            carId: plan.carId,
+            shopId: plan.shopId,
+            plannedMonth: plan.plannedMonth,
+            plannedYear: plan.plannedYear,
+            status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+          },
+        ],
+      },
+      data: { status: 'CANCELLED' },
+    });
+
+    logger.info('CarFlowPlan cancelled with SST update', {
+      planId: id,
+      carId: plan.carId,
+      unifiedAssignmentsUpdated: updatedAssignment.count,
+    });
+
     // SST: Update derived shopping status (plan cancelled = recalculate urgency)
     try {
       await sstConsolidationService.updateCarShoppingStatus(existingPlan.carId);
@@ -466,6 +570,7 @@ router.patch('/plans/:id/cancel', async (req: AuthRequest, res: Response) => {
 /**
  * PATCH /car-flow/plans/:id/confirm
  * Confirm a CarFlowPlan (status: Planned → Confirmed)
+ * SST: Also updates UnifiedAssignment status from PENDING_REVIEW → COMMITTED
  */
 router.patch('/plans/:id/confirm', async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
@@ -493,7 +598,29 @@ router.patch('/plans/:id/confirm', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    logger.info('CarFlowPlan confirmed', { planId: id, carId: plan.carId });
+    // SST: Update UnifiedAssignment status from PENDING_REVIEW → COMMITTED
+    const updatedAssignment = await prisma.unifiedAssignment.updateMany({
+      where: {
+        OR: [
+          { originalAssignmentId: id }, // Link via original plan ID
+          {
+            carId: plan.carId,
+            shopId: plan.shopId,
+            plannedMonth: plan.plannedMonth,
+            plannedYear: plan.plannedYear,
+            status: 'PENDING_REVIEW',
+          },
+        ],
+      },
+      data: { status: 'COMMITTED' },
+    });
+
+    logger.info('CarFlowPlan confirmed with SST update', {
+      planId: id,
+      carId: plan.carId,
+      unifiedAssignmentsUpdated: updatedAssignment.count,
+    });
+
     res.json(plan);
   } catch (error) {
     logger.error('Failed to confirm car flow plan', error);
@@ -505,6 +632,7 @@ router.patch('/plans/:id/confirm', async (req: AuthRequest, res: Response) => {
  * POST /car-flow/plans/:id/schedule
  * Schedule a CarFlowPlan into the MasterPlan (Confirmed → Scheduled)
  * This promotes the CarFlowPlan to MasterPlanCommitment
+ * SST: Also updates UnifiedAssignment status from COMMITTED → IN_PROGRESS
  */
 router.post('/plans/:id/schedule', async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
@@ -526,14 +654,32 @@ router.post('/plans/:id/schedule', async (req: AuthRequest, res: Response) => {
     }
 
     // SST: Promote to MasterPlanCommitment
-    const result = await sstConsolidationService.promoteToMasterPlan(id, req.user!.id);
+    const result = await sstConsolidationService.promoteToMasterPlan(id as string, req.user!.id);
 
-    logger.info('CarFlowPlan scheduled into MasterPlan', {
+    // SST: Update UnifiedAssignment status from COMMITTED → IN_PROGRESS
+    const updatedAssignment = await prisma.unifiedAssignment.updateMany({
+      where: {
+        OR: [
+          { originalAssignmentId: id }, // Link via original plan ID
+          {
+            carId: existingPlan.carId,
+            shopId: existingPlan.shopId,
+            plannedMonth: existingPlan.plannedMonth,
+            plannedYear: existingPlan.plannedYear,
+            status: 'COMMITTED',
+          },
+        ],
+      },
+      data: { status: 'IN_PROGRESS' },
+    });
+
+    logger.info('CarFlowPlan scheduled into MasterPlan with SST update', {
       planId: id,
       carId: existingPlan.carId,
       railcarNumber: existingPlan.car.railcarNumber,
       commitmentId: result.commitmentId,
       masterPlanId: result.masterPlanId,
+      unifiedAssignmentsUpdated: updatedAssignment.count,
     });
 
     res.json({
@@ -553,6 +699,7 @@ router.post('/plans/:id/schedule', async (req: AuthRequest, res: Response) => {
 /**
  * POST /car-flow/plans/bulk-schedule
  * Bulk schedule multiple confirmed plans into MasterPlan
+ * SST: Also updates UnifiedAssignment status from COMMITTED → IN_PROGRESS
  */
 router.post('/plans/bulk-schedule', async (req: AuthRequest, res: Response) => {
   const { planIds } = req.body as { planIds: string[] };
@@ -603,6 +750,26 @@ router.post('/plans/bulk-schedule', async (req: AuthRequest, res: Response) => {
       try {
         const result = await sstConsolidationService.promoteToMasterPlan(planId, req.user!.id);
         results.push({ planId, ...result });
+
+        // SST: Update UnifiedAssignment status from COMMITTED → IN_PROGRESS
+        const plan = planMap.get(planId) as typeof plans[number] | undefined;
+        if (plan) {
+          await prisma.unifiedAssignment.updateMany({
+            where: {
+              OR: [
+                { originalAssignmentId: planId },
+                {
+                  carId: plan.carId,
+                  shopId: plan.shopId,
+                  plannedMonth: plan.plannedMonth,
+                  plannedYear: plan.plannedYear,
+                  status: 'COMMITTED',
+                },
+              ],
+            },
+            data: { status: 'IN_PROGRESS' },
+          });
+        }
       } catch (error) {
         errors.push({
           planId,
@@ -611,7 +778,7 @@ router.post('/plans/bulk-schedule', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    logger.info('Bulk schedule completed', {
+    logger.info('Bulk schedule completed with SST updates', {
       total: planIds.length,
       scheduled: results.length,
       errors: errors.length,

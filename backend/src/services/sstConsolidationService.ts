@@ -1436,7 +1436,7 @@ export async function migrateCarFlowPlanToUnified(
         }
 
         // Map status
-        let status = UA_STATUS.DRAFT;
+        let status: typeof UA_STATUS[keyof typeof UA_STATUS] = UA_STATUS.DRAFT;
         switch (plan.status) {
           case 'Planned': status = UA_STATUS.PENDING_REVIEW; break;
           case 'Confirmed': status = UA_STATUS.COMMITTED; break;
