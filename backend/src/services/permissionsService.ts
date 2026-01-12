@@ -1,5 +1,6 @@
 // Role-based permissions and field-level security service
 import { prisma } from './db';
+import { safeJsonParseArray } from '../utils/safeJson';
 
 
 // Default role hierarchy and permissions
@@ -195,7 +196,7 @@ export async function isFieldVisible(
   });
 
   if (fieldSecurity) {
-    const visibleRoles = JSON.parse(fieldSecurity.visibleRoles) as string[];
+    const visibleRoles = safeJsonParseArray<string>(fieldSecurity.visibleRoles, 'fieldSecurity.visibleRoles');
     return visibleRoles.includes(role);
   }
 
@@ -230,7 +231,7 @@ export async function isFieldEditable(
   });
 
   if (fieldSecurity) {
-    const editableRoles = JSON.parse(fieldSecurity.editableRoles) as string[];
+    const editableRoles = safeJsonParseArray<string>(fieldSecurity.editableRoles, 'fieldSecurity.editableRoles');
     return editableRoles.includes(role);
   }
 
@@ -257,8 +258,8 @@ export async function getFieldSecurityConfig(
   });
 
   for (const config of customConfigs) {
-    const visibleRoles = JSON.parse(config.visibleRoles) as string[];
-    const editableRoles = JSON.parse(config.editableRoles) as string[];
+    const visibleRoles = safeJsonParseArray<string>(config.visibleRoles, 'config.visibleRoles');
+    const editableRoles = safeJsonParseArray<string>(config.editableRoles, 'config.editableRoles');
 
     result[config.fieldName] = {
       visible: role === ROLES.ADMIN || visibleRoles.includes(role),

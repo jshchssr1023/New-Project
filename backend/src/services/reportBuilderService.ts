@@ -1,6 +1,7 @@
 // Custom Report Builder Service
 // Supports custom column selection, filters, and multiple output formats
 import { prisma } from './db';
+import { safeJsonParse, safeJsonParseArray, safeJsonParseObject } from '../utils/safeJson';
 
 
 // Available columns for each entity type
@@ -428,10 +429,10 @@ export async function getTemplates(companyId: string, userId: string) {
 
   return templates.map(t => ({
     ...t,
-    columns: JSON.parse(t.columns),
-    filters: JSON.parse(t.filters),
-    sortConfig: JSON.parse(t.sortConfig),
-    outputFormats: JSON.parse(t.outputFormats),
+    columns: safeJsonParseArray<string>(t.columns, 'template.columns'),
+    filters: safeJsonParseArray(t.filters, 'template.filters'),
+    sortConfig: safeJsonParseObject(t.sortConfig, 'template.sortConfig'),
+    outputFormats: safeJsonParseArray<string>(t.outputFormats, 'template.outputFormats'),
   }));
 }
 
@@ -445,10 +446,10 @@ export async function getTemplate(templateId: string, companyId: string) {
 
   return {
     ...template,
-    columns: JSON.parse(template.columns),
-    filters: JSON.parse(template.filters),
-    sortConfig: JSON.parse(template.sortConfig),
-    outputFormats: JSON.parse(template.outputFormats),
+    columns: safeJsonParseArray<string>(template.columns, 'template.columns'),
+    filters: safeJsonParseArray(template.filters, 'template.filters'),
+    sortConfig: safeJsonParseObject(template.sortConfig, 'template.sortConfig'),
+    outputFormats: safeJsonParseArray<string>(template.outputFormats, 'template.outputFormats'),
   };
 }
 

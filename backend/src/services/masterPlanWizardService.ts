@@ -11,6 +11,7 @@
 import { prisma } from './db';
 import auditService from './auditService';
 import webhookAlertService from './webhookAlertService';
+import { safeJsonParseObject } from '../utils/safeJson';
 
 // =============================================================================
 // TYPES
@@ -886,8 +887,8 @@ export async function getMasterPlanAuditLogs(companyId: string, filters: MasterP
       entityId: log.entityId,
       entityName: log.entityName,
       details: {
-        changes: JSON.parse(log.changes),
-        metadata: JSON.parse(log.metadata),
+        changes: safeJsonParseObject(log.changes, 'auditLog.changes'),
+        metadata: safeJsonParseObject(log.metadata, 'auditLog.metadata'),
       },
       source: 'audit_log' as const,
     })),
