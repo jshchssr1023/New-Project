@@ -45,43 +45,26 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     const shopsWithCarsCount = uniqueShopsWithArrivedCars.size;
 
     // ==========================================================================
-    // S&OP PLANNING SUMMARY - SST: Use MasterPlan for scheduled, CarFlowPlan for planned
+    // S&OP PLANNING SUMMARY - SST: UnifiedAssignment is the Single Source of Truth
     // ==========================================================================
 
-    // SST: Get dashboard metrics from MasterPlan (scheduled) + CarFlowPlan (planned)
-    const sstMetrics = await sstConsolidationService.getDashboardMetrics(companyId);
+    // SST: Get dashboard metrics from UnifiedAssignment (THE SST)
+    const sstMetrics = await sstConsolidationService.getUnifiedDashboardMetrics(companyId);
 
-    // Calculate overdue cars (cars with qualification dates in past that aren't planned/scheduled)
+    // Calculate overdue cars (cars with qualification dates in past that aren't assigned)
     const overdueCarIds = new Set<string>();
 
-    // Get car IDs that are already planned or scheduled
-    const plannedCarIds = await prisma.carFlowPlan.findMany({
+    // Get car IDs that already have an assignment
+    const assignedCarIds = await prisma.unifiedAssignment.findMany({
       where: {
         companyId,
-        status: { in: ['Planned', 'Confirmed', 'Scheduled'] },
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
       },
       select: { carId: true },
     });
-    const plannedSet = new Set(plannedCarIds.map((p: { carId: string }) => p.carId));
+    const assignedSet = new Set(assignedCarIds.map((a: { carId: string }) => a.carId));
 
-    // Get active MasterPlan commitments
-    const activePlan = await prisma.masterPlan.findFirst({
-      where: { companyId, status: 'ACTIVE' },
-      select: { id: true },
-    });
-
-    if (activePlan) {
-      const scheduledCarIds = await prisma.masterPlanCommitment.findMany({
-        where: {
-          masterPlanId: activePlan.id,
-          status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
-        },
-        select: { carId: true },
-      });
-      scheduledCarIds.forEach((c: { carId: string }) => plannedSet.add(c.carId));
-    }
-
-    // Find overdue cars that aren't planned/scheduled
+    // Find overdue cars that aren't assigned
     const allCarsForSOP = await prisma.car.findMany({
       where: { companyId },
       select: {
@@ -101,7 +84,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     });
 
     allCarsForSOP.forEach((car: any) => {
-      if (plannedSet.has(car.id)) return; // Already planned/scheduled
+      if (assignedSet.has(car.id)) return; // Already has assignment
 
       const qualDates = [
         car.tankQualDueDate,
@@ -126,13 +109,13 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       }
     });
 
-    // SST metrics:
-    // - Planned = CarFlowPlan (Planned + Confirmed)
-    // - Scheduled = MasterPlanCommitment (SCHEDULED + IN_PROGRESS)
-    // - Overdue = Cars with past qualification dates, not planned/scheduled
-    // - Not Planned = Total - Planned - Scheduled - Overdue - InShop
-    const sopPlanned = sstMetrics.planned + sstMetrics.confirmed;
-    const sopScheduled = sstMetrics.scheduled + sstMetrics.inProgress;
+    // SST metrics from UnifiedAssignment:
+    // - Pending = DRAFT + PENDING_REVIEW (not yet committed)
+    // - Committed = COMMITTED + IN_PROGRESS (confirmed/scheduled)
+    // - Overdue = Cars with past qualification dates, not assigned
+    // - Not Planned = Total - Pending - Committed - Overdue - InShop
+    const sopPlanned = sstMetrics.draft + sstMetrics.pendingReview;
+    const sopScheduled = sstMetrics.committed + sstMetrics.inProgress;
     const sopOverdue = overdueCarIds.size;
     const sopNotPlanned = Math.max(0, totalCars - sopPlanned - sopScheduled - sopOverdue - totalCarsInShop);
 
@@ -298,8 +281,8 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       { category: 'Other', amount: 55000 },
     ];
 
-    // SST: Upcoming services from MasterPlanCommitment (scheduled shoppings)
-    const upcomingShoppings = await sstConsolidationService.getUpcomingShoppings(companyId, 10);
+    // SST: Upcoming services from UnifiedAssignment (THE SST)
+    const upcomingShoppings = await sstConsolidationService.getUnifiedUpcomingShoppings(companyId, 10);
     const upcomingServices = upcomingShoppings.map((s) => ({
       carId: s.carId,
       vehicleNumber: s.railcarNumber,
@@ -307,57 +290,19 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       scheduledDate: `${s.plannedYear}-${String(s.plannedMonth).padStart(2, '0')}-15`,
       shopName: s.shopName,
       status: s.status,
+      source: s.source,
     }));
 
     // ==========================================================================
-    // SST: MONTHLY SHOPPINGS BY NETWORK - From MasterPlanCommitment
+    // SST: MONTHLY SHOPPINGS BY NETWORK - From UnifiedAssignment (THE SST)
     // ==========================================================================
     const monthlyByNetwork: Record<string, { aitx: number; thirdParty: number; total: number; byShop: Record<string, number> }> = {};
 
-    // Get from active MasterPlan (SST for scheduled shoppings)
-    if (activePlan) {
-      const masterPlanCommitments = await prisma.masterPlanCommitment.findMany({
-        where: {
-          masterPlanId: activePlan.id,
-          status: { in: ['SCHEDULED', 'IN_PROGRESS', 'COMPLETE'] },
-          plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
-        },
-        include: {
-          shop: {
-            select: {
-              id: true,
-              name: true,
-              code: true,
-              isAitxInternal: true,
-              networkId: true,
-            },
-          },
-        },
-      });
-
-      masterPlanCommitments.forEach((commitment: any) => {
-        const monthKey = `${commitment.plannedYear}-${String(commitment.plannedMonth).padStart(2, '0')}`;
-        if (!monthlyByNetwork[monthKey]) {
-          monthlyByNetwork[monthKey] = { aitx: 0, thirdParty: 0, total: 0, byShop: {} };
-        }
-
-        monthlyByNetwork[monthKey].total++;
-        if (commitment.shop?.isAitxInternal) {
-          monthlyByNetwork[monthKey].aitx++;
-        } else {
-          monthlyByNetwork[monthKey].thirdParty++;
-        }
-
-        const shopKey = commitment.shop?.name || 'Unknown';
-        monthlyByNetwork[monthKey].byShop[shopKey] = (monthlyByNetwork[monthKey].byShop[shopKey] || 0) + 1;
-      });
-    }
-
-    // Also include CarFlowPlan (planned but not yet scheduled)
-    const pendingPlans = await prisma.carFlowPlan.findMany({
+    // Get all active assignments from UnifiedAssignment
+    const allAssignments = await prisma.unifiedAssignment.findMany({
       where: {
         companyId,
-        status: { in: ['Planned', 'Confirmed'] },
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] },
         plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
       },
       include: {
@@ -373,20 +318,20 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    pendingPlans.forEach((plan: any) => {
-      const monthKey = `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`;
+    allAssignments.forEach((assignment: any) => {
+      const monthKey = `${assignment.plannedYear}-${String(assignment.plannedMonth).padStart(2, '0')}`;
       if (!monthlyByNetwork[monthKey]) {
         monthlyByNetwork[monthKey] = { aitx: 0, thirdParty: 0, total: 0, byShop: {} };
       }
 
       monthlyByNetwork[monthKey].total++;
-      if (plan.shop?.isAitxInternal) {
+      if (assignment.shop?.isAitxInternal) {
         monthlyByNetwork[monthKey].aitx++;
       } else {
         monthlyByNetwork[monthKey].thirdParty++;
       }
 
-      const shopKey = plan.shop?.name || 'Unknown';
+      const shopKey = assignment.shop?.name || 'Unknown';
       monthlyByNetwork[monthKey].byShop[shopKey] = (monthlyByNetwork[monthKey].byShop[shopKey] || 0) + 1;
     });
 

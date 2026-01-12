@@ -1,19 +1,41 @@
 /**
  * SST Consolidation Service
  *
- * This service manages the Single Source of Truth (SST) architecture for:
- * - Planning Data: CarFlowPlan is the SST (PlanAssignment is deprecated)
- * - Capacity Data: SOPCommitment is the SST for monthly capacity
- * - Status Data: Car.shoppingStatus is derived from CarFlowPlan + Car.status
+ * SINGLE SOURCE OF TRUTH ARCHITECTURE:
+ * =====================================
  *
- * MIGRATION GUIDE:
- * 1. Run migratePlanAssignmentsToCarFlowPlan() to copy existing data
- * 2. Update code to use CarFlowPlan via /api/car-flow endpoints
- * 3. Eventually remove PlanAssignment table after migration verification
+ * Reference Data (from CSV/API):
+ *   - Car: Fleet reference data
+ *   - Customer: Customer reference data
+ *   - Shop: Shop/facility reference data
  *
- * ERROR LOGGING:
- * All operations log errors with context for debugging.
- * Use LOG_LEVEL=debug to see detailed operation logs.
+ * Assignment Data (UnifiedAssignment - THE SST):
+ *   - carId, shopId, customerId
+ *   - plannedYear, plannedMonth
+ *   - status: DRAFT → PENDING_REVIEW → COMMITTED → IN_PROGRESS → COMPLETED
+ *   - source: csv_import, scenario, master_plan, manual, rule_engine
+ *
+ * Status Workflow:
+ *   DRAFT         - Initial creation (from scenario or import)
+ *   PENDING_REVIEW - Awaiting confirmation
+ *   COMMITTED     - Confirmed, scheduled into Master Plan
+ *   IN_PROGRESS   - Work has started
+ *   COMPLETED     - Work finished
+ *   CANCELLED     - Assignment cancelled
+ *   SUPERSEDED    - Replaced by newer assignment
+ *
+ * MIGRATION:
+ *   CarFlowPlan → UnifiedAssignment (status mapping):
+ *     Planned → PENDING_REVIEW
+ *     Confirmed → COMMITTED
+ *     Scheduled → COMMITTED (with masterPlanId)
+ *     InProgress → IN_PROGRESS
+ *     Complete → COMPLETED
+ *
+ *   MasterPlanCommitment → UnifiedAssignment:
+ *     SCHEDULED → COMMITTED
+ *     IN_PROGRESS → IN_PROGRESS
+ *     COMPLETE → COMPLETED
  */
 
 import { prisma } from './db';
@@ -1114,11 +1136,390 @@ export async function getUpcomingShoppings(
 }
 
 // =============================================================================
+// UNIFIED ASSIGNMENT SST - The Single Source of Truth
+// =============================================================================
+
+/**
+ * Status constants for UnifiedAssignment
+ */
+export const UA_STATUS = {
+  DRAFT: 'DRAFT',
+  PENDING_REVIEW: 'PENDING_REVIEW',
+  COMMITTED: 'COMMITTED',
+  IN_PROGRESS: 'IN_PROGRESS',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  SUPERSEDED: 'SUPERSEDED',
+} as const;
+
+export const UA_SOURCE = {
+  MANUAL: 'manual',
+  CSV_IMPORT: 'csv_import',
+  SCENARIO: 'scenario',
+  MASTER_PLAN: 'master_plan',
+  RULE_ENGINE: 'rule_engine',
+  MIGRATION: 'migration',
+} as const;
+
+/**
+ * Create a new UnifiedAssignment (the SST for all shopping assignments)
+ */
+export async function createAssignment(data: {
+  carId: string;
+  shopId: string;
+  plannedYear: number;
+  plannedMonth: number;
+  companyId: string;
+  customerId?: string;
+  sourceType?: string;
+  workType?: string;
+  shopReason?: string;
+  priority?: number;
+  estimatedCost?: number;
+  estimatedDays?: number;
+  committedById?: string;
+  status?: string;
+}): Promise<{ id: string; status: string }> {
+  try {
+    const assignment = await prisma.unifiedAssignment.create({
+      data: {
+        carId: data.carId,
+        shopId: data.shopId,
+        plannedYear: data.plannedYear,
+        plannedMonth: data.plannedMonth,
+        scheduledMonth: `${data.plannedYear}-${String(data.plannedMonth).padStart(2, '0')}`,
+        companyId: data.companyId,
+        customerId: data.customerId,
+        sourceType: data.sourceType || UA_SOURCE.MANUAL,
+        workType: data.workType || 'full_qualification',
+        shopReason: data.shopReason || '',
+        priority: data.priority || 3,
+        estimatedCost: data.estimatedCost || 0,
+        estimatedDays: data.estimatedDays || 14,
+        status: data.status || UA_STATUS.DRAFT,
+        committedById: data.committedById,
+        committedAt: data.status === UA_STATUS.COMMITTED ? new Date() : undefined,
+      },
+      select: { id: true, status: true },
+    });
+
+    logger.info('[SST UnifiedAssignment] Created assignment', {
+      assignmentId: assignment.id,
+      carId: data.carId,
+      shopId: data.shopId,
+      status: assignment.status,
+    });
+
+    return assignment;
+  } catch (error) {
+    logger.error('[SST UnifiedAssignment] Failed to create assignment', {
+      carId: data.carId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Update assignment status (the workflow transition)
+ */
+export async function updateAssignmentStatus(
+  assignmentId: string,
+  newStatus: string,
+  userId?: string
+): Promise<void> {
+  try {
+    const updateData: any = { status: newStatus };
+
+    if (newStatus === UA_STATUS.COMMITTED && userId) {
+      updateData.committedAt = new Date();
+      updateData.committedById = userId;
+    } else if (newStatus === UA_STATUS.CANCELLED && userId) {
+      updateData.cancelledAt = new Date();
+      updateData.cancelledById = userId;
+    }
+
+    await prisma.unifiedAssignment.update({
+      where: { id: assignmentId },
+      data: updateData,
+    });
+
+    logger.info('[SST UnifiedAssignment] Updated assignment status', {
+      assignmentId,
+      newStatus,
+    });
+  } catch (error) {
+    logger.error('[SST UnifiedAssignment] Failed to update status', {
+      assignmentId,
+      newStatus,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get dashboard metrics from UnifiedAssignment (THE SST)
+ */
+export async function getUnifiedDashboardMetrics(companyId: string): Promise<{
+  draft: number;
+  pendingReview: number;
+  committed: number;
+  inProgress: number;
+  completed: number;
+  cancelled: number;
+  byMonth: Record<string, { pending: number; committed: number }>;
+}> {
+  try {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+
+    // Get counts by status
+    const [draft, pendingReview, committed, inProgress, completed, cancelled] = await Promise.all([
+      prisma.unifiedAssignment.count({ where: { companyId, status: UA_STATUS.DRAFT } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: UA_STATUS.PENDING_REVIEW } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: UA_STATUS.COMMITTED } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: UA_STATUS.IN_PROGRESS } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: UA_STATUS.COMPLETED } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: UA_STATUS.CANCELLED } }),
+    ]);
+
+    // Get by-month breakdown for next 12 months
+    const pendingByMonth = await prisma.unifiedAssignment.groupBy({
+      by: ['plannedYear', 'plannedMonth'],
+      where: {
+        companyId,
+        status: { in: [UA_STATUS.DRAFT, UA_STATUS.PENDING_REVIEW] },
+        OR: [
+          { plannedYear: { gt: currentYear } },
+          { plannedYear: currentYear, plannedMonth: { gte: currentMonth } },
+        ],
+      },
+      _count: { id: true },
+    });
+
+    const committedByMonth = await prisma.unifiedAssignment.groupBy({
+      by: ['plannedYear', 'plannedMonth'],
+      where: {
+        companyId,
+        status: { in: [UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS] },
+        OR: [
+          { plannedYear: { gt: currentYear } },
+          { plannedYear: currentYear, plannedMonth: { gte: currentMonth } },
+        ],
+      },
+      _count: { id: true },
+    });
+
+    const byMonth: Record<string, { pending: number; committed: number }> = {};
+
+    pendingByMonth.forEach((p) => {
+      const key = `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}`;
+      if (!byMonth[key]) byMonth[key] = { pending: 0, committed: 0 };
+      byMonth[key].pending = p._count.id;
+    });
+
+    committedByMonth.forEach((c) => {
+      const key = `${c.plannedYear}-${String(c.plannedMonth).padStart(2, '0')}`;
+      if (!byMonth[key]) byMonth[key] = { pending: 0, committed: 0 };
+      byMonth[key].committed = c._count.id;
+    });
+
+    logger.debug('[SST UnifiedAssignment] Dashboard metrics retrieved', {
+      companyId,
+      draft,
+      pendingReview,
+      committed,
+      inProgress,
+      completed,
+    });
+
+    return { draft, pendingReview, committed, inProgress, completed, cancelled, byMonth };
+  } catch (error) {
+    logger.error('[SST UnifiedAssignment] Failed to get dashboard metrics', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get upcoming shoppings from UnifiedAssignment (THE SST)
+ */
+export async function getUnifiedUpcomingShoppings(
+  companyId: string,
+  limit: number = 10
+): Promise<Array<{
+  id: string;
+  carId: string;
+  railcarNumber: string;
+  customer: string | null;
+  shopName: string;
+  plannedMonth: number;
+  plannedYear: number;
+  status: string;
+  source: string;
+}>> {
+  try {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+
+    const assignments = await prisma.unifiedAssignment.findMany({
+      where: {
+        companyId,
+        status: { in: [UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS, UA_STATUS.PENDING_REVIEW] },
+        OR: [
+          { plannedYear: { gt: currentYear } },
+          { plannedYear: currentYear, plannedMonth: { gte: currentMonth } },
+        ],
+      },
+      include: {
+        car: { select: { id: true, railcarNumber: true, customer: true } },
+        shop: { select: { name: true } },
+      },
+      orderBy: [{ plannedYear: 'asc' }, { plannedMonth: 'asc' }],
+      take: limit,
+    });
+
+    return assignments.map((a) => ({
+      id: a.id,
+      carId: a.carId,
+      railcarNumber: a.car.railcarNumber || '',
+      customer: a.car.customer,
+      shopName: a.shop.name,
+      plannedMonth: a.plannedMonth,
+      plannedYear: a.plannedYear,
+      status: a.status,
+      source: a.sourceType,
+    }));
+  } catch (error) {
+    logger.error('[SST UnifiedAssignment] Failed to get upcoming shoppings', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Migrate CarFlowPlan to UnifiedAssignment
+ */
+export async function migrateCarFlowPlanToUnified(
+  companyId: string,
+  userId: string
+): Promise<{ migrated: number; skipped: number; errors: string[] }> {
+  const result = { migrated: 0, skipped: 0, errors: [] as string[] };
+
+  try {
+    const carFlowPlans = await prisma.carFlowPlan.findMany({
+      where: { companyId },
+      include: { car: true, shop: true },
+    });
+
+    for (const plan of carFlowPlans) {
+      try {
+        // Check if already migrated
+        const existing = await prisma.unifiedAssignment.findFirst({
+          where: {
+            carId: plan.carId,
+            shopId: plan.shopId,
+            plannedYear: plan.plannedYear,
+            plannedMonth: plan.plannedMonth,
+            originalAssignmentId: plan.id,
+          },
+        });
+
+        if (existing) {
+          result.skipped++;
+          continue;
+        }
+
+        // Map status
+        let status = UA_STATUS.DRAFT;
+        switch (plan.status) {
+          case 'Planned': status = UA_STATUS.PENDING_REVIEW; break;
+          case 'Confirmed': status = UA_STATUS.COMMITTED; break;
+          case 'Scheduled': status = UA_STATUS.COMMITTED; break;
+          case 'InProgress': status = UA_STATUS.IN_PROGRESS; break;
+          case 'Complete': status = UA_STATUS.COMPLETED; break;
+          case 'Cancelled': status = UA_STATUS.CANCELLED; break;
+        }
+
+        await prisma.unifiedAssignment.create({
+          data: {
+            carId: plan.carId,
+            shopId: plan.shopId,
+            customerId: plan.customerId,
+            plannedYear: plan.plannedYear,
+            plannedMonth: plan.plannedMonth,
+            scheduledMonth: `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`,
+            status,
+            sourceType: UA_SOURCE.MIGRATION,
+            originalAssignmentId: plan.id,
+            companyId,
+            committedById: plan.committedById,
+            committedAt: plan.committedAt,
+          },
+        });
+
+        result.migrated++;
+      } catch (error) {
+        result.errors.push(`Plan ${plan.id}: ${error instanceof Error ? error.message : 'Unknown'}`);
+      }
+    }
+
+    logger.info('[SST Migration] CarFlowPlan → UnifiedAssignment complete', {
+      companyId,
+      ...result,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error('[SST Migration] Failed CarFlowPlan migration', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get shop usage from UnifiedAssignment (replaces getShopMonthUsage for CarFlowPlan)
+ */
+export async function getUnifiedShopMonthUsage(
+  shopId: string,
+  year: number,
+  month: number
+): Promise<number> {
+  try {
+    const count = await prisma.unifiedAssignment.count({
+      where: {
+        shopId,
+        plannedYear: year,
+        plannedMonth: month,
+        status: { in: [UA_STATUS.PENDING_REVIEW, UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS] },
+      },
+    });
+
+    return count;
+  } catch (error) {
+    logger.error('[SST UnifiedAssignment] Failed to get shop month usage', {
+      shopId,
+      year,
+      month,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
 export default {
-  // Migration
+  // Migration (legacy)
   migratePlanAssignmentsToCarFlowPlan,
   // Capacity
   getShopMonthCapacity,
@@ -1130,9 +1531,18 @@ export default {
   updateCarShoppingStatus,
   batchUpdateShoppingStatus,
   onCarFlowPlanStatusChange,
-  // MasterPlan SST
+  // MasterPlan SST (deprecated - use UnifiedAssignment)
   getOrCreateActiveMasterPlan,
   promoteToMasterPlan,
   getDashboardMetrics,
   getUpcomingShoppings,
+  // UnifiedAssignment SST (THE NEW SST)
+  UA_STATUS,
+  UA_SOURCE,
+  createAssignment,
+  updateAssignmentStatus,
+  getUnifiedDashboardMetrics,
+  getUnifiedUpcomingShoppings,
+  migrateCarFlowPlanToUnified,
+  getUnifiedShopMonthUsage,
 };
