@@ -17,6 +17,7 @@ import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
+import sstConsolidationService from '../services/sstConsolidationService';
 
 const router = Router();
 
@@ -168,6 +169,9 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
         },
       },
     });
+
+    // SST: Update derived shopping status
+    await sstConsolidationService.updateCarShoppingStatus(carId);
 
     res.status(201).json(plan);
   } catch (error) {
@@ -341,6 +345,12 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
       )
     );
 
+    // SST: Update derived shopping status for all affected cars
+    const affectedCarIds = createdPlans.map(p => p.carId);
+    for (const carId of affectedCarIds) {
+      await sstConsolidationService.updateCarShoppingStatus(carId);
+    }
+
     res.json({
       success: true,
       message: `Created ${createdPlans.length} plans`,
@@ -406,6 +416,9 @@ router.patch('/plans/:id/cancel', async (req: AuthRequest, res: Response) => {
         },
       },
     });
+
+    // SST: Update derived shopping status (plan cancelled = recalculate urgency)
+    await sstConsolidationService.updateCarShoppingStatus(existingPlan.carId);
 
     res.json(plan);
   } catch (error) {
@@ -771,77 +784,42 @@ router.get('/shopping-status/stats', async (req: AuthRequest, res: Response) => 
 
 /**
  * POST /car-flow/shopping-status/recalculate
- * Recalculate shopping status for cars
+ * Recalculate shopping status for cars using SST-derived algorithm
+ *
+ * Uses sstConsolidationService.batchUpdateShoppingStatus() which:
+ * - Derives status from CarFlowPlan existence + Car.status + nextServiceDue
+ * - Ensures consistent status calculation across the application
  */
 router.post('/shopping-status/recalculate', async (req: AuthRequest, res: Response) => {
   const { carIds } = req.body as { carIds?: string[] };
 
   try {
     const companyId = req.user!.companyId;
-    const today = new Date();
 
-    // Get cars to update
-    const where: Record<string, unknown> = { companyId };
     if (carIds && carIds.length > 0) {
-      where.id = { in: carIds };
-    }
-
-    const cars = await prisma.car.findMany({
-      where,
-      select: {
-        id: true,
-        nextServiceDue: true,
-        status: true,
-        carFlowPlans: {
-          where: { status: { in: ['Planned', 'InProgress'] } },
-          take: 1,
-        },
-      },
-    });
-
-    let updated = 0;
-
-    for (const car of cars) {
-      let newStatus = 'Unknown';
-
-      // If car is complete or in shop, skip
-      if (car.status === 'Complete' || car.status === 'InShop') {
-        newStatus = car.status === 'Complete' ? 'Compliant' : 'InShop';
-      }
-      // If car has active plan, it's planned
-      else if (car.carFlowPlans.length > 0) {
-        newStatus = 'Planned';
-      }
-      // Calculate based on next service due
-      else if (car.nextServiceDue) {
-        const dueDate = new Date(car.nextServiceDue);
-        const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (daysUntilDue < 0) {
-          newStatus = 'Urgent'; // Overdue
-        } else if (daysUntilDue <= 30) {
-          newStatus = 'Urgent'; // Due within 30 days
-        } else if (daysUntilDue <= 90) {
-          newStatus = 'Must Shop'; // Due within 90 days
-        } else if (daysUntilDue <= 180) {
-          newStatus = 'Upcoming'; // Due within 180 days
-        } else {
-          newStatus = 'Compliant'; // Not due soon
+      // Update specific cars
+      let updated = 0;
+      for (const carId of carIds) {
+        try {
+          await sstConsolidationService.updateCarShoppingStatus(carId);
+          updated++;
+        } catch {
+          // Car may not exist or not belong to company, skip
         }
       }
-
-      await prisma.car.update({
-        where: { id: car.id },
-        data: { shoppingStatus: newStatus },
+      res.json({
+        message: `Recalculated shopping status for ${updated} cars`,
+        processed: carIds.length,
+        updated,
       });
-      updated++;
+    } else {
+      // Batch update all cars in company
+      const result = await sstConsolidationService.batchUpdateShoppingStatus(companyId);
+      res.json({
+        message: `Recalculated shopping status for ${result.updated} cars`,
+        ...result,
+      });
     }
-
-    res.json({
-      message: `Recalculated shopping status for ${updated} cars`,
-      processed: cars.length,
-      updated,
-    });
   } catch (error) {
     logger.error('Failed to recalculate shopping status', error);
     res.status(500).json({ message: 'Internal server error' });

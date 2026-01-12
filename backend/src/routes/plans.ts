@@ -4,6 +4,7 @@ import websocketService from '../services/websocketService';
 import { recommendShopsForCar } from '../services/ruleEngine';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
+import sstConsolidationService from '../services/sstConsolidationService';
 
 const router = Router();
 
@@ -269,6 +270,8 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 });
 
 // Add assignment to plan
+// NOTE: Also creates CarFlowPlan entry (dual-write for SST migration)
+// @deprecated Use POST /api/car-flow/plans instead for new implementations
 router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
   const { carId, shopId, scheduledMonth, estimatedCost, estimatedDuration } = req.body;
 
@@ -285,20 +288,58 @@ router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const assignment = await prisma.planAssignment.create({
-      data: {
-        planId: req.params.id,
-        carId,
-        shopId,
-        scheduledMonth,
-        estimatedCost: estimatedCost || 0,
-        estimatedDuration: estimatedDuration || 14,
-      },
-      include: {
-        car: true,
-        shop: true,
-      },
+    // Parse scheduledMonth (YYYY-MM) for CarFlowPlan
+    const [yearStr, monthStr] = (scheduledMonth as string).split('-');
+    const plannedYear = parseInt(yearStr);
+    const plannedMonth = parseInt(monthStr);
+
+    // Create both PlanAssignment (legacy) and CarFlowPlan (SST) in transaction
+    const [assignment] = await prisma.$transaction(async (tx) => {
+      // Create legacy PlanAssignment
+      const newAssignment = await tx.planAssignment.create({
+        data: {
+          planId: req.params.id,
+          carId,
+          shopId,
+          scheduledMonth,
+          estimatedCost: estimatedCost || 0,
+          estimatedDuration: estimatedDuration || 14,
+        },
+        include: {
+          car: true,
+          shop: true,
+        },
+      });
+
+      // SST: Also create CarFlowPlan entry (if not exists)
+      const existingCarFlowPlan = await tx.carFlowPlan.findFirst({
+        where: {
+          carId,
+          status: { in: ['Planned', 'InProgress'] },
+        },
+      });
+
+      if (!existingCarFlowPlan) {
+        await tx.carFlowPlan.create({
+          data: {
+            carId,
+            shopId,
+            plannedMonth,
+            plannedYear,
+            status: 'Planned',
+            source: 'master_plan',
+            estimatedCost: estimatedCost || null,
+            notes: `Created from Plan: ${plan.name}`,
+            createdById: req.user!.id,
+          },
+        });
+      }
+
+      return [newAssignment];
     });
+
+    // Update shopping status (SST consolidation)
+    await sstConsolidationService.updateCarShoppingStatus(carId);
 
     res.status(201).json(assignment);
   } catch (error) {
@@ -1271,6 +1312,70 @@ router.get('/:id/export-data', async (req: AuthRequest, res: Response) => {
     res.json(exportData);
   } catch (error) {
     logger.error('Export plan data error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// =============================================================================
+// SST MIGRATION ENDPOINTS
+// =============================================================================
+
+/**
+ * Migrate PlanAssignment data to CarFlowPlan (SST)
+ * This is an admin operation for SST consolidation.
+ * @deprecated PlanAssignment is being phased out in favor of CarFlowPlan
+ */
+router.post('/migrate-to-car-flow-plan', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await sstConsolidationService.migratePlanAssignmentsToCarFlowPlan(
+      req.user!.companyId,
+      req.user!.id
+    );
+
+    res.json({
+      message: 'Migration completed',
+      ...result,
+    });
+  } catch (error) {
+    logger.error('SST migration error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * Sync all shopping statuses (recalculate from SST)
+ */
+router.post('/sync-shopping-status', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await sstConsolidationService.batchUpdateShoppingStatus(
+      req.user!.companyId
+    );
+
+    res.json({
+      message: 'Shopping status sync completed',
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Shopping status sync error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * Sync SOPCommitment usage counts with actual CarFlowPlan data
+ */
+router.post('/sync-sop-usage', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await sstConsolidationService.syncSOPCommitmentUsage(
+      req.user!.companyId
+    );
+
+    res.json({
+      message: 'S&OP usage sync completed',
+      ...result,
+    });
+  } catch (error) {
+    logger.error('S&OP usage sync error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
