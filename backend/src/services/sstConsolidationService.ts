@@ -10,6 +10,10 @@
  * 1. Run migratePlanAssignmentsToCarFlowPlan() to copy existing data
  * 2. Update code to use CarFlowPlan via /api/car-flow endpoints
  * 3. Eventually remove PlanAssignment table after migration verification
+ *
+ * ERROR LOGGING:
+ * All operations log errors with context for debugging.
+ * Use LOG_LEVEL=debug to see detailed operation logs.
  */
 
 import { prisma } from './db';
@@ -22,7 +26,7 @@ import logger from '../utils/logger';
 interface MigrationResult {
   migrated: number;
   skipped: number;
-  errors: { id: string; error: string }[];
+  errors: { id: string; error: string; details?: Record<string, unknown> }[];
 }
 
 /**
@@ -35,6 +39,12 @@ export async function migratePlanAssignmentsToCarFlowPlan(
   userId: string
 ): Promise<MigrationResult> {
   const result: MigrationResult = { migrated: 0, skipped: 0, errors: [] };
+  const startTime = Date.now();
+
+  logger.info('[SST Migration] Starting PlanAssignment → CarFlowPlan migration', {
+    companyId,
+    userId,
+  });
 
   try {
     // Get all active PlanAssignments for this company
@@ -44,10 +54,15 @@ export async function migratePlanAssignmentsToCarFlowPlan(
         status: { in: ['pending', 'confirmed', 'in_progress'] },
       },
       include: {
-        car: { select: { id: true, companyId: true } },
-        shop: { select: { id: true } },
-        plan: { select: { companyId: true } },
+        car: { select: { id: true, companyId: true, railcarNumber: true } },
+        shop: { select: { id: true, name: true } },
+        plan: { select: { companyId: true, name: true } },
       },
+    });
+
+    logger.info('[SST Migration] Found assignments to migrate', {
+      companyId,
+      totalAssignments: assignments.length,
     });
 
     for (const assignment of assignments) {
@@ -58,9 +73,18 @@ export async function migratePlanAssignmentsToCarFlowPlan(
         const plannedMonth = parseInt(monthStr);
 
         if (isNaN(plannedYear) || isNaN(plannedMonth)) {
+          const errorMsg = `Invalid scheduledMonth format: ${assignment.scheduledMonth}`;
+          logger.error('[SST Migration] Failed to parse scheduledMonth', {
+            assignmentId: assignment.id,
+            carId: assignment.carId,
+            railcarNumber: assignment.car?.railcarNumber,
+            scheduledMonth: assignment.scheduledMonth,
+            error: errorMsg,
+          });
           result.errors.push({
             id: assignment.id,
-            error: `Invalid scheduledMonth format: ${assignment.scheduledMonth}`,
+            error: errorMsg,
+            details: { scheduledMonth: assignment.scheduledMonth },
           });
           continue;
         }
@@ -77,12 +101,17 @@ export async function migratePlanAssignmentsToCarFlowPlan(
         });
 
         if (existing) {
+          logger.debug('[SST Migration] Skipping - CarFlowPlan already exists', {
+            assignmentId: assignment.id,
+            carId: assignment.carId,
+            existingCarFlowPlanId: existing.id,
+          });
           result.skipped++;
           continue;
         }
 
         // Create CarFlowPlan from PlanAssignment
-        await prisma.carFlowPlan.create({
+        const newCarFlowPlan = await prisma.carFlowPlan.create({
           data: {
             carId: assignment.carId,
             shopId: assignment.shopId,
@@ -96,23 +125,64 @@ export async function migratePlanAssignmentsToCarFlowPlan(
           },
         });
 
+        logger.debug('[SST Migration] Created CarFlowPlan from PlanAssignment', {
+          assignmentId: assignment.id,
+          newCarFlowPlanId: newCarFlowPlan.id,
+          carId: assignment.carId,
+          railcarNumber: assignment.car?.railcarNumber,
+          shopId: assignment.shopId,
+          shopName: assignment.shop?.name,
+          plannedMonth,
+          plannedYear,
+        });
+
         result.migrated++;
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        logger.error('[SST Migration] Failed to migrate assignment', {
+          assignmentId: assignment.id,
+          carId: assignment.carId,
+          railcarNumber: assignment.car?.railcarNumber,
+          shopId: assignment.shopId,
+          error: errorMsg,
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         result.errors.push({
           id: assignment.id,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMsg,
+          details: {
+            carId: assignment.carId,
+            shopId: assignment.shopId,
+            scheduledMonth: assignment.scheduledMonth,
+          },
         });
       }
     }
 
-    logger.info('PlanAssignment migration completed', {
+    const duration = Date.now() - startTime;
+    logger.info('[SST Migration] Migration completed', {
       companyId,
-      ...result,
+      duration: `${duration}ms`,
+      migrated: result.migrated,
+      skipped: result.skipped,
+      errors: result.errors.length,
     });
+
+    if (result.errors.length > 0) {
+      logger.warn('[SST Migration] Migration completed with errors', {
+        companyId,
+        errorCount: result.errors.length,
+        errors: result.errors.slice(0, 10), // Log first 10 errors
+      });
+    }
 
     return result;
   } catch (error) {
-    logger.error('PlanAssignment migration failed', error);
+    logger.error('[SST Migration] Migration failed with critical error', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     throw error;
   }
 }
@@ -129,6 +199,9 @@ function mapPlanAssignmentStatus(status: string): string {
     case 'cancelled':
       return 'Cancelled';
     default:
+      logger.warn('[SST Migration] Unknown PlanAssignment status, defaulting to Planned', {
+        originalStatus: status,
+      });
       return 'Planned';
   }
 }
@@ -146,28 +219,62 @@ export async function getShopMonthCapacity(
   year: number,
   month: number
 ): Promise<{ capacity: number; source: 'sop_commitment' | 'shop_default' }> {
-  // First check SOPCommitment (SST)
-  const commitment = await prisma.sOPCommitment.findFirst({
-    where: { shopId, year, month },
-  });
+  try {
+    // First check SOPCommitment (SST)
+    const commitment = await prisma.sOPCommitment.findFirst({
+      where: { shopId, year, month },
+    });
 
-  if (commitment) {
+    if (commitment) {
+      logger.debug('[SST Capacity] Using SOPCommitment capacity', {
+        shopId,
+        year,
+        month,
+        capacity: commitment.committedVolume,
+      });
+      return {
+        capacity: commitment.committedVolume,
+        source: 'sop_commitment',
+      };
+    }
+
+    // Fallback to Shop.capacity
+    const shop = await prisma.shop.findUnique({
+      where: { id: shopId },
+      select: { capacity: true, name: true },
+    });
+
+    if (!shop) {
+      logger.warn('[SST Capacity] Shop not found, returning 0 capacity', {
+        shopId,
+        year,
+        month,
+      });
+      return { capacity: 0, source: 'shop_default' };
+    }
+
+    logger.debug('[SST Capacity] No SOPCommitment found, using Shop.capacity fallback', {
+      shopId,
+      shopName: shop.name,
+      year,
+      month,
+      capacity: shop.capacity || 0,
+    });
+
     return {
-      capacity: commitment.committedVolume,
-      source: 'sop_commitment',
+      capacity: shop.capacity || 0,
+      source: 'shop_default',
     };
+  } catch (error) {
+    logger.error('[SST Capacity] Failed to get shop month capacity', {
+      shopId,
+      year,
+      month,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
   }
-
-  // Fallback to Shop.capacity
-  const shop = await prisma.shop.findUnique({
-    where: { id: shopId },
-    select: { capacity: true },
-  });
-
-  return {
-    capacity: shop?.capacity || 0,
-    source: 'shop_default',
-  };
 }
 
 /**
@@ -178,15 +285,34 @@ export async function getShopMonthUsage(
   year: number,
   month: number
 ): Promise<number> {
-  const count = await prisma.carFlowPlan.count({
-    where: {
+  try {
+    const count = await prisma.carFlowPlan.count({
+      where: {
+        shopId,
+        plannedYear: year,
+        plannedMonth: month,
+        status: { in: ['Planned', 'InProgress'] },
+      },
+    });
+
+    logger.debug('[SST Capacity] Got shop month usage', {
       shopId,
-      plannedYear: year,
-      plannedMonth: month,
-      status: { in: ['Planned', 'InProgress'] },
-    },
-  });
-  return count;
+      year,
+      month,
+      usage: count,
+    });
+
+    return count;
+  } catch (error) {
+    logger.error('[SST Capacity] Failed to get shop month usage', {
+      shopId,
+      year,
+      month,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -203,23 +329,55 @@ export async function getShopMonthAvailability(
   utilization: number;
   source: 'sop_commitment' | 'shop_default';
 }> {
-  const [capacityInfo, used] = await Promise.all([
-    getShopMonthCapacity(shopId, year, month),
-    getShopMonthUsage(shopId, year, month),
-  ]);
+  try {
+    const [capacityInfo, used] = await Promise.all([
+      getShopMonthCapacity(shopId, year, month),
+      getShopMonthUsage(shopId, year, month),
+    ]);
 
-  const available = Math.max(0, capacityInfo.capacity - used);
-  const utilization = capacityInfo.capacity > 0
-    ? Math.round((used / capacityInfo.capacity) * 100)
-    : 0;
+    const available = Math.max(0, capacityInfo.capacity - used);
+    const utilization = capacityInfo.capacity > 0
+      ? Math.round((used / capacityInfo.capacity) * 100)
+      : 0;
 
-  return {
-    capacity: capacityInfo.capacity,
-    used,
-    available,
-    utilization,
-    source: capacityInfo.source,
-  };
+    const result = {
+      capacity: capacityInfo.capacity,
+      used,
+      available,
+      utilization,
+      source: capacityInfo.source,
+    };
+
+    logger.debug('[SST Capacity] Calculated shop month availability', {
+      shopId,
+      year,
+      month,
+      ...result,
+    });
+
+    // Warn if over capacity
+    if (used > capacityInfo.capacity && capacityInfo.capacity > 0) {
+      logger.warn('[SST Capacity] Shop is over capacity!', {
+        shopId,
+        year,
+        month,
+        capacity: capacityInfo.capacity,
+        used,
+        overBy: used - capacityInfo.capacity,
+      });
+    }
+
+    return result;
+  } catch (error) {
+    logger.error('[SST Capacity] Failed to get shop month availability', {
+      shopId,
+      year,
+      month,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -228,31 +386,81 @@ export async function getShopMonthAvailability(
  */
 export async function syncSOPCommitmentUsage(
   companyId: string
-): Promise<{ updated: number }> {
-  // Get all SOPCommitments for company
-  const commitments = await prisma.sOPCommitment.findMany({
-    where: { companyId },
-  });
+): Promise<{ updated: number; checked: number; errors: string[] }> {
+  const startTime = Date.now();
+  const errors: string[] = [];
 
-  let updated = 0;
+  logger.info('[SST Capacity] Starting SOPCommitment usage sync', { companyId });
 
-  for (const commitment of commitments) {
-    const actualUsage = await getShopMonthUsage(
-      commitment.shopId,
-      commitment.year,
-      commitment.month
-    );
+  try {
+    // Get all SOPCommitments for company
+    const commitments = await prisma.sOPCommitment.findMany({
+      where: { companyId },
+      include: { shop: { select: { name: true } } },
+    });
 
-    if (commitment.currentUsage !== actualUsage) {
-      await prisma.sOPCommitment.update({
-        where: { id: commitment.id },
-        data: { currentUsage: actualUsage },
-      });
-      updated++;
+    logger.info('[SST Capacity] Found SOPCommitments to check', {
+      companyId,
+      count: commitments.length,
+    });
+
+    let updated = 0;
+
+    for (const commitment of commitments) {
+      try {
+        const actualUsage = await getShopMonthUsage(
+          commitment.shopId,
+          commitment.year,
+          commitment.month
+        );
+
+        if (commitment.currentUsage !== actualUsage) {
+          logger.info('[SST Capacity] Updating SOPCommitment currentUsage', {
+            commitmentId: commitment.id,
+            shopId: commitment.shopId,
+            shopName: commitment.shop?.name,
+            year: commitment.year,
+            month: commitment.month,
+            oldUsage: commitment.currentUsage,
+            newUsage: actualUsage,
+            diff: actualUsage - (commitment.currentUsage || 0),
+          });
+
+          await prisma.sOPCommitment.update({
+            where: { id: commitment.id },
+            data: { currentUsage: actualUsage },
+          });
+          updated++;
+        }
+      } catch (error) {
+        const errorMsg = `Failed to sync commitment ${commitment.id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        logger.error('[SST Capacity] Failed to sync individual commitment', {
+          commitmentId: commitment.id,
+          shopId: commitment.shopId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        errors.push(errorMsg);
+      }
     }
-  }
 
-  return { updated };
+    const duration = Date.now() - startTime;
+    logger.info('[SST Capacity] SOPCommitment usage sync completed', {
+      companyId,
+      duration: `${duration}ms`,
+      checked: commitments.length,
+      updated,
+      errors: errors.length,
+    });
+
+    return { updated, checked: commitments.length, errors };
+  } catch (error) {
+    logger.error('[SST Capacity] SOPCommitment usage sync failed', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
 }
 
 // =============================================================================
@@ -267,21 +475,34 @@ export function calculateShoppingStatus(car: {
   status: string | null;
   nextServiceDue: Date | null;
   hasActiveCarFlowPlan: boolean;
+  carId?: string; // Optional for logging
 }): string {
   const today = new Date();
 
   // Priority 1: Car is in shop
   if (car.status === 'Arrived' || car.status === 'InShop') {
+    logger.debug('[SST Status] Car status = InShop (arrived/in shop)', {
+      carId: car.carId,
+      carStatus: car.status,
+    });
     return 'InShop';
   }
 
   // Priority 2: Car work is complete
   if (car.status === 'Complete') {
+    logger.debug('[SST Status] Car status = Compliant (work complete)', {
+      carId: car.carId,
+      carStatus: car.status,
+    });
     return 'Compliant';
   }
 
   // Priority 3: Car has active plan
   if (car.hasActiveCarFlowPlan) {
+    logger.debug('[SST Status] Car status = Planned (has active CarFlowPlan)', {
+      carId: car.carId,
+      carStatus: car.status,
+    });
     return 'Planned';
   }
 
@@ -292,18 +513,34 @@ export function calculateShoppingStatus(car: {
       (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
     );
 
+    let derivedStatus: string;
     if (daysUntilDue < 0) {
-      return 'Urgent'; // Overdue
+      derivedStatus = 'Urgent'; // Overdue
     } else if (daysUntilDue <= 30) {
-      return 'Urgent'; // Due within 30 days
+      derivedStatus = 'Urgent'; // Due within 30 days
     } else if (daysUntilDue <= 90) {
-      return 'MustShop'; // Due within 90 days
+      derivedStatus = 'MustShop'; // Due within 90 days
     } else if (daysUntilDue <= 180) {
-      return 'Upcoming'; // Due within 180 days
+      derivedStatus = 'Upcoming'; // Due within 180 days
     } else {
-      return 'Compliant'; // Not due soon
+      derivedStatus = 'Compliant'; // Not due soon
     }
+
+    logger.debug('[SST Status] Car status derived from nextServiceDue', {
+      carId: car.carId,
+      carStatus: car.status,
+      nextServiceDue: car.nextServiceDue,
+      daysUntilDue,
+      derivedStatus,
+    });
+
+    return derivedStatus;
   }
+
+  logger.debug('[SST Status] Car status = Unknown (no service date, no plan)', {
+    carId: car.carId,
+    carStatus: car.status,
+  });
 
   return 'Unknown';
 }
@@ -312,36 +549,67 @@ export function calculateShoppingStatus(car: {
  * Update shoppingStatus for a single car (derived from current state).
  */
 export async function updateCarShoppingStatus(carId: string): Promise<string> {
-  const car = await prisma.car.findUnique({
-    where: { id: carId },
-    select: {
-      id: true,
-      status: true,
-      nextServiceDue: true,
-      carFlowPlans: {
-        where: { status: { in: ['Planned', 'InProgress'] } },
-        take: 1,
-        select: { id: true },
+  try {
+    const car = await prisma.car.findUnique({
+      where: { id: carId },
+      select: {
+        id: true,
+        railcarNumber: true,
+        status: true,
+        shoppingStatus: true,
+        nextServiceDue: true,
+        carFlowPlans: {
+          where: { status: { in: ['Planned', 'InProgress'] } },
+          take: 1,
+          select: { id: true, status: true },
+        },
       },
-    },
-  });
+    });
 
-  if (!car) {
-    throw new Error(`Car not found: ${carId}`);
+    if (!car) {
+      logger.error('[SST Status] Car not found for status update', { carId });
+      throw new Error(`Car not found: ${carId}`);
+    }
+
+    const newStatus = calculateShoppingStatus({
+      status: car.status,
+      nextServiceDue: car.nextServiceDue,
+      hasActiveCarFlowPlan: car.carFlowPlans.length > 0,
+      carId: car.id,
+    });
+
+    if (car.shoppingStatus !== newStatus) {
+      logger.info('[SST Status] Updating car shoppingStatus', {
+        carId: car.id,
+        railcarNumber: car.railcarNumber,
+        oldStatus: car.shoppingStatus,
+        newStatus,
+        carStatus: car.status,
+        hasActivePlan: car.carFlowPlans.length > 0,
+        nextServiceDue: car.nextServiceDue,
+      });
+
+      await prisma.car.update({
+        where: { id: carId },
+        data: { shoppingStatus: newStatus },
+      });
+    } else {
+      logger.debug('[SST Status] Car shoppingStatus unchanged', {
+        carId: car.id,
+        railcarNumber: car.railcarNumber,
+        status: newStatus,
+      });
+    }
+
+    return newStatus;
+  } catch (error) {
+    logger.error('[SST Status] Failed to update car shopping status', {
+      carId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
   }
-
-  const newStatus = calculateShoppingStatus({
-    status: car.status,
-    nextServiceDue: car.nextServiceDue,
-    hasActiveCarFlowPlan: car.carFlowPlans.length > 0,
-  });
-
-  await prisma.car.update({
-    where: { id: carId },
-    data: { shoppingStatus: newStatus },
-  });
-
-  return newStatus;
 }
 
 /**
@@ -349,41 +617,108 @@ export async function updateCarShoppingStatus(carId: string): Promise<string> {
  */
 export async function batchUpdateShoppingStatus(
   companyId: string
-): Promise<{ updated: number }> {
-  const cars = await prisma.car.findMany({
-    where: { companyId },
-    select: {
-      id: true,
-      status: true,
-      nextServiceDue: true,
-      shoppingStatus: true,
-      carFlowPlans: {
-        where: { status: { in: ['Planned', 'InProgress'] } },
-        take: 1,
-        select: { id: true },
+): Promise<{ updated: number; checked: number; errors: string[] }> {
+  const startTime = Date.now();
+  const errors: string[] = [];
+
+  logger.info('[SST Status] Starting batch shoppingStatus update', { companyId });
+
+  try {
+    const cars = await prisma.car.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        railcarNumber: true,
+        status: true,
+        nextServiceDue: true,
+        shoppingStatus: true,
+        carFlowPlans: {
+          where: { status: { in: ['Planned', 'InProgress'] } },
+          take: 1,
+          select: { id: true },
+        },
       },
-    },
-  });
-
-  let updated = 0;
-
-  for (const car of cars) {
-    const newStatus = calculateShoppingStatus({
-      status: car.status,
-      nextServiceDue: car.nextServiceDue,
-      hasActiveCarFlowPlan: car.carFlowPlans.length > 0,
     });
 
-    if (car.shoppingStatus !== newStatus) {
-      await prisma.car.update({
-        where: { id: car.id },
-        data: { shoppingStatus: newStatus },
-      });
-      updated++;
-    }
-  }
+    logger.info('[SST Status] Found cars to check', {
+      companyId,
+      count: cars.length,
+    });
 
-  return { updated };
+    let updated = 0;
+    const statusChanges: { carId: string; railcarNumber: string | null; from: string | null; to: string }[] = [];
+
+    for (const car of cars) {
+      try {
+        const newStatus = calculateShoppingStatus({
+          status: car.status,
+          nextServiceDue: car.nextServiceDue,
+          hasActiveCarFlowPlan: car.carFlowPlans.length > 0,
+          carId: car.id,
+        });
+
+        if (car.shoppingStatus !== newStatus) {
+          await prisma.car.update({
+            where: { id: car.id },
+            data: { shoppingStatus: newStatus },
+          });
+          updated++;
+          statusChanges.push({
+            carId: car.id,
+            railcarNumber: car.railcarNumber,
+            from: car.shoppingStatus,
+            to: newStatus,
+          });
+        }
+      } catch (error) {
+        const errorMsg = `Failed to update car ${car.id}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        logger.error('[SST Status] Failed to update individual car', {
+          carId: car.id,
+          railcarNumber: car.railcarNumber,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        errors.push(errorMsg);
+      }
+    }
+
+    const duration = Date.now() - startTime;
+
+    // Log summary of status changes
+    if (statusChanges.length > 0) {
+      // Group by transition type
+      const transitions: Record<string, number> = {};
+      for (const change of statusChanges) {
+        const key = `${change.from || 'null'} → ${change.to}`;
+        transitions[key] = (transitions[key] || 0) + 1;
+      }
+
+      logger.info('[SST Status] Batch update completed with changes', {
+        companyId,
+        duration: `${duration}ms`,
+        checked: cars.length,
+        updated,
+        errors: errors.length,
+        transitions,
+        sampleChanges: statusChanges.slice(0, 5), // Log first 5 changes
+      });
+    } else {
+      logger.info('[SST Status] Batch update completed - no changes needed', {
+        companyId,
+        duration: `${duration}ms`,
+        checked: cars.length,
+        updated: 0,
+      });
+    }
+
+    return { updated, checked: cars.length, errors };
+  } catch (error) {
+    logger.error('[SST Status] Batch shoppingStatus update failed', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
 }
 
 /**
@@ -394,15 +729,39 @@ export async function onCarFlowPlanStatusChange(
   carId: string,
   newPlanStatus: string
 ): Promise<void> {
-  // Recalculate the car's shopping status
-  await updateCarShoppingStatus(carId);
+  logger.info('[SST Status] CarFlowPlan status change hook triggered', {
+    carId,
+    newPlanStatus,
+  });
 
-  // If plan moved to InProgress, also update Car.status
-  if (newPlanStatus === 'InProgress') {
-    await prisma.car.update({
-      where: { id: carId },
-      data: { status: 'Arrived' },
+  try {
+    // Recalculate the car's shopping status
+    const newShoppingStatus = await updateCarShoppingStatus(carId);
+
+    // If plan moved to InProgress, also update Car.status
+    if (newPlanStatus === 'InProgress') {
+      logger.info('[SST Status] Updating Car.status to Arrived (plan InProgress)', {
+        carId,
+      });
+      await prisma.car.update({
+        where: { id: carId },
+        data: { status: 'Arrived' },
+      });
+    }
+
+    logger.info('[SST Status] CarFlowPlan status change hook completed', {
+      carId,
+      newPlanStatus,
+      newShoppingStatus,
     });
+  } catch (error) {
+    logger.error('[SST Status] CarFlowPlan status change hook failed', {
+      carId,
+      newPlanStatus,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
   }
 }
 

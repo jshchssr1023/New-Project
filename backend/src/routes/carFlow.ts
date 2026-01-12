@@ -171,7 +171,16 @@ router.post('/plans', async (req: AuthRequest, res: Response) => {
     });
 
     // SST: Update derived shopping status
-    await sstConsolidationService.updateCarShoppingStatus(carId);
+    try {
+      await sstConsolidationService.updateCarShoppingStatus(carId);
+    } catch (statusError) {
+      // Log but don't fail the request - the plan was created successfully
+      logger.warn('Failed to update shopping status after plan creation', {
+        carId,
+        planId: plan.id,
+        error: statusError instanceof Error ? statusError.message : 'Unknown error',
+      });
+    }
 
     res.status(201).json(plan);
   } catch (error) {
@@ -347,8 +356,26 @@ router.post('/plans/bulk', async (req: AuthRequest, res: Response) => {
 
     // SST: Update derived shopping status for all affected cars
     const affectedCarIds = createdPlans.map(p => p.carId);
+    const statusUpdateErrors: string[] = [];
     for (const carId of affectedCarIds) {
-      await sstConsolidationService.updateCarShoppingStatus(carId);
+      try {
+        await sstConsolidationService.updateCarShoppingStatus(carId);
+      } catch (statusError) {
+        const errorMsg = `Failed to update status for car ${carId}: ${statusError instanceof Error ? statusError.message : 'Unknown error'}`;
+        logger.warn('Failed to update shopping status after bulk plan creation', {
+          carId,
+          error: statusError instanceof Error ? statusError.message : 'Unknown error',
+        });
+        statusUpdateErrors.push(errorMsg);
+      }
+    }
+
+    if (statusUpdateErrors.length > 0) {
+      logger.warn('Some shopping status updates failed after bulk plan creation', {
+        totalPlans: createdPlans.length,
+        statusUpdateErrors: statusUpdateErrors.length,
+        errors: statusUpdateErrors.slice(0, 5),
+      });
     }
 
     res.json({
@@ -418,7 +445,16 @@ router.patch('/plans/:id/cancel', async (req: AuthRequest, res: Response) => {
     });
 
     // SST: Update derived shopping status (plan cancelled = recalculate urgency)
-    await sstConsolidationService.updateCarShoppingStatus(existingPlan.carId);
+    try {
+      await sstConsolidationService.updateCarShoppingStatus(existingPlan.carId);
+    } catch (statusError) {
+      // Log but don't fail - the plan cancellation was successful
+      logger.warn('Failed to update shopping status after plan cancellation', {
+        carId: existingPlan.carId,
+        planId: plan.id,
+        error: statusError instanceof Error ? statusError.message : 'Unknown error',
+      });
+    }
 
     res.json(plan);
   } catch (error) {
