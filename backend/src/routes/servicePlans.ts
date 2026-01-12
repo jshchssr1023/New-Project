@@ -86,6 +86,24 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 /**
+ * GET /service-plans/proposals/awaiting-response
+ * List all proposals awaiting customer response
+ * NOTE: This must be defined BEFORE /:id routes to prevent 'proposals' being treated as an ID
+ */
+router.get('/proposals/awaiting-response', async (req: AuthRequest, res: Response) => {
+  try {
+    const proposals = await servicePlanService.listProposalsAwaitingResponse(
+      req.user!.companyId
+    );
+
+    res.json(proposals);
+  } catch (error: any) {
+    logger.error('List proposals awaiting response error', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
  * POST /service-plans
  * Create a new service plan
  */
@@ -683,23 +701,6 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
 // =============================================================================
 // WORKFLOW ROUTES
 // =============================================================================
-
-/**
- * GET /service-plans/proposals/awaiting-response
- * List all proposals awaiting customer response
- */
-router.get('/proposals/awaiting-response', async (req: AuthRequest, res: Response) => {
-  try {
-    const proposals = await servicePlanService.listProposalsAwaitingResponse(
-      req.user!.companyId
-    );
-
-    res.json(proposals);
-  } catch (error: any) {
-    logger.error('List proposals awaiting response error', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
 /**
  * POST /service-plans/:id/propose
