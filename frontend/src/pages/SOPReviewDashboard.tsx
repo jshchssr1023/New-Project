@@ -31,8 +31,11 @@ import {
   FunnelIcon,
   DocumentChartBarIcon,
   ArrowDownTrayIcon,
+  DocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 import { sopApi } from '../services/sopApi';
+import { analyticsApi } from '../services/api/analytics';
+import type { SSTStatusResponse } from '../services/api/analytics';
 import { useShopNetworks } from '../hooks/useShopNetworks';
 import { generate18MonthLabels } from '../utils/sopCalculations';
 import type { DemandRegister, WorkType, PlanningState } from '../types/sop';
@@ -123,13 +126,48 @@ export default function SOPReviewDashboard() {
     queryFn: () => sopApi.supplyCapacity.getNetworkHierarchy(),
   });
 
-  const isLoading = demandLoading || planLoading || networkLoading;
+  // SST: Fetch actual planning status from UnifiedAssignment (THE SST)
+  const {
+    data: sstStatus,
+    isLoading: sstLoading,
+    refetch: refetchSST,
+  } = useQuery({
+    queryKey: ['sst-status-sop'],
+    queryFn: () => analyticsApi.getSSTStatus(),
+  });
+
+  const isLoading = demandLoading || planLoading || networkLoading || sstLoading;
   const error = demandError || planError;
 
   const systemCapacity = getSystemTotalCapacity();
 
-  // Calculate summary metrics
+  // Calculate summary metrics - SST data takes priority for accurate planning status
   const summaryMetrics = useMemo(() => {
+    // Use SST data if available (most accurate)
+    if (sstStatus) {
+      const total = sstStatus.fleetCoverage.totalCars;
+      // SST statuses: needsPlanning (no record), notConfirmed (DRAFT/PENDING_REVIEW), confirmed (COMMITTED/IN_PROGRESS)
+      const notPlanned = sstStatus.planningStates.needsPlanning;
+      const planned = sstStatus.planningStates.notConfirmed; // DRAFT + PENDING_REVIEW = "Planned but not confirmed"
+      const scheduled = sstStatus.planningStates.confirmed;  // COMMITTED + IN_PROGRESS = "Scheduled/Confirmed"
+
+      // Calculate overdue from urgency breakdown
+      const overdueData = sstStatus.byUrgency?.['Overdue'];
+      const overdue = overdueData ? overdueData.needsPlanning + overdueData.notConfirmed : 0;
+
+      return {
+        totalDemand: total,
+        notPlanned,
+        planned,
+        scheduled,
+        overdue,
+        notPlannedPercent: total > 0 ? Math.round((notPlanned / total) * 100) : 0,
+        plannedPercent: total > 0 ? Math.round((planned / total) * 100) : 0,
+        scheduledPercent: total > 0 ? Math.round((scheduled / total) * 100) : 0,
+      };
+    }
+
+    // Fallback to demand register if SST not available
     if (!demandRegister) {
       return {
         totalDemand: 0,
@@ -154,7 +192,7 @@ export default function SOPReviewDashboard() {
       plannedPercent: total > 0 ? Math.round((demandRegister.totalPlanned / total) * 100) : 0,
       scheduledPercent: total > 0 ? Math.round((demandRegister.totalScheduled / total) * 100) : 0,
     };
-  }, [demandRegister]);
+  }, [sstStatus, demandRegister]);
 
   // Calculate volumes by month by network
   const volumesByMonthNetwork = useMemo(() => {
@@ -196,6 +234,7 @@ export default function SOPReviewDashboard() {
   const handleRefresh = () => {
     refetchDemand();
     refetchPlan();
+    refetchSST();
   };
 
   if (isLoading) {
