@@ -31,6 +31,27 @@ export { default as proposalsApi } from './proposals';
 
 // Service Plan Builder API
 export { servicePlansApi } from './servicePlans';
+
+// Car Flow Planning API (Single Source of Truth for planning data)
+export {
+  carFlowApi,
+  carFlowPlanApi,
+  capacityApi,
+  sopCommitmentApi,
+  shoppingStatusApi,
+  customersApi,
+} from '../carFlowApi';
+export type {
+  CarFlowPlan,
+  CreateCarFlowPlanRequest,
+  SOPCommitment,
+  CreateSOPCommitmentRequest,
+  CapacityResponse,
+  ShoppingStatusStats,
+  BulkPlanAssignment,
+  BulkPlanConflict,
+  BulkPlanResponse,
+} from '../carFlowApi';
 export type {
   ServicePlan,
   ServicePlanCar,
