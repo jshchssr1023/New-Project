@@ -40,6 +40,44 @@ export interface ServicePlan {
   updatedAt: string;
   cars: ServicePlanCar[];
   options: PlanOption[];
+  // Proposal tracking fields
+  customerResponseStatus?: 'none' | 'awaiting_response' | 'approved' | 'rejected' | 'revision_requested';
+  customerRespondedAt?: string;
+  customerFeedback?: string;
+  revisionCount?: number;
+  currentSnapshotId?: string;
+  lastSentAt?: string;
+  proposedAt?: string;
+  proposedById?: string;
+}
+
+export interface ProposalSnapshot {
+  id: string;
+  servicePlanId: string;
+  snapshotNumber: number;
+  version: string;
+  snapshotType: 'initial_proposal' | 'revision' | 'final_confirmation';
+  snapshotData: any; // Parsed JSON containing full proposal state
+  sentToCustomer: boolean;
+  sentAt: string | null;
+  sentById: string | null;
+  sentToEmail: string | null;
+  sentToName: string | null;
+  customerResponseStatus: 'pending' | 'approved' | 'rejected' | 'revision_requested';
+  customerRespondedAt: string | null;
+  customerResponseNotes: string;
+  revisionRequestedAt: string | null;
+  revisionNotes: string;
+  supersededBySnapshotId: string | null;
+  pdfUrl: string | null;
+  pdfGeneratedAt: string | null;
+  carCount: number;
+  optionCount: number;
+  totalEstimatedCost: number;
+  selectedOptionName: string | null;
+  createdById: string;
+  companyId: string;
+  createdAt: string;
 }
 
 export interface ServicePlanCar {
@@ -624,10 +662,51 @@ export const servicePlansApi = {
 
   /**
    * Mark service plan as proposed (sent to customer)
+   * Creates an immutable snapshot for historical tracking
    */
-  propose: async (servicePlanId: string): Promise<ServicePlan> => {
-    const response = await apiClient.post<ServicePlan>(
-      `/service-plans/${servicePlanId}/propose`
+  propose: async (
+    servicePlanId: string,
+    sentToEmail?: string,
+    sentToName?: string
+  ): Promise<{ message: string; servicePlan: ServicePlan }> => {
+    const response = await apiClient.post<{ message: string; servicePlan: ServicePlan }>(
+      `/service-plans/${servicePlanId}/propose`,
+      { sentToEmail, sentToName }
+    );
+    return response.data;
+  },
+
+  /**
+   * List all proposals awaiting customer response
+   */
+  getProposalsAwaitingResponse: async (): Promise<ServicePlan[]> => {
+    const response = await apiClient.get<ServicePlan[]>(
+      '/service-plans/proposals/awaiting-response'
+    );
+    return response.data;
+  },
+
+  /**
+   * Record customer feedback on a proposal
+   */
+  recordCustomerFeedback: async (
+    servicePlanId: string,
+    responseStatus: 'approved' | 'rejected' | 'revision_requested',
+    feedback?: string
+  ): Promise<{ message: string; servicePlan: ServicePlan }> => {
+    const response = await apiClient.post<{ message: string; servicePlan: ServicePlan }>(
+      `/service-plans/${servicePlanId}/customer-feedback`,
+      { responseStatus, feedback }
+    );
+    return response.data;
+  },
+
+  /**
+   * Get proposal history (all snapshots) for a service plan
+   */
+  getProposalHistory: async (servicePlanId: string): Promise<ProposalSnapshot[]> => {
+    const response = await apiClient.get<ProposalSnapshot[]>(
+      `/service-plans/${servicePlanId}/proposal-history`
     );
     return response.data;
   },

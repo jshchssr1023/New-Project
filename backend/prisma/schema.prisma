@@ -2109,16 +2109,28 @@ model ServicePlan {
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
 
+  // Customer response tracking (for proposals awaiting feedback)
+  customerResponseStatus String              @default("none") // none, awaiting_response, approved, rejected, revision_requested
+  customerRespondedAt   DateTime?
+  customerFeedback      String              @default("") // Customer notes/feedback
+
+  // Revision tracking
+  revisionCount         Int                 @default(0) // Number of times revised
+  currentSnapshotId     String?             // Points to the latest active snapshot
+  lastSentAt            DateTime?           // Last time sent to customer
+
   // Relations
   cars                  ServicePlanCar[]
   options               PlanOption[]
   auditEvents           ServicePlanAuditEvent[]
+  proposalSnapshots     ProposalSnapshot[]
 
   @@index([companyId, status])
   @@index([customerId])
   @@index([customerId, status])  // For finding final_confirmed plan per customer
   @@index([status])
   @@index([createdById])
+  @@index([customerResponseStatus]) // For finding proposals awaiting response
 }
 
 // Cars selected for a Service Plan (shared pool across all options)
@@ -2337,4 +2349,71 @@ model ServicePlanAuditEvent {
   @@index([performedAt])
   @@index([companyId])
   @@index([carId])
+}
+
+// =============================================================================
+// PROPOSAL SNAPSHOT - Immutable record of what was sent to customer
+// =============================================================================
+// Required for: Historical tracking of shopping options offered to customers
+// Each time a proposal is sent (or revised), a snapshot is created
+// =============================================================================
+
+model ProposalSnapshot {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Snapshot identification
+  snapshotNumber        Int                 // Sequential number (1, 2, 3...) for this plan
+  version               String              @default("1.0") // Display version (1.0, 1.1, 2.0)
+
+  // Snapshot type
+  // Values: initial_proposal, revision, final_confirmation
+  snapshotType          String              @default("initial_proposal")
+
+  // Immutable snapshot data (JSON)
+  // Contains: { cars: [], options: [], selectedOption: {}, summary: {} }
+  snapshotData          String              @db.Text // JSON blob of entire proposal state
+
+  // Customer communication tracking
+  sentToCustomer        Boolean             @default(false)
+  sentAt                DateTime?           // When sent
+  sentById              String?             // Who sent it
+  sentToEmail           String?             // Customer email
+  sentToName            String?             // Customer contact name
+
+  // Customer response tracking
+  customerResponseStatus String             @default("pending") // pending, approved, rejected, revision_requested
+  customerRespondedAt   DateTime?
+  customerResponseNotes String              @default("") // Customer feedback
+
+  // If revision was requested, track what changed
+  revisionRequestedAt   DateTime?
+  revisionNotes         String              @default("") // What customer wants changed
+  supersededBySnapshotId String?            // Points to the new snapshot that replaced this one
+
+  // PDF generation
+  pdfUrl                String?             // Generated PDF path
+  pdfGeneratedAt        DateTime?
+
+  // Summary metrics (denormalized for quick display)
+  carCount              Int                 @default(0)
+  optionCount           Int                 @default(0)
+  totalEstimatedCost    Float               @default(0)
+  selectedOptionName    String?             // If customer selected an option
+
+  // Audit fields
+  createdById           String
+  companyId             String
+
+  createdAt             DateTime            @default(now())
+
+  @@unique([servicePlanId, snapshotNumber])
+  @@index([servicePlanId])
+  @@index([servicePlanId, snapshotType])
+  @@index([customerResponseStatus])
+  @@index([companyId])
+  @@index([sentAt])
 }

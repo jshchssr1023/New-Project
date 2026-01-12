@@ -685,20 +685,113 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
 // =============================================================================
 
 /**
+ * GET /service-plans/proposals/awaiting-response
+ * List all proposals awaiting customer response
+ */
+router.get('/proposals/awaiting-response', async (req: AuthRequest, res: Response) => {
+  try {
+    const proposals = await servicePlanService.listProposalsAwaitingResponse(
+      req.user!.companyId
+    );
+
+    res.json(proposals);
+  } catch (error: any) {
+    logger.error('List proposals awaiting response error', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
  * POST /service-plans/:id/propose
  * Mark service plan as proposed (sent to customer)
+ * Creates an immutable snapshot for historical tracking
+ * @body sentToEmail - Optional email address of customer contact
+ * @body sentToName - Optional name of customer contact
  */
 router.post('/:id/propose', async (req: AuthRequest, res: Response) => {
   try {
+    const { sentToEmail, sentToName } = req.body;
+
     const servicePlan = await servicePlanService.proposeServicePlan(
       req.params.id,
+      req.user!.id,
+      sentToEmail,
+      sentToName,
+      req.user!.companyId
+    );
+
+    res.json({
+      message: 'Proposal sent to customer and snapshot created',
+      servicePlan,
+    });
+  } catch (error: any) {
+    logger.error('Propose service plan error', error);
+    if (error.message.includes('not found')) {
+      res.status(404).json({ message: error.message });
+    } else if (error.message.includes('Access denied')) {
+      res.status(403).json({ message: error.message });
+    } else {
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+});
+
+/**
+ * POST /service-plans/:id/customer-feedback
+ * Record customer feedback on a proposal
+ * @body responseStatus - 'approved' | 'rejected' | 'revision_requested'
+ * @body feedback - Customer's feedback/notes
+ */
+router.post('/:id/customer-feedback', async (req: AuthRequest, res: Response) => {
+  try {
+    const { responseStatus, feedback } = req.body;
+
+    if (!responseStatus || !['approved', 'rejected', 'revision_requested'].includes(responseStatus)) {
+      res.status(400).json({ message: 'responseStatus must be one of: approved, rejected, revision_requested' });
+      return;
+    }
+
+    const servicePlan = await servicePlanService.recordCustomerFeedback(
+      req.params.id,
+      responseStatus,
+      feedback || '',
       req.user!.id,
       req.user!.companyId
     );
 
-    res.json(servicePlan);
+    res.json({
+      message: `Customer ${responseStatus === 'revision_requested' ? 'requested revision' : responseStatus} recorded`,
+      servicePlan,
+    });
   } catch (error: any) {
-    logger.error('Propose service plan error', error);
+    logger.error('Record customer feedback error', error);
+    if (error.message.includes('not found')) {
+      res.status(404).json({ message: error.message });
+    } else if (error.message.includes('Access denied')) {
+      res.status(403).json({ message: error.message });
+    } else if (error.message.includes('only record feedback on proposed')) {
+      res.status(400).json({ message: error.message });
+    } else {
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+});
+
+/**
+ * GET /service-plans/:id/proposal-history
+ * Get all proposal snapshots for a service plan
+ * Returns the history of all proposals sent to customer
+ */
+router.get('/:id/proposal-history', async (req: AuthRequest, res: Response) => {
+  try {
+    const history = await servicePlanService.getProposalHistory(
+      req.params.id,
+      req.user!.companyId
+    );
+
+    res.json(history);
+  } catch (error: any) {
+    logger.error('Get proposal history error', error);
     if (error.message.includes('not found')) {
       res.status(404).json({ message: error.message });
     } else if (error.message.includes('Access denied')) {
