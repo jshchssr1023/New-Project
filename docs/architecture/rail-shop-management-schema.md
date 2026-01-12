@@ -59,6 +59,9 @@ model ShopTier {
   typicalMaxCapacity      Int      @default(100) // Max cars/month for this tier
   typicalTurnTimeDays     Int      @default(14) // Expected turn time
 
+  // Overcommit allowance (Tier 1 shops may have flexibility to exceed capacity)
+  defaultOvercommitPct    Float    @default(0.0) // Default overcommit % (e.g., 0.10 = 10%)
+
   // Cost expectations
   laborRateMultiplier     Float    @default(1.0) // vs. baseline
   overheadMultiplier      Float    @default(1.0) // vs. baseline
@@ -91,57 +94,58 @@ model ShopTier {
 
 ### Default Tier Definitions
 
-| Tier | Name | Code | Key Capabilities | Typical Capacity |
-|------|------|------|------------------|------------------|
-| **1** | Heavy Repair / Qualification | `TIER1` | Full AAR M-1003, tank requalification, hydro testing, wheel work, heavy structural | 20-50 cars/month |
-| **2** | Intermediate Repair | `TIER2` | Light structural, component replacement, PM, Rule 88B | 30-80 cars/month |
-| **3** | Field/Quick Service | `TIER3` | Mobile/on-site, quick repairs, overflow, emergency response | 10-30 cars/month |
+| Tier | Name | Code | Key Capabilities | Typical Capacity | Overcommit |
+|------|------|------|------------------|------------------|------------|
+| **1** | Heavy Repair / Qualification | `TIER1` | Full AAR M-1003, tank requalification, hydro testing, wheel work, heavy structural | 20-50 cars/month | 10% |
+| **2** | Intermediate Repair | `TIER2` | Light structural, component replacement, PM, Rule 88B | 30-80 cars/month | 5% |
+| **3** | Field/Quick Service | `TIER3` | Mobile/on-site, quick repairs, overflow, emergency response | 10-30 cars/month | 0% |
 
 ### Seed Data SQL
 
 ```sql
--- Tier 1: Heavy Repair / Full Qualification
+-- Tier 1: Heavy Repair / Full Qualification (10% overcommit allowed)
 INSERT INTO ShopTier (id, tierLevel, name, code, description,
   aarCertificationRequired, aarCertificationTypes, dotCertificationRequired,
   canPerformHeavyRepair, canPerformWheelWork, canPerformTankRequalification,
   canPerformPainting, canPerformBlasting, canPerformWelding, canPerformLiningWork,
   canPerformHydroTesting, canPerformUltrasonicTesting, canPerformRule88B,
-  typicalMinCapacity, typicalMaxCapacity, typicalTurnTimeDays, routingPriority,
-  canEscalateTo, canReceiveFrom, companyId)
+  typicalMinCapacity, typicalMaxCapacity, typicalTurnTimeDays, defaultOvercommitPct,
+  routingPriority, canEscalateTo, canReceiveFrom, companyId)
 VALUES (
   uuid(), 1, 'Heavy Repair / Qualification', 'TIER1',
   'Full-service AAR-certified facility capable of heavy structural repairs, tank requalifications, and wheel work',
   true, '["M-1003", "M-1002"]', true,
   true, true, true, true, true, true, true, true, true, true,
-  20, 50, 21, 1,
-  '[]', '["TIER2", "TIER3"]', '<company_id>'
+  20, 50, 21, 0.10,  -- 10% overcommit allowance
+  1, '[]', '["TIER2", "TIER3"]', '<company_id>'
 );
 
--- Tier 2: Intermediate Repair
+-- Tier 2: Intermediate Repair (5% overcommit allowed)
 INSERT INTO ShopTier (id, tierLevel, name, code, description,
   aarCertificationRequired, canPerformHeavyRepair, canPerformWheelWork,
   canPerformTankRequalification, canPerformWelding, canPerformRule88B,
   canPerformPreventiveMaint, typicalMinCapacity, typicalMaxCapacity,
-  typicalTurnTimeDays, routingPriority, canEscalateTo, canReceiveFrom, companyId)
+  typicalTurnTimeDays, defaultOvercommitPct, routingPriority,
+  canEscalateTo, canReceiveFrom, companyId)
 VALUES (
   uuid(), 2, 'Intermediate Repair', 'TIER2',
   'Light-to-medium repair facility for component work, PM, and Rule 88B compliance',
   false, false, false, false, true, true, true,
-  30, 80, 14, 2,
-  '["TIER1"]', '["TIER3"]', '<company_id>'
+  30, 80, 14, 0.05,  -- 5% overcommit allowance
+  2, '["TIER1"]', '["TIER3"]', '<company_id>'
 );
 
--- Tier 3: Field/Quick Service
+-- Tier 3: Field/Quick Service (no overcommit - already flexible)
 INSERT INTO ShopTier (id, tierLevel, name, code, description,
   canPerformFieldService, canPerformQuickService, canPerformPreventiveMaint,
-  typicalMinCapacity, typicalMaxCapacity, typicalTurnTimeDays, routingPriority,
-  canEscalateTo, canReceiveFrom, companyId)
+  typicalMinCapacity, typicalMaxCapacity, typicalTurnTimeDays, defaultOvercommitPct,
+  routingPriority, canEscalateTo, canReceiveFrom, companyId)
 VALUES (
   uuid(), 3, 'Field/Quick Service', 'TIER3',
   'Mobile units, field service crews, and overflow/quick-turnaround locations',
   true, true, true,
-  10, 30, 7, 3,
-  '["TIER2", "TIER1"]', '[]', '<company_id>'
+  10, 30, 7, 0.00,  -- No overcommit (field service is inherently flexible)
+  3, '["TIER2", "TIER1"]', '[]', '<company_id>'
 );
 ```
 
@@ -263,70 +267,105 @@ model Shop {
 
 ---
 
+---
+
+## Terminology Standards
+
+> **IMPORTANT**: This document uses consistent terminology throughout. All implementations MUST follow these naming conventions.
+
+| Concept | Standard Term | Description |
+|---------|---------------|-------------|
+| Physical capacity limit | `monthlyCapacityLimit` | Maximum railcars a shop can handle per month |
+| Temporary override | `adjustedCapacityLimit` | Seasonal/maintenance adjustments to capacity |
+| Firm commitments | `confirmedRailcars` | Railcars with confirmed shop assignments |
+| Forecasted work | `plannedRailcars` | S&OP/forecasted work (visibility only) |
+| Total pipeline | `totalCommittedRailcars` | confirmedRailcars + plannedRailcars |
+| Open capacity | `remainingAvailableRailcars` | Capacity available for new confirmations |
+| Confirmed assignment | `ConfirmedShopVisit` | A railcar confirmed to visit a shop |
+| Forecasted assignment | `ForecastedShopVisit` | A planned/forecasted shop visit |
+| Time period | `capacityPeriod` | DATE type (first of month, e.g., '2026-01-01') |
+
+**Tracking Unit**: We track **railcars** (not "cars" or "spots"). One railcar = one capacity unit.
+
+---
+
 ## 4. ShopMonthlyCapacity Model
 
-Track confirmed vs. planned capacity consumption by month.
+Track confirmed vs. planned capacity consumption by period.
 
-### Schema Definition
+### Schema Definition (Prisma)
 
 ```prisma
 // =============================================================================
-// SHOP MONTHLY CAPACITY - Confirmed vs. Planned Capacity Tracking
+// SHOP MONTHLY CAPACITY - Confirmed vs. Planned Railcar Tracking
 // =============================================================================
 // Separates capacity into:
 // - Confirmed: Deducted from available (firm commitments)
 // - Planned: Visible but not deducted (forecasted/S&OP targets)
+//
+// TERMINOLOGY:
+// - monthlyCapacityLimit = physical max railcars/month
+// - confirmedRailcars = firm commitments (DEDUCTS capacity)
+// - plannedRailcars = forecasted (visibility only, NO deduction)
+// - remainingAvailableRailcars = limit - confirmed
 // =============================================================================
 
 model ShopMonthlyCapacity {
   id                      String   @id @default(uuid())
 
-  // Shop and period
+  // Shop and period (use DATE for first-of-month)
   shopId                  String
   shop                    Shop     @relation("MonthlyCapacity", fields: [shopId], references: [id], onDelete: Cascade)
-  year                    Int      // e.g., 2024
-  month                   Int      // 1-12
+  capacityPeriod          DateTime // First day of month, e.g., 2026-01-01
 
-  // Base capacity (from shop settings or S&OP allocation)
-  baseCapacity            Int      @default(0) // Total available spots
-  adjustedCapacity        Int?     // Override if different from base (seasonal, maintenance)
+  // Capacity limits
+  monthlyCapacityLimit    Int      @default(0) // Physical max railcars/month
+  adjustedCapacityLimit   Int?     // Temporary override (seasonal, maintenance)
   capacityNotes           String   @default("") // Reason for adjustment
 
   // Confirmed consumption (DEDUCTED from available)
-  confirmedCount          Int      @default(0) // # of confirmed railcars
+  confirmedRailcars       Int      @default(0) // # of confirmed railcars
+  confirmedRailcarDays    Float    @default(0) // Total confirmed railcar-days
   confirmedLaborHours     Float    @default(0) // Total confirmed labor hours
-  confirmedDays           Float    @default(0) // Total confirmed car-days
+  completedRailcars       Int      @default(0) // Railcars actually completed (for S&OP actuals)
 
   // Planned consumption (NOT deducted, visibility only)
-  plannedCount            Int      @default(0) // # of planned/forecasted railcars
+  plannedRailcars         Int      @default(0) // # of planned/forecasted railcars
+  plannedRailcarDays      Float    @default(0) // Forecasted railcar-days
   plannedLaborHours       Float    @default(0) // Forecasted labor hours
-  plannedDays             Float    @default(0) // Forecasted car-days
 
-  // Calculated fields (updated by triggers/service)
-  availableCapacity       Int      @default(0) // base - confirmed
-  totalCommitted          Int      @default(0) // confirmed + planned
-  utilizationPercent      Float    @default(0) // confirmed / base * 100
-  projectedUtilization    Float    @default(0) // (confirmed + planned) / base * 100
+  // =========================================================================
+  // CALCULATED FIELDS - Use database-level generated columns in production
+  // These are computed automatically; do NOT update manually
+  // =========================================================================
+  remainingAvailableRailcars Int   @default(0) // effectiveLimit - confirmedRailcars
+  totalCommittedRailcars     Int   @default(0) // confirmedRailcars + plannedRailcars
+  utilizationPercent         Float @default(0) // (confirmed / limit) * 100
+  projectedUtilizationPercent Float @default(0) // (totalCommitted / limit) * 100
 
   // S&OP target tracking
-  sopTargetCount          Int      @default(0) // S&OP target for this month
-  sopTargetProgress       Float    @default(0) // confirmed / sopTarget * 100
+  sopTargetRailcars       Int      @default(0) // S&OP target for this period
+  sopTargetProgress       Float    @default(0) // (completed / sopTarget) * 100
+  targetExceedsCapacity   Boolean  @default(false) // WARNING: sopTarget > limit
 
   // Capacity by work type
-  qualCapacityUsed        Int      @default(0) // Qualifications confirmed
-  repairCapacityUsed      Int      @default(0) // Repairs confirmed
-  pmCapacityUsed          Int      @default(0) // PM confirmed
+  qualRailcarsConfirmed   Int      @default(0) // Qualifications confirmed
+  repairRailcarsConfirmed Int      @default(0) // Repairs confirmed
+  pmRailcarsConfirmed     Int      @default(0) // PM confirmed
 
   // Roll-up from children (if parent shop)
-  childrenConfirmed       Int      @default(0) // Sum of children's confirmed
-  childrenPlanned         Int      @default(0) // Sum of children's planned
-  networkTotalCapacity    Int      @default(0) // Base + children's base (if aggregating)
-  networkAvailable        Int      @default(0) // Available + children's available
+  childrenConfirmedRailcars Int    @default(0) // Sum of children's confirmed
+  childrenPlannedRailcars   Int    @default(0) // Sum of children's planned
+  networkTotalCapacity      Int    @default(0) // Limit + children's limits
+  networkAvailableRailcars  Int    @default(0) // Available + children's available
 
   // Status flags
-  isOverCapacity          Boolean  @default(false) // confirmed > base
-  isAtRisk                Boolean  @default(false) // projected > base
+  isOverCapacity          Boolean  @default(false) // confirmed > limit
+  isAtRisk                Boolean  @default(false) // totalCommitted > limit
   requiresAttention       Boolean  @default(false) // Manual flag
+
+  // Optimistic locking for concurrent updates
+  version                 Int      @default(0) // Increment on each update
 
   // Audit
   lastCalculatedAt        DateTime @default(now())
@@ -337,65 +376,192 @@ model ShopMonthlyCapacity {
   companyId               String
   company                 Company  @relation(fields: [companyId], references: [id])
 
-  @@unique([shopId, year, month])
+  @@unique([shopId, capacityPeriod])
   @@index([shopId])
-  @@index([year, month])
+  @@index([capacityPeriod])
   @@index([companyId])
   @@index([isOverCapacity])
   @@index([isAtRisk])
 }
 ```
 
+### PostgreSQL Schema with Generated Columns (Production)
+
+For production deployments, use database-level generated columns for automatic calculation:
+
+```sql
+CREATE TABLE shop_monthly_capacity (
+    id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    shop_id                     UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    capacity_period             DATE NOT NULL,  -- First day of month e.g. '2026-01-01'
+
+    -- Capacity limits
+    monthly_capacity_limit      INTEGER NOT NULL CHECK (monthly_capacity_limit >= 0),
+    adjusted_capacity_limit     INTEGER CHECK (adjusted_capacity_limit >= 0),
+    overcommit_allowance_pct    NUMERIC(5,2) DEFAULT 0,  -- Tier 1 shops may allow 5-15% overcommit
+    capacity_notes              TEXT DEFAULT '',
+
+    -- Confirmed (DEDUCTS from available)
+    confirmed_railcars          INTEGER NOT NULL DEFAULT 0 CHECK (confirmed_railcars >= 0),
+    confirmed_railcar_days      NUMERIC(10,2) DEFAULT 0,
+    confirmed_labor_hours       NUMERIC(10,2) DEFAULT 0,
+    completed_railcars          INTEGER NOT NULL DEFAULT 0 CHECK (completed_railcars >= 0),
+
+    -- Planned (visibility only)
+    planned_railcars            INTEGER NOT NULL DEFAULT 0 CHECK (planned_railcars >= 0),
+    planned_railcar_days        NUMERIC(10,2) DEFAULT 0,
+    planned_labor_hours         NUMERIC(10,2) DEFAULT 0,
+
+    -- S&OP targets
+    sop_target_railcars         INTEGER DEFAULT 0,
+
+    -- Work type breakdown
+    qual_railcars_confirmed     INTEGER DEFAULT 0,
+    repair_railcars_confirmed   INTEGER DEFAULT 0,
+    pm_railcars_confirmed       INTEGER DEFAULT 0,
+
+    -- Network roll-up
+    children_confirmed_railcars INTEGER DEFAULT 0,
+    children_planned_railcars   INTEGER DEFAULT 0,
+    network_total_capacity      INTEGER DEFAULT 0,
+
+    -- Optimistic locking
+    version                     BIGINT NOT NULL DEFAULT 0,
+
+    -- Audit
+    last_calculated_at          TIMESTAMPTZ DEFAULT now(),
+    created_at                  TIMESTAMPTZ DEFAULT now(),
+    updated_at                  TIMESTAMPTZ DEFAULT now(),
+    company_id                  UUID NOT NULL REFERENCES companies(id),
+
+    -- =========================================================================
+    -- GENERATED COLUMNS (computed automatically by PostgreSQL)
+    -- =========================================================================
+    effective_capacity_limit    INTEGER GENERATED ALWAYS AS (
+        COALESCE(adjusted_capacity_limit, monthly_capacity_limit)
+    ) STORED,
+
+    max_with_overcommit         INTEGER GENERATED ALWAYS AS (
+        ROUND(COALESCE(adjusted_capacity_limit, monthly_capacity_limit) *
+              (1 + COALESCE(overcommit_allowance_pct, 0) / 100))
+    ) STORED,
+
+    remaining_available_railcars INTEGER GENERATED ALWAYS AS (
+        GREATEST(0, COALESCE(adjusted_capacity_limit, monthly_capacity_limit) - confirmed_railcars)
+    ) STORED,
+
+    total_committed_railcars    INTEGER GENERATED ALWAYS AS (
+        confirmed_railcars + planned_railcars
+    ) STORED,
+
+    utilization_percent         NUMERIC(5,2) GENERATED ALWAYS AS (
+        CASE WHEN monthly_capacity_limit > 0
+             THEN (confirmed_railcars::NUMERIC / monthly_capacity_limit) * 100
+             ELSE 0 END
+    ) STORED,
+
+    projected_utilization_percent NUMERIC(5,2) GENERATED ALWAYS AS (
+        CASE WHEN monthly_capacity_limit > 0
+             THEN ((confirmed_railcars + planned_railcars)::NUMERIC / monthly_capacity_limit) * 100
+             ELSE 0 END
+    ) STORED,
+
+    sop_target_progress         NUMERIC(5,2) GENERATED ALWAYS AS (
+        CASE WHEN sop_target_railcars > 0
+             THEN (completed_railcars::NUMERIC / sop_target_railcars) * 100
+             ELSE 0 END
+    ) STORED,
+
+    is_over_capacity            BOOLEAN GENERATED ALWAYS AS (
+        confirmed_railcars > COALESCE(adjusted_capacity_limit, monthly_capacity_limit)
+    ) STORED,
+
+    is_at_risk                  BOOLEAN GENERATED ALWAYS AS (
+        (confirmed_railcars + planned_railcars) > COALESCE(adjusted_capacity_limit, monthly_capacity_limit)
+    ) STORED,
+
+    target_exceeds_capacity     BOOLEAN GENERATED ALWAYS AS (
+        sop_target_railcars > COALESCE(adjusted_capacity_limit, monthly_capacity_limit)
+    ) STORED,
+
+    network_available_railcars  INTEGER GENERATED ALWAYS AS (
+        GREATEST(0, COALESCE(adjusted_capacity_limit, monthly_capacity_limit) - confirmed_railcars)
+        + GREATEST(0, network_total_capacity - children_confirmed_railcars)
+    ) STORED,
+
+    CONSTRAINT one_record_per_period UNIQUE (shop_id, capacity_period)
+);
+
+-- Indexes for common queries
+CREATE INDEX idx_capacity_shop ON shop_monthly_capacity(shop_id);
+CREATE INDEX idx_capacity_period ON shop_monthly_capacity(capacity_period);
+CREATE INDEX idx_capacity_company ON shop_monthly_capacity(company_id);
+CREATE INDEX idx_capacity_over ON shop_monthly_capacity(is_over_capacity) WHERE is_over_capacity = true;
+CREATE INDEX idx_capacity_risk ON shop_monthly_capacity(is_at_risk) WHERE is_at_risk = true;
+```
+
 ### Capacity Calculation Rules
 
-| Field | Formula |
-|-------|---------|
-| `availableCapacity` | `max(0, (adjustedCapacity ?? baseCapacity) - confirmedCount)` |
-| `totalCommitted` | `confirmedCount + plannedCount` |
-| `utilizationPercent` | `(confirmedCount / baseCapacity) * 100` |
-| `projectedUtilization` | `(totalCommitted / baseCapacity) * 100` |
-| `sopTargetProgress` | `(confirmedCount / sopTargetCount) * 100` (if target > 0) |
-| `isOverCapacity` | `confirmedCount > baseCapacity` |
-| `isAtRisk` | `totalCommitted > baseCapacity` |
+| Field | Formula | Notes |
+|-------|---------|-------|
+| `effectiveCapacityLimit` | `COALESCE(adjustedCapacityLimit, monthlyCapacityLimit)` | Use override if set |
+| `maxWithOvercommit` | `effectiveLimit * (1 + overcommitAllowancePct/100)` | Tier 1 flexibility |
+| `remainingAvailableRailcars` | `MAX(0, effectiveLimit - confirmedRailcars)` | Cannot go negative |
+| `totalCommittedRailcars` | `confirmedRailcars + plannedRailcars` | Full pipeline visibility |
+| `utilizationPercent` | `(confirmedRailcars / monthlyCapacityLimit) * 100` | Actual utilization |
+| `projectedUtilizationPercent` | `(totalCommittedRailcars / monthlyCapacityLimit) * 100` | If all planned converts |
+| `sopTargetProgress` | `(completedRailcars / sopTargetRailcars) * 100` | Based on COMPLETED, not confirmed |
+| `isOverCapacity` | `confirmedRailcars > effectiveLimit` | Hard violation |
+| `isAtRisk` | `totalCommittedRailcars > effectiveLimit` | Soft warning |
+| `targetExceedsCapacity` | `sopTargetRailcars > effectiveLimit` | S&OP planning issue |
 
 ---
 
-## 5. RailcarScheduleEntry Model
+## 5. ConfirmedShopVisit Model (formerly RailcarScheduleEntry)
 
-Individual railcar scheduling entries (confirmed).
+Confirmed railcar shop assignments that **deduct capacity**.
 
 ### Schema Definition
 
 ```prisma
 // =============================================================================
-// RAILCAR SCHEDULE ENTRY - Confirmed Shop Assignments
+// CONFIRMED SHOP VISIT - Firm Railcar-to-Shop Assignments
 // =============================================================================
-// When a railcar is confirmed for a shop visit, it creates a schedule entry
-// that deducts capacity from ShopMonthlyCapacity.
+// When a railcar is CONFIRMED for a shop visit, it creates a ConfirmedShopVisit
+// that DEDUCTS capacity from ShopMonthlyCapacity.
+//
+// Key distinction from ForecastedShopVisit:
+// - ConfirmedShopVisit = DEDUCTS from remainingAvailableRailcars
+// - ForecastedShopVisit = visibility only, NO deduction
 // =============================================================================
 
-model RailcarScheduleEntry {
+model ConfirmedShopVisit {
   id                      String   @id @default(uuid())
 
   // Core references
-  carId                   String
-  car                     Car      @relation("ScheduleEntries", fields: [carId], references: [id], onDelete: Cascade)
+  railcarId               String   // Changed from carId for consistency
+  railcar                 Car      @relation("ConfirmedVisits", fields: [railcarId], references: [id], onDelete: Cascade)
   shopId                  String
-  shop                    Shop     @relation("ScheduleEntries", fields: [shopId], references: [id])
+  shop                    Shop     @relation("ConfirmedVisits", fields: [shopId], references: [id])
 
-  // Schedule details
-  scheduledYear           Int
-  scheduledMonth          Int      // Target month
+  // Schedule period (use DATE for first-of-month)
+  visitPeriod             DateTime // First day of target month e.g., 2026-01-01
   scheduledWeek           Int?     // Optional: specific week (1-5)
-  scheduledDate           DateTime? // Optional: specific date
+  scheduledDate           DateTime? // Optional: specific arrival date
 
   // Work scope
   workType                String   @default("REPAIR") // QUAL, REPAIR, PM, INSPECTION, OTHER
   defectCodes             String   @default("[]") // JSON: AAR defect codes
   workDescription         String   @default("")
-  estimatedDays           Float    @default(7) // Expected duration
-  estimatedLaborHours     Float    @default(40) // Expected labor
+
+  // Estimates vs Actuals (track both for variance analysis)
+  estimatedRailcarDays    Float    @default(7)   // Expected duration
+  estimatedLaborHours     Float    @default(40)  // Expected labor
   estimatedCost           Float    @default(0)
+
+  actualRailcarDays       Float?   // Filled after completion
+  actualLaborHours        Float?   // Filled after completion
+  actualCost              Float?   // Filled after completion
 
   // Priority and urgency
   priority                Int      @default(3) // 1=Critical, 2=High, 3=Normal, 4=Low
@@ -406,13 +572,10 @@ model RailcarScheduleEntry {
   status                  String   @default("SCHEDULED") // SCHEDULED, IN_TRANSIT, ARRIVED, IN_PROGRESS, COMPLETE, CANCELLED
   statusUpdatedAt         DateTime @default(now())
 
-  // Actual results (filled after completion)
+  // Actual dates (filled as railcar progresses)
   actualArrivalDate       DateTime?
   actualStartDate         DateTime?
   actualCompletionDate    DateTime?
-  actualDays              Float?
-  actualLaborHours        Float?
-  actualCost              Float?
 
   // Routing/logistics
   originYard              String   @default("")
@@ -426,7 +589,8 @@ model RailcarScheduleEntry {
 
   // Source of assignment
   sourceType              String   @default("MANUAL") // MANUAL, SOP, AUTO_ALLOCATION, IMPORT
-  sourceId                String?  // Reference to source record (CarFlowPlan, SOPCommitment, etc.)
+  sourceId                String?  // Reference to source record
+  convertedFromForecastId String?  // If converted from ForecastedShopVisit
 
   // Audit
   createdAt               DateTime @default(now())
@@ -439,9 +603,9 @@ model RailcarScheduleEntry {
   companyId               String
   company                 Company  @relation(fields: [companyId], references: [id])
 
-  @@unique([carId, shopId, scheduledYear, scheduledMonth])
-  @@index([shopId, scheduledYear, scheduledMonth])
-  @@index([carId])
+  @@unique([railcarId, shopId, visitPeriod])
+  @@index([shopId, visitPeriod])
+  @@index([railcarId])
   @@index([status])
   @@index([workType])
   @@index([companyId])
@@ -452,55 +616,58 @@ model RailcarScheduleEntry {
 
 ---
 
-## 6. RailcarPlanEntry Model
+## 6. ForecastedShopVisit Model (formerly RailcarPlanEntry)
 
-Planned/forecasted railcar assignments (visibility only, no capacity deduction).
+Planned/forecasted railcar assignments (visibility only, **NO capacity deduction**).
 
 ### Schema Definition
 
 ```prisma
 // =============================================================================
-// RAILCAR PLAN ENTRY - Forecasted/Planned Assignments (No Capacity Deduction)
+// FORECASTED SHOP VISIT - Planned Assignments (NO Capacity Deduction)
 // =============================================================================
 // Represents planned work from S&OP, fleet forecasting, or advance notifications.
 // Shows potential capacity consumption but does NOT deduct from available.
+//
+// Key distinction from ConfirmedShopVisit:
+// - ForecastedShopVisit = visibility only, contributes to plannedRailcars
+// - ConfirmedShopVisit = DEDUCTS from remainingAvailableRailcars
 // =============================================================================
 
-model RailcarPlanEntry {
+model ForecastedShopVisit {
   id                      String   @id @default(uuid())
 
-  // Core references (car may be specific or a placeholder)
-  carId                   String?  // Null if generic planned volume
-  car                     Car?     @relation("PlanEntries", fields: [carId], references: [id], onDelete: SetNull)
+  // Core references (railcar may be specific or NULL for bulk forecasts)
+  railcarId               String?  // NULL if generic planned volume
+  railcar                 Car?     @relation("ForecastedVisits", fields: [railcarId], references: [id], onDelete: SetNull)
   shopId                  String
-  shop                    Shop     @relation("PlanEntries", fields: [shopId], references: [id])
+  shop                    Shop     @relation("ForecastedVisits", fields: [shopId], references: [id])
 
-  // For generic/bulk planned volumes
-  plannedCarCount         Int      @default(1) // If carId is null, this is the count
-  carTypeFilter           String?  // e.g., "TANK" - for generic volume allocation
+  // For generic/bulk planned volumes (when railcarId is NULL)
+  forecastedRailcarCount  Int      @default(1) // # of railcars in this forecast
+  railcarTypeFilter       String?  // e.g., "TANK" - for generic volume allocation
 
-  // Plan period
-  plannedYear             Int
-  plannedMonth            Int
+  // Forecast period
+  forecastPeriod          DateTime // First day of target month e.g., 2026-01-01
 
   // Work scope (forecasted)
   workType                String   @default("REPAIR")
-  estimatedDaysPerCar     Float    @default(7)
-  estimatedLaborHoursPerCar Float  @default(40)
-  estimatedCostPerCar     Float    @default(0)
+  estimatedRailcarDaysEach Float   @default(7)
+  estimatedLaborHoursEach Float    @default(40)
+  estimatedCostEach       Float    @default(0)
 
-  // Source of plan
-  planSource              String   @default("MANUAL") // MANUAL, SOP, FLEET_FORECAST, QUAL_SCHEDULE, IMPORT
-  planSourceId            String?  // Reference to source (MasterPlan, SOPCommitment, etc.)
-  planSourceName          String   @default("") // Display name of source
+  // Source of forecast
+  forecastSource          String   @default("MANUAL") // MANUAL, SOP, FLEET_FORECAST, QUAL_SCHEDULE, IMPORT
+  forecastSourceId        String?  // Reference to source (MasterPlan, SOPCommitment, etc.)
+  forecastSourceName      String   @default("") // Display name of source
 
   // Confidence level
   confidence              String   @default("MEDIUM") // LOW, MEDIUM, HIGH, COMMITTED
-  probabilityPercent      Float    @default(50) // 0-100% likelihood
+  probabilityPercent      Float    @default(50) // 0-100% likelihood of conversion
 
   // Conversion tracking
-  status                  String   @default("PLANNED") // PLANNED, CONVERTED, CANCELLED, EXPIRED
-  convertedToScheduleId   String?  // If converted, link to RailcarScheduleEntry
+  status                  String   @default("FORECASTED") // FORECASTED, CONVERTED, CANCELLED, EXPIRED
+  convertedToVisitId      String?  // If converted, link to ConfirmedShopVisit
   convertedAt             DateTime?
 
   // Notes
@@ -515,9 +682,9 @@ model RailcarPlanEntry {
   companyId               String
   company                 Company  @relation(fields: [companyId], references: [id])
 
-  @@index([shopId, plannedYear, plannedMonth])
-  @@index([carId])
-  @@index([planSource])
+  @@index([shopId, forecastPeriod])
+  @@index([railcarId])
+  @@index([forecastSource])
   @@index([status])
   @@index([companyId])
 }
@@ -760,8 +927,8 @@ model Shop {
 │ tierLevel (1-3) │       │ networkId        │──────►│ code            │
 │ name            │       │ parentShopId     │       │ name            │
 │ capabilities... │       │ code             │       │ annualTarget    │
-└─────────────────┘       │ capacity         │       └─────────────────┘
-                          │ ...              │
+│ overcommitPct   │       │ monthlyCapLimit  │       └─────────────────┘
+└─────────────────┘       │ ...              │
                           └────────┬─────────┘
                                    │
               ┌────────────────────┼────────────────────┐
@@ -771,36 +938,39 @@ model Shop {
 │   ShopHierarchy     │ │ ShopMonthlyCapacity │ │   SOPShopTarget     │
 │─────────────────────│ │─────────────────────│ │─────────────────────│
 │ parentShopId        │ │ shopId              │ │ shopId              │
-│ childShopId         │ │ year, month         │ │ year, month         │
-│ relationshipType    │ │ baseCapacity        │ │ targetCarsProcessed │
-│ capacitySharePercent│ │ confirmedCount      │ │ targetBacklogEnd    │
-│ canReceiveOverflow  │ │ plannedCount        │ │ actualCarsProcessed │
-└─────────────────────┘ │ availableCapacity   │ │ isOnTrack           │
+│ childShopId         │ │ capacityPeriod      │ │ capacityPeriod      │
+│ relationshipType    │ │ monthlyCapLimit     │ │ targetRailcars      │
+│ capacitySharePercent│ │ confirmedRailcars   │ │ targetBacklogEnd    │
+│ canReceiveOverflow  │ │ plannedRailcars     │ │ completedRailcars   │
+└─────────────────────┘ │ remainingAvailable  │ │ isOnTrack           │
                         │ utilizationPercent  │ └─────────────────────┘
+                        │ version (locking)   │
                         └─────────┬───────────┘
                                   │
                   ┌───────────────┴───────────────┐
                   │                               │
                   ▼                               ▼
     ┌─────────────────────────┐    ┌─────────────────────────┐
-    │  RailcarScheduleEntry   │    │   RailcarPlanEntry      │
+    │   ConfirmedShopVisit    │    │   ForecastedShopVisit   │
     │─────────────────────────│    │─────────────────────────│
-    │ carId (required)        │    │ carId (optional)        │
+    │ railcarId (required)    │    │ railcarId (optional)    │
     │ shopId                  │    │ shopId                  │
-    │ scheduledYear, Month    │    │ plannedYear, Month      │
+    │ visitPeriod (DATE)      │    │ forecastPeriod (DATE)   │
     │ workType                │    │ workType                │
-    │ status                  │    │ planSource              │
-    │ estimatedDays           │    │ confidence              │
-    │ DEDUCTS CAPACITY        │    │ NO CAPACITY DEDUCTION   │
+    │ status                  │    │ forecastSource          │
+    │ estimatedRailcarDays    │    │ confidence              │
+    │ actualRailcarDays       │    │ probabilityPercent      │
+    │ ══════════════════════  │    │ ══════════════════════  │
+    │ ⚡ DEDUCTS CAPACITY     │    │ 👁 VISIBILITY ONLY      │
     └─────────────────────────┘    └─────────────────────────┘
               │                               │
               └───────────────┬───────────────┘
                               ▼
                       ┌───────────────┐
-                      │     Car       │
+                      │    Railcar    │
                       │───────────────│
                       │ railcarNumber │
-                      │ carType       │
+                      │ railcarType   │
                       │ shoppingStatus│
                       └───────────────┘
 ```
@@ -810,28 +980,30 @@ model Shop {
 ## 10. Migration Strategy
 
 ### Phase 1: Add New Tables (Non-Breaking)
-1. Create `ShopTier` table with seed data
+1. Create `ShopTier` table with seed data (including overcommitAllowancePct)
 2. Create `ShopHierarchy` table
-3. Create `ShopMonthlyCapacity` table
-4. Create `RailcarScheduleEntry` table
-5. Create `RailcarPlanEntry` table
+3. Create `ShopMonthlyCapacity` table with generated columns
+4. Create `ConfirmedShopVisit` table
+5. Create `ForecastedShopVisit` table
 6. Create `SOPShopTarget` table
 
 ### Phase 2: Migrate Existing Data
 1. Map existing `networkTier` values to new `ShopTier` records
 2. Convert existing `parentShopId` relationships to `ShopHierarchy` entries
-3. Migrate `CarFlowPlan` confirmed entries to `RailcarScheduleEntry`
+3. Migrate `CarFlowPlan` confirmed entries to `ConfirmedShopVisit`
 4. Calculate initial `ShopMonthlyCapacity` from current data
 
 ### Phase 3: Update Application Code
 1. Update Shop service to use new tier relation
 2. Add hierarchy management service
-3. Implement capacity calculation service
+3. Implement capacity calculation service with optimistic locking
 4. Update allocation engine to use new models
+5. **Remove dangerous auto-capacity-increase logic**
 
 ### Phase 4: Deprecate Old Fields
 1. Mark `networkTier` as deprecated
 2. Consider removing redundant `parentShopId` after full migration
+3. Remove any legacy `year`/`month` fields (use `capacityPeriod` DATE)
 
 ---
 
@@ -841,165 +1013,337 @@ This schema design provides:
 
 | Feature | Model | Key Benefit |
 |---------|-------|-------------|
-| **Tiered Classification** | `ShopTier` | AAR-aligned capability classification (Tier 1/2/3) |
+| **Tiered Classification** | `ShopTier` | AAR-aligned capability classification (Tier 1/2/3) with overcommit allowance |
 | **Hierarchy Management** | `ShopHierarchy` | Explicit parent-child with capacity roll-up settings |
-| **Capacity Tracking** | `ShopMonthlyCapacity` | Confirmed vs. planned separation |
-| **Confirmed Assignments** | `RailcarScheduleEntry` | Deducts capacity, full work order tracking |
-| **Planned Forecasts** | `RailcarPlanEntry` | S&OP visibility without capacity deduction |
+| **Capacity Tracking** | `ShopMonthlyCapacity` | confirmedRailcars vs. plannedRailcars separation with generated columns |
+| **Confirmed Assignments** | `ConfirmedShopVisit` | DEDUCTS capacity, tracks estimates vs actuals |
+| **Planned Forecasts** | `ForecastedShopVisit` | S&OP visibility without capacity deduction |
 | **S&OP Integration** | `SOPShopTarget` | Target vs. actual tracking per period |
 
 ---
 
 ## 11. Core Business Logic Rules
 
-### 11.1 Railcar Assignment & Capacity Deduction
+### 11.1 Confirm Shop Visit (Capacity Deduction)
 
-When a railcar is **confirmed** for a shop visit, the system must:
+When a railcar is **confirmed** for a shop visit, the system must use atomic transactions with optimistic locking.
 
 ```
-PROCEDURE ConfirmRailcarAssignment(carId, shopId, year, month, workType, estimatedDays)
+PROCEDURE ConfirmShopVisit(railcarId, shopId, visitPeriod, workType, estimatedRailcarDays)
 
-  // Step 1: Validate inputs
-  1. Verify car exists and is not already scheduled for same shop/month
+  // =========================================================================
+  // CRITICAL: This entire procedure MUST run in a database transaction
+  // with row-level locking to prevent race conditions
+  // =========================================================================
+
+  BEGIN TRANSACTION
+
+  // Step 1: Validate inputs (BEFORE acquiring locks)
+  1. Verify railcar exists and is not already scheduled for same shop/period
   2. Verify shop exists and is active
   3. Verify shop tier supports requested workType (via ShopTier capabilities)
-  4. Verify shop has required certifications for car type (via ShopCapabilityProfile)
+  4. Verify shop has required certifications for railcar type (via ShopCapabilityProfile)
 
-  // Step 2: Check capacity availability
-  5. GET monthlyCapacity = ShopMonthlyCapacity WHERE shopId, year, month
+  // Step 2: Acquire lock and check capacity
+  5. SELECT * FROM ShopMonthlyCapacity
+     WHERE shopId = shopId AND capacityPeriod = visitPeriod
+     FOR UPDATE  // ← CRITICAL: Row-level lock prevents concurrent modifications
+
   6. IF monthlyCapacity does not exist:
-       CREATE monthlyCapacity with baseCapacity = shop.capacity
-  7. CALCULATE effectiveCapacity = monthlyCapacity.adjustedCapacity ?? monthlyCapacity.baseCapacity
-  8. CALCULATE available = effectiveCapacity - monthlyCapacity.confirmedCount
+       CREATE ShopMonthlyCapacity {
+         shopId, capacityPeriod: visitPeriod,
+         monthlyCapacityLimit: shop.capacity,
+         version: 0
+       }
 
-  // Step 3: Capacity validation (with planned visibility)
-  9. IF available <= 0:
-       RETURN ERROR "Shop is at capacity for {month}/{year}"
-  10. CALCULATE projectedTotal = monthlyCapacity.confirmedCount + monthlyCapacity.plannedCount + 1
-  11. IF projectedTotal > effectiveCapacity:
-       WARN "Confirming this will exceed planned capacity. {projectedTotal} vs {effectiveCapacity}"
+  7. effectiveLimit = monthlyCapacity.adjustedCapacityLimit ?? monthlyCapacity.monthlyCapacityLimit
+  8. maxWithOvercommit = effectiveLimit * (1 + shop.tier.overcommitAllowancePct / 100)
+  9. remainingAvailable = effectiveLimit - monthlyCapacity.confirmedRailcars
 
-  // Step 4: Create schedule entry (deducts capacity)
-  12. CREATE RailcarScheduleEntry {
-        carId, shopId, scheduledYear: year, scheduledMonth: month,
-        workType, estimatedDays, status: "SCHEDULED",
+  // Step 3: Capacity validation
+  10. IF remainingAvailable <= 0:
+        ROLLBACK
+        RETURN ERROR "Shop has no remaining capacity for {visitPeriod}"
+
+  11. IF monthlyCapacity.confirmedRailcars + 1 > maxWithOvercommit:
+        ROLLBACK
+        RETURN ERROR "Shop at maximum capacity (including overcommit allowance)"
+
+  12. totalAfterConfirm = monthlyCapacity.confirmedRailcars + monthlyCapacity.plannedRailcars + 1
+  13. IF totalAfterConfirm > effectiveLimit:
+        // WARNING only - do not block (user chose to proceed)
+        LOG WARNING "Confirming exceeds planned capacity: {totalAfterConfirm} vs {effectiveLimit}"
+
+  // Step 4: Create ConfirmedShopVisit (deducts capacity)
+  14. newVisit = INSERT INTO ConfirmedShopVisit {
+        railcarId, shopId, visitPeriod,
+        workType, estimatedRailcarDays,
+        status: "SCHEDULED",
         confirmedAt: NOW(), confirmedBy: currentUser
       }
 
-  // Step 5: Update capacity counters (CRITICAL - capacity deduction)
-  13. UPDATE ShopMonthlyCapacity SET
-        confirmedCount = confirmedCount + 1,
-        confirmedDays = confirmedDays + estimatedDays,
-        availableCapacity = effectiveCapacity - (confirmedCount + 1),
-        utilizationPercent = ((confirmedCount + 1) / baseCapacity) * 100,
-        totalCommitted = (confirmedCount + 1) + plannedCount,
-        projectedUtilization = (totalCommitted / baseCapacity) * 100,
-        isOverCapacity = (confirmedCount + 1) > baseCapacity,
-        isAtRisk = totalCommitted > baseCapacity,
+  // Step 5: Update capacity counters (ATOMIC with version check)
+  15. UPDATE ShopMonthlyCapacity SET
+        confirmedRailcars = confirmedRailcars + 1,
+        confirmedRailcarDays = confirmedRailcarDays + estimatedRailcarDays,
+        version = version + 1,  // ← Optimistic locking
         lastCalculatedAt = NOW()
-      WHERE shopId, year, month
+      WHERE shopId = shopId
+        AND capacityPeriod = visitPeriod
+        AND version = monthlyCapacity.version  // ← Ensures no concurrent modification
 
-  // Step 6: If plan entry existed, convert it
-  14. IF RailcarPlanEntry exists for (carId, shopId, year, month):
-        UPDATE RailcarPlanEntry SET
+  16. IF rows_affected = 0:
+        ROLLBACK
+        RETURN ERROR "Concurrent modification detected - please retry"
+
+  // Step 6: If ForecastedShopVisit existed, convert it
+  17. existingForecast = SELECT * FROM ForecastedShopVisit
+      WHERE railcarId = railcarId AND shopId = shopId AND forecastPeriod = visitPeriod
+        AND status = 'FORECASTED'
+
+  18. IF existingForecast:
+        UPDATE ForecastedShopVisit SET
           status = "CONVERTED",
-          convertedToScheduleId = newScheduleEntry.id,
+          convertedToVisitId = newVisit.id,
           convertedAt = NOW()
+        WHERE id = existingForecast.id
+
         UPDATE ShopMonthlyCapacity SET
-          plannedCount = plannedCount - 1
-          // Recalculate projectedUtilization
+          plannedRailcars = plannedRailcars - existingForecast.forecastedRailcarCount
+        WHERE shopId = shopId AND capacityPeriod = visitPeriod
 
-  // Step 7: Update hierarchy roll-up (if child shop)
-  15. CALL RecalculateParentCapacity(shopId, year, month)
+        UPDATE newVisit SET convertedFromForecastId = existingForecast.id
 
-  // Step 8: Check S&OP target progress
-  16. UPDATE SOPShopTarget SET
-        actualCarsProcessed = (SELECT COUNT FROM RailcarScheduleEntry
-                               WHERE status IN ('COMPLETE') AND shopId, year, month)
-      WHERE shopId, year, month
-
-  // Step 9: Audit trail
-  17. CREATE AuditLog {
-        action: "RAILCAR_CONFIRMED",
-        entityType: "RailcarScheduleEntry",
-        entityId: newScheduleEntry.id,
-        changes: { carId, shopId, month, year, workType },
+  // Step 7: Audit trail
+  19. INSERT INTO AuditLog {
+        action: "SHOP_VISIT_CONFIRMED",
+        entityType: "ConfirmedShopVisit",
+        entityId: newVisit.id,
+        changes: { railcarId, shopId, visitPeriod, workType },
         userId: currentUser
       }
 
-  RETURN SUCCESS with scheduleEntry.id
+  COMMIT TRANSACTION
+
+  // Step 8: Post-commit async operations (outside transaction)
+  20. ASYNC CALL RecalculateParentCapacity(shopId, visitPeriod)
+
+  RETURN SUCCESS with newVisit.id
 END PROCEDURE
 ```
 
-### 11.2 Planned Entry Creation (No Capacity Deduction)
+### TypeScript Implementation Example
+
+```typescript
+async function confirmShopVisit(
+  railcarId: string,
+  shopId: string,
+  visitPeriod: Date,
+  workType: WorkType,
+  estimatedRailcarDays: number
+): Promise<ConfirmedShopVisit> {
+
+  return await prisma.$transaction(async (tx) => {
+    // Step 1-4: Validations
+    const railcar = await tx.car.findUniqueOrThrow({ where: { id: railcarId } });
+    const shop = await tx.shop.findUniqueOrThrow({
+      where: { id: shopId },
+      include: { tier: true }
+    });
+
+    // Check for duplicate
+    const existing = await tx.confirmedShopVisit.findFirst({
+      where: { railcarId, shopId, visitPeriod, status: { not: 'CANCELLED' } }
+    });
+    if (existing) throw new Error('Railcar already scheduled for this shop/period');
+
+    // Step 5-6: Lock and get capacity
+    const [capacity] = await tx.$queryRaw<ShopMonthlyCapacity[]>`
+      SELECT * FROM shop_monthly_capacity
+      WHERE shop_id = ${shopId} AND capacity_period = ${visitPeriod}
+      FOR UPDATE
+    `;
+
+    if (!capacity) {
+      // Create new capacity record
+      await tx.shopMonthlyCapacity.create({
+        data: {
+          shopId,
+          capacityPeriod: visitPeriod,
+          monthlyCapacityLimit: shop.capacity,
+          version: 0
+        }
+      });
+    }
+
+    const effectiveLimit = capacity?.adjustedCapacityLimit ?? capacity?.monthlyCapacityLimit ?? shop.capacity;
+    const overcommitPct = shop.tier?.overcommitAllowancePct ?? 0;
+    const maxWithOvercommit = Math.floor(effectiveLimit * (1 + overcommitPct / 100));
+    const currentConfirmed = capacity?.confirmedRailcars ?? 0;
+
+    // Step 10-11: Capacity check
+    if (currentConfirmed >= effectiveLimit) {
+      throw new Error(`Shop has no remaining capacity for ${visitPeriod.toISOString()}`);
+    }
+    if (currentConfirmed + 1 > maxWithOvercommit) {
+      throw new Error('Shop at maximum capacity including overcommit allowance');
+    }
+
+    // Step 14: Create visit
+    const newVisit = await tx.confirmedShopVisit.create({
+      data: {
+        railcarId,
+        shopId,
+        visitPeriod,
+        workType,
+        estimatedRailcarDays,
+        status: 'SCHEDULED',
+        confirmedAt: new Date()
+      }
+    });
+
+    // Step 15: Atomic capacity update with version check
+    const updateResult = await tx.shopMonthlyCapacity.updateMany({
+      where: {
+        shopId,
+        capacityPeriod: visitPeriod,
+        version: capacity?.version ?? 0
+      },
+      data: {
+        confirmedRailcars: { increment: 1 },
+        confirmedRailcarDays: { increment: estimatedRailcarDays },
+        version: { increment: 1 },
+        lastCalculatedAt: new Date()
+      }
+    });
+
+    if (updateResult.count === 0) {
+      throw new Error('Concurrent modification detected - please retry');
+    }
+
+    // Step 17-18: Convert forecast if exists
+    const forecast = await tx.forecastedShopVisit.findFirst({
+      where: { railcarId, shopId, forecastPeriod: visitPeriod, status: 'FORECASTED' }
+    });
+
+    if (forecast) {
+      await tx.forecastedShopVisit.update({
+        where: { id: forecast.id },
+        data: { status: 'CONVERTED', convertedToVisitId: newVisit.id, convertedAt: new Date() }
+      });
+
+      await tx.shopMonthlyCapacity.update({
+        where: { shopId_capacityPeriod: { shopId, capacityPeriod: visitPeriod } },
+        data: { plannedRailcars: { decrement: forecast.forecastedRailcarCount } }
+      });
+    }
+
+    return newVisit;
+  }, {
+    isolationLevel: 'Serializable',  // Strongest isolation
+    timeout: 10000  // 10 second timeout
+  });
+}
+```
+
+### 11.2 Create Forecasted Shop Visit (No Capacity Deduction)
 
 ```
-PROCEDURE CreatePlannedEntry(carId?, shopId, year, month, workType, source, count = 1)
+PROCEDURE CreateForecastedShopVisit(railcarId?, shopId, forecastPeriod, workType, source, railcarCount = 1)
+
+  // NOTE: This procedure does NOT require transaction locking since it
+  // doesn't deduct capacity - it only updates visibility counters
 
   // Step 1: Validate
   1. Verify shop exists and is active
-  2. IF carId provided, verify car exists
+  2. IF railcarId provided, verify railcar exists
 
   // Step 2: Get or create monthly capacity record
-  3. GET monthlyCapacity = ShopMonthlyCapacity WHERE shopId, year, month
-  4. IF not exists: CREATE with baseCapacity from shop
+  3. GET monthlyCapacity = ShopMonthlyCapacity WHERE shopId, capacityPeriod = forecastPeriod
+  4. IF not exists: CREATE with monthlyCapacityLimit from shop
 
-  // Step 3: Create plan entry (NO capacity deduction)
-  5. CREATE RailcarPlanEntry {
-        carId: carId ?? NULL,  // Can be null for bulk/generic plans
-        plannedCarCount: carId ? 1 : count,
-        shopId, plannedYear: year, plannedMonth: month,
-        workType, planSource: source,
+  // Step 3: Create forecast entry (NO capacity deduction)
+  5. CREATE ForecastedShopVisit {
+        railcarId: railcarId ?? NULL,  // Can be null for bulk/generic forecasts
+        forecastedRailcarCount: railcarId ? 1 : railcarCount,
+        shopId, forecastPeriod,
+        workType, forecastSource: source,
         confidence: "MEDIUM", probabilityPercent: 50,
-        status: "PLANNED"
+        status: "FORECASTED"
       }
 
-  // Step 4: Update planned counters (visibility only)
+  // Step 4: Update planned counters (visibility only - NO deduction)
   6. UPDATE ShopMonthlyCapacity SET
-        plannedCount = plannedCount + (carId ? 1 : count),
-        totalCommitted = confirmedCount + (plannedCount + count),
-        projectedUtilization = (totalCommitted / baseCapacity) * 100,
-        isAtRisk = totalCommitted > baseCapacity
-      WHERE shopId, year, month
+        plannedRailcars = plannedRailcars + (railcarId ? 1 : railcarCount),
+        // Note: totalCommittedRailcars and projectedUtilizationPercent are GENERATED columns
+        // They will auto-calculate based on confirmedRailcars + plannedRailcars
+        lastCalculatedAt = NOW()
+      WHERE shopId = shopId AND capacityPeriod = forecastPeriod
 
-  // Step 5: Update hierarchy for visibility
-  7. CALL RecalculateParentPlanned(shopId, year, month)
+  // Step 5: Update hierarchy for visibility (async is OK)
+  7. ASYNC CALL RecalculateParentPlanned(shopId, forecastPeriod)
 
-  RETURN planEntry.id
+  RETURN forecastEntry.id
 END PROCEDURE
 ```
 
-### 11.3 Capacity Cancellation/Release
+### 11.3 Cancel Shop Visit (Capacity Release)
 
 ```
-PROCEDURE CancelScheduleEntry(scheduleEntryId, reason)
+PROCEDURE CancelConfirmedShopVisit(visitId, reason)
 
-  // Step 1: Get entry details
-  1. GET entry = RailcarScheduleEntry WHERE id = scheduleEntryId
-  2. IF entry.status IN ('COMPLETE', 'CANCELLED'):
-       RETURN ERROR "Cannot cancel completed/cancelled entry"
+  // =========================================================================
+  // CRITICAL: Use transaction with locking to safely release capacity
+  // =========================================================================
 
-  // Step 2: Update entry status
-  3. UPDATE RailcarScheduleEntry SET
+  BEGIN TRANSACTION
+
+  // Step 1: Lock and get visit details
+  1. SELECT * FROM ConfirmedShopVisit WHERE id = visitId FOR UPDATE
+  2. IF visit.status IN ('COMPLETE', 'CANCELLED'):
+       ROLLBACK
+       RETURN ERROR "Cannot cancel completed/cancelled visit"
+
+  // Step 2: Lock capacity record
+  3. SELECT * FROM ShopMonthlyCapacity
+     WHERE shopId = visit.shopId AND capacityPeriod = visit.visitPeriod
+     FOR UPDATE
+
+  // Step 3: Update visit status
+  4. UPDATE ConfirmedShopVisit SET
         status = "CANCELLED",
-        notes = notes + " | Cancelled: " + reason
-      WHERE id = scheduleEntryId
+        notes = CONCAT(notes, ' | Cancelled: ', reason),
+        updatedAt = NOW()
+      WHERE id = visitId
 
-  // Step 3: Release capacity (CRITICAL - reverse deduction)
-  4. UPDATE ShopMonthlyCapacity SET
-        confirmedCount = confirmedCount - 1,
-        confirmedDays = confirmedDays - entry.estimatedDays,
-        availableCapacity = availableCapacity + 1,
-        utilizationPercent = ((confirmedCount - 1) / baseCapacity) * 100,
-        totalCommitted = totalCommitted - 1,
-        isOverCapacity = (confirmedCount - 1) > baseCapacity
-      WHERE shopId = entry.shopId, year = entry.scheduledYear, month = entry.scheduledMonth
+  // Step 4: Release capacity (CRITICAL - reverse deduction)
+  5. UPDATE ShopMonthlyCapacity SET
+        confirmedRailcars = confirmedRailcars - 1,
+        confirmedRailcarDays = confirmedRailcarDays - visit.estimatedRailcarDays,
+        // Note: remainingAvailableRailcars, utilizationPercent, etc. are GENERATED columns
+        version = version + 1,
+        lastCalculatedAt = NOW()
+      WHERE shopId = visit.shopId
+        AND capacityPeriod = visit.visitPeriod
+        AND version = capacity.version
 
-  // Step 4: Update hierarchy
-  5. CALL RecalculateParentCapacity(entry.shopId, entry.scheduledYear, entry.scheduledMonth)
+  6. IF rows_affected = 0:
+       ROLLBACK
+       RETURN ERROR "Concurrent modification - please retry"
 
   // Step 5: Audit
-  6. CREATE AuditLog { action: "SCHEDULE_CANCELLED", ... }
+  7. INSERT INTO AuditLog {
+       action: "SHOP_VISIT_CANCELLED",
+       entityType: "ConfirmedShopVisit",
+       entityId: visitId,
+       changes: { reason, previousStatus: visit.status },
+       userId: currentUser
+     }
+
+  COMMIT TRANSACTION
+
+  // Step 6: Async hierarchy update (outside transaction)
+  8. ASYNC CALL RecalculateParentCapacity(visit.shopId, visit.visitPeriod)
 
   RETURN SUCCESS
 END PROCEDURE
@@ -1228,17 +1572,23 @@ END PROCEDURE
 
 ### 14.1 Target Setting from S&OP Process
 
+> **CRITICAL**: S&OP targets should NEVER auto-increase capacity. If targets exceed capacity, flag it as a planning issue that requires manual resolution.
+
 ```
-PROCEDURE SetSOPTargets(shopId, year, month, targets)
+PROCEDURE SetSOPTargets(shopId, capacityPeriod, targets)
 
   // Step 1: Validate inputs
   1. Verify shop exists
   2. Validate targets object has required fields
 
-  // Step 2: Create or update SOPShopTarget
-  3. UPSERT SOPShopTarget {
-       shopId, year, month,
-       targetCarsProcessed: targets.carsProcessed,
+  // Step 2: Get current capacity for comparison
+  3. GET capacity = ShopMonthlyCapacity WHERE shopId, capacityPeriod
+  4. effectiveLimit = capacity.adjustedCapacityLimit ?? capacity.monthlyCapacityLimit
+
+  // Step 3: Create or update SOPShopTarget
+  5. UPSERT SOPShopTarget {
+       shopId, capacityPeriod,
+       targetRailcarsProcessed: targets.railcarsProcessed,
        targetQualifications: targets.qualifications,
        targetRepairs: targets.repairs,
        targetBacklogEnd: targets.backlogGoal,
@@ -1251,91 +1601,119 @@ PROCEDURE SetSOPTargets(shopId, year, month, targets)
        approvedAt: NOW()
      }
 
-  // Step 3: Sync to ShopMonthlyCapacity for quick access
-  4. UPDATE ShopMonthlyCapacity SET
-       sopTargetCount = targets.carsProcessed,
-       baseCapacity = GREATEST(baseCapacity, targets.carsProcessed)  // Ensure capacity >= target
-     WHERE shopId, year, month
+  // Step 4: Sync target to ShopMonthlyCapacity (NO auto-capacity increase!)
+  6. UPDATE ShopMonthlyCapacity SET
+       sopTargetRailcars = targets.railcarsProcessed
+       // ⚠️ REMOVED: baseCapacity = GREATEST(...) - This was DANGEROUS!
+       // targetExceedsCapacity is a GENERATED column that auto-flags this issue
+     WHERE shopId = shopId AND capacityPeriod = capacityPeriod
 
-  // Step 4: Create planned entries for target gap
-  5. currentConfirmed = ShopMonthlyCapacity.confirmedCount
-  6. gap = targets.carsProcessed - currentConfirmed
-  7. IF gap > 0:
-       CREATE RailcarPlanEntry {
-         carId: NULL,  // Generic volume
-         plannedCarCount: gap,
-         shopId, plannedYear: year, plannedMonth: month,
-         workType: "MIXED",
-         planSource: "SOP",
-         planSourceId: sopTarget.id,
-         planSourceName: "S&OP Plan " + targets.planVersion,
-         confidence: "COMMITTED",
-         probabilityPercent: 90
+  // Step 5: Check for target vs capacity conflicts (FLAG, don't auto-fix!)
+  7. IF targets.railcarsProcessed > effectiveLimit:
+       // Create explicit warning - do NOT silently increase capacity
+       CREATE SOPCapacityWarning {
+         shopId, capacityPeriod,
+         warningType: "TARGET_EXCEEDS_CAPACITY",
+         targetRailcars: targets.railcarsProcessed,
+         capacityLimit: effectiveLimit,
+         overage: targets.railcarsProcessed - effectiveLimit,
+         message: "S&OP target ({targets.railcarsProcessed}) exceeds capacity ({effectiveLimit})",
+         requiresResolution: TRUE
        }
-       UPDATE ShopMonthlyCapacity SET
-         plannedCount = plannedCount + gap
+       CREATE Notification {
+         recipient: shop.manager,
+         type: "SOP_CAPACITY_CONFLICT",
+         severity: "HIGH",
+         message: "S&OP target exceeds shop capacity - manual review required"
+       }
 
-  // Step 5: Check for target conflicts
-  8. IF targets.carsProcessed > shop.capacity * 1.1:
-       WARN "S&OP target exceeds shop capacity by >10%"
-       CREATE Notification for shop manager
+  // Step 6: Create forecasted entries for unfilled target gap
+  8. currentConfirmed = capacity.confirmedRailcars
+  9. currentPlanned = capacity.plannedRailcars
+  10. existingCommitment = currentConfirmed + currentPlanned
+  11. gap = targets.railcarsProcessed - existingCommitment
 
-  RETURN sopTarget.id
+  12. IF gap > 0:
+        // Create forecasted (not confirmed) entries for the gap
+        CREATE ForecastedShopVisit {
+          railcarId: NULL,  // Generic volume forecast
+          forecastedRailcarCount: gap,
+          shopId, forecastPeriod: capacityPeriod,
+          workType: "MIXED",
+          forecastSource: "SOP",
+          forecastSourceId: sopTarget.id,
+          forecastSourceName: "S&OP Plan " + targets.planVersion,
+          confidence: "COMMITTED",
+          probabilityPercent: 90
+        }
+        UPDATE ShopMonthlyCapacity SET
+          plannedRailcars = plannedRailcars + gap
+        WHERE shopId = shopId AND capacityPeriod = capacityPeriod
+
+  RETURN { sopTargetId, hasCapacityConflict: targets.railcarsProcessed > effectiveLimit }
 END PROCEDURE
 ```
 
 ### 14.2 S&OP Progress Tracking
 
 ```
-PROCEDURE UpdateSOPProgress(shopId, year, month)
+PROCEDURE UpdateSOPProgress(shopId, capacityPeriod)
 
-  // Step 1: Get current actuals
-  1. completedCount = SELECT COUNT(*) FROM RailcarScheduleEntry
-       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+  // Step 1: Get current actuals from ConfirmedShopVisit
+  1. completedCount = SELECT COUNT(*) FROM ConfirmedShopVisit
+       WHERE shopId = shopId AND visitPeriod = capacityPeriod
          AND status = 'COMPLETE'
 
-  2. qualCount = SELECT COUNT(*) FROM RailcarScheduleEntry
-       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+  2. qualCount = SELECT COUNT(*) FROM ConfirmedShopVisit
+       WHERE shopId = shopId AND visitPeriod = capacityPeriod
          AND status = 'COMPLETE' AND workType = 'QUAL'
 
-  3. repairCount = SELECT COUNT(*) FROM RailcarScheduleEntry
-       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+  3. repairCount = SELECT COUNT(*) FROM ConfirmedShopVisit
+       WHERE shopId = shopId AND visitPeriod = capacityPeriod
          AND status = 'COMPLETE' AND workType IN ('REPAIR', 'REPAIR_HEAVY', 'REPAIR_LIGHT')
 
-  4. avgTurnTime = SELECT AVG(actualDays) FROM RailcarScheduleEntry
-       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
-         AND status = 'COMPLETE' AND actualDays IS NOT NULL
+  4. avgTurnTime = SELECT AVG(actualRailcarDays) FROM ConfirmedShopVisit
+       WHERE shopId = shopId AND visitPeriod = capacityPeriod
+         AND status = 'COMPLETE' AND actualRailcarDays IS NOT NULL
 
-  5. onTimeCount = SELECT COUNT(*) FROM RailcarScheduleEntry
-       WHERE shopId = shopId AND scheduledYear = year AND scheduledMonth = month
+  5. onTimeCount = SELECT COUNT(*) FROM ConfirmedShopVisit
+       WHERE shopId = shopId AND visitPeriod = capacityPeriod
          AND status = 'COMPLETE'
          AND (dueDate IS NULL OR actualCompletionDate <= dueDate)
 
   // Step 2: Calculate performance metrics
   6. onTimePercent = (onTimeCount / completedCount) * 100 IF completedCount > 0 ELSE 0
 
-  // Step 3: Update SOPShopTarget
-  7. GET target = SOPShopTarget WHERE shopId, year, month
+  // Step 3: Update SOPShopTarget with actuals
+  7. GET target = SOPShopTarget WHERE shopId, capacityPeriod
   8. IF target exists:
+       // Calculate expected progress based on day of month
+       dayOfPeriod = DAY(NOW())
+       daysInPeriod = DAY(LAST_DAY(capacityPeriod))
+       expectedProgress = target.targetRailcarsProcessed * (dayOfPeriod / daysInPeriod)
+
        UPDATE SOPShopTarget SET
-         actualCarsProcessed = completedCount,
+         actualRailcarsProcessed = completedCount,
          actualQualifications = qualCount,
          actualRepairs = repairCount,
          actualTurnTimeDays = avgTurnTime,
          actualOnTimePercent = onTimePercent,
-         isOnTrack = (completedCount >= target.targetCarsProcessed * (dayOfMonth / daysInMonth)),
+         isOnTrack = (completedCount >= expectedProgress * 0.9),  // 90% of expected
          riskLevel = CASE
-           WHEN completedCount < target.targetCarsProcessed * 0.5 THEN 'HIGH'
-           WHEN completedCount < target.targetCarsProcessed * 0.75 THEN 'MEDIUM'
-           WHEN completedCount < target.targetCarsProcessed * 0.9 THEN 'LOW'
+           WHEN completedCount < expectedProgress * 0.5 THEN 'CRITICAL'
+           WHEN completedCount < expectedProgress * 0.7 THEN 'HIGH'
+           WHEN completedCount < expectedProgress * 0.85 THEN 'MEDIUM'
+           WHEN completedCount < expectedProgress * 0.95 THEN 'LOW'
            ELSE 'NONE'
-         END
-       WHERE shopId, year, month
+         END,
+         updatedAt = NOW()
+       WHERE shopId = shopId AND capacityPeriod = capacityPeriod
 
-  // Step 4: Update monthly capacity S&OP progress
+  // Step 4: Update monthly capacity completed count
   9. UPDATE ShopMonthlyCapacity SET
-       sopTargetProgress = (completedCount / sopTargetCount) * 100
-     WHERE shopId, year, month AND sopTargetCount > 0
+       completedRailcars = completedCount
+       // sopTargetProgress is a GENERATED column based on completedRailcars / sopTargetRailcars
+     WHERE shopId = shopId AND capacityPeriod = capacityPeriod
 
   RETURN { completedCount, target.targetCarsProcessed, isOnTrack: target.isOnTrack }
 END PROCEDURE
@@ -1577,6 +1955,160 @@ interface ShopHierarchyTreeProps {
 // │     └──────────────────────────────────────────                     │
 // │       Aug  Sep  Oct  Nov  Dec  Jan                                  │
 // └─────────────────────────────────────────────────────────────────────┘
+```
+
+### 15.6 UI Polish Items
+
+These enhancements improve usability and provide better visual feedback:
+
+#### 3-Color Capacity Bars
+
+```tsx
+// Capacity bar color thresholds (configurable per shop/tier)
+interface CapacityBarConfig {
+  greenThreshold: number;   // 0-70% = Green (healthy capacity)
+  yellowThreshold: number;  // 70-90% = Yellow (approaching limit)
+  redThreshold: number;     // 90%+ = Red (at/over capacity)
+}
+
+// Default thresholds
+const DEFAULT_THRESHOLDS: CapacityBarConfig = {
+  greenThreshold: 70,
+  yellowThreshold: 90,
+  redThreshold: 100  // At 100%+ show solid red
+};
+
+// Tier-specific thresholds (Tier 1 can handle more stress)
+const TIER_THRESHOLDS: Record<number, CapacityBarConfig> = {
+  1: { greenThreshold: 75, yellowThreshold: 95, redThreshold: 110 },  // 10% overcommit
+  2: { greenThreshold: 70, yellowThreshold: 90, redThreshold: 100 },
+  3: { greenThreshold: 65, yellowThreshold: 85, redThreshold: 100 },
+};
+
+// Visual representation:
+// ▓▓▓▓▓▓▓░░░ 70% = Green bar
+// ▓▓▓▓▓▓▓▓▓░ 85% = Yellow bar (approaching limit)
+// ▓▓▓▓▓▓▓▓▓▓ 100% = Red bar (at capacity)
+// ▓▓▓▓▓▓▓▓▓▓▓ 105% = Red with warning pulse (over capacity)
+```
+
+#### Explanatory Tooltips
+
+```tsx
+// Tooltip content for key metrics
+const CAPACITY_TOOLTIPS = {
+  monthlyCapacityLimit: `
+    Maximum railcars this shop can process per month.
+    Set during shop onboarding based on physical capacity,
+    staffing, and equipment availability.
+  `,
+  confirmedRailcars: `
+    Railcars with firm shop assignments that DEDUCT from
+    available capacity. These cars have routing documents
+    and are expected to arrive.
+  `,
+  plannedRailcars: `
+    Forecasted/S&OP work for visibility only. Does NOT
+    deduct from capacity until converted to confirmed.
+    Helps with demand planning and staffing.
+  `,
+  remainingAvailableRailcars: `
+    = monthlyCapacityLimit - confirmedRailcars
+    How many more cars can be confirmed this month.
+    Does not include planned railcars (visibility only).
+  `,
+  overcommitAllowance: `
+    Tier 1 shops may accept up to X% beyond stated capacity
+    for critical work. Requires manager approval. Shows as
+    yellow buffer zone on capacity bar.
+  `,
+  sopTargetRailcars: `
+    S&OP target for this month. Used for tracking against
+    plan but does NOT automatically increase capacity.
+    If target > capacity, a warning is generated.
+  `,
+};
+
+// Usage in components:
+// <Tooltip content={CAPACITY_TOOLTIPS.confirmedRailcars}>
+//   <span className="metric-label">Confirmed: {confirmed}</span>
+// </Tooltip>
+```
+
+#### Best-Fit Recommendation Button
+
+```tsx
+// Component: BestFitRecommendation.tsx
+interface BestFitProps {
+  railcarId: string;
+  workType: WorkType;
+  targetPeriod: Date;
+  preferredRegion?: string;
+}
+
+// Algorithm: Find optimal shop for a railcar
+async function getBestFitRecommendation(props: BestFitProps): Promise<ShopRecommendation[]> {
+  // 1. Filter by capability (must have required tier/certifications)
+  // 2. Filter by car compatibility (car type restrictions)
+  // 3. Filter by customer preferences (restricted shops)
+  // 4. Score by: capacity availability, distance, cost, turn time
+  // 5. Return top 3-5 recommendations with scores
+
+  const scoring = {
+    capacityWeight: 0.35,   // Prefer shops with available capacity
+    distanceWeight: 0.25,   // Minimize travel distance
+    costWeight: 0.20,       // Cost efficiency
+    turnTimeWeight: 0.15,   // Faster is better
+    networkWeight: 0.05,    // Prefer in-network shops
+  };
+
+  return rankedShops.slice(0, 5);
+}
+
+// UI Integration:
+// ┌─────────────────────────────────────────────────┐
+// │  🎯 Best-Fit Recommendation                     │
+// │                                                 │
+// │  For: GATX 12345 | Work: Tank Qual | Feb 2024  │
+// │                                                 │
+// │  ⭐ Trinity Houston (Tier 1)                   │
+// │     Score: 92/100 | 15 available | 180 miles   │
+// │     [Select] [Details]                         │
+// │                                                 │
+// │  2. Eagle Railcar (Tier 1)                     │
+// │     Score: 87/100 | 8 available | 220 miles    │
+// │     [Select] [Details]                         │
+// │                                                 │
+// │  3. GATX Dallas (Tier 2)                       │
+// │     Score: 74/100 | ⚠️ Requires Tier 1 work    │
+// │     [Select] [Details]                         │
+// │                                                 │
+// └─────────────────────────────────────────────────┘
+```
+
+#### 6-Month Trend Sparklines
+
+```tsx
+// Component: CapacitySparkline.tsx
+interface SparklineProps {
+  shopId: string;
+  metric: 'confirmedRailcars' | 'completedRailcars' | 'turnTime' | 'utilization';
+  months: 6 | 12;
+}
+
+// Compact inline visualization for dashboards
+// ▁▂▃▅▆▇ (ascending trend - getting busier)
+// ▇▆▅▃▂▁ (descending trend - capacity freeing up)
+// ▃▅▆▅▃▂ (peak in middle)
+
+// Example in table row:
+// │ Shop           │ Capacity │ Trend (6mo)  │ Projection │
+// │ Trinity Houston│ 42/50    │ ▃▄▅▆▇▇ ↗    │ 95% Feb    │
+// │ Eagle Railcar  │ 35/50    │ ▇▆▅▄▃▂ ↘    │ 60% Feb    │
+// │ GATX Dallas    │ 28/40    │ ▄▄▅▄▅▄ →    │ 70% Feb    │
+
+// Tooltip on sparkline shows actual values:
+// "Aug: 38 | Sep: 42 | Oct: 45 | Nov: 48 | Dec: 50 | Jan: 52"
 ```
 
 ---
