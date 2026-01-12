@@ -34,6 +34,8 @@ const VALID_COLUMN_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const TABLES_WITHOUT_UPDATED_AT = new Set([
   'AuditLog',
   'InvalidatedToken',
+  'CapacityReservation',
+  'ServicePlanCar',
 ]);
 
 // Tables that have no timestamp columns at all
