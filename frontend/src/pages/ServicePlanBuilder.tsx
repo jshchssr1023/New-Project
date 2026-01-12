@@ -36,6 +36,7 @@ import {
   ClockIcon,
   CheckIcon,
   ChartBarIcon,
+  ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline';
 import { servicePlansApi, carsApi, shopsApi } from '../services/api';
 import { customersApi } from '../services/carFlowApi';
@@ -112,6 +113,7 @@ export default function ServicePlanBuilder() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   // New loading states for better UX
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
@@ -1515,6 +1517,27 @@ export default function ServicePlanBuilder() {
               {servicePlan.status === 'draft' && (
                 <>
                   <button
+                    onClick={() => {
+                      // Show save confirmation
+                      setSaveMessage('Draft saved! You can find this plan in the Service Plans Management dashboard.');
+                      setTimeout(() => setSaveMessage(null), 5000);
+                    }}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-1 disabled:opacity-50"
+                    title="Save draft and continue later"
+                  >
+                    <CheckIcon className="w-4 h-4" />
+                    {isSaving ? 'Saving...' : 'Save Draft'}
+                  </button>
+                  <button
+                    onClick={() => navigate('/service-plans-management')}
+                    className="px-3 py-1.5 text-sm border border-steel-300 rounded-md hover:bg-steel-50 flex items-center gap-1"
+                    title="Go to Service Plans Management"
+                  >
+                    <ClipboardDocumentListIcon className="w-4 h-4" />
+                    View Dashboard
+                  </button>
+                  <button
                     onClick={handleClearPlan}
                     className="px-3 py-1.5 text-sm border border-steel-300 rounded-md hover:bg-steel-50 flex items-center gap-1"
                     title="Go back to plan list"
@@ -1556,6 +1579,23 @@ export default function ServicePlanBuilder() {
           <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />
           <span className="text-red-800">{error}</span>
           <button onClick={() => setError(null)} className="ml-auto text-red-600 hover:text-red-800">
+            <XMarkIcon className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {/* Save Success Banner */}
+      {saveMessage && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
+          <CheckCircleIcon className="w-5 h-5 text-green-600" />
+          <span className="text-green-800">{saveMessage}</span>
+          <button
+            onClick={() => navigate('/service-plans-management')}
+            className="ml-2 text-green-700 hover:text-green-900 underline text-sm font-medium"
+          >
+            Go to Dashboard
+          </button>
+          <button onClick={() => setSaveMessage(null)} className="ml-auto text-green-600 hover:text-green-800">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>

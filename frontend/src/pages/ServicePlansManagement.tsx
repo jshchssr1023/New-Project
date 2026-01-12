@@ -3,6 +3,7 @@
  *
  * View and manage all service plans from the SST (UnifiedAssignment).
  * Shows:
+ * - Proposals awaiting customer response
  * - Plans awaiting confirmation (DRAFT/PENDING_REVIEW)
  * - Confirmed/scheduled plans (COMMITTED/IN_PROGRESS)
  * - SST status overview
@@ -24,8 +25,11 @@ import {
   BuildingStorefrontIcon,
   CalendarDaysIcon,
   MagnifyingGlassIcon,
+  PaperAirplaneIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
 import { analyticsApi } from '../services/api/analytics';
+import { servicePlansApi } from '../services/api/servicePlans';
 import type {
   SSTStatusResponse,
   PlansToConfirmResponse,
@@ -33,14 +37,15 @@ import type {
   PlanToConfirm,
   ConfirmedPlan,
 } from '../services/api/analytics';
+import type { ServicePlan } from '../services/api/servicePlans';
 
-type TabType = 'to-confirm' | 'confirmed' | 'all';
+type TabType = 'drafts' | 'proposals' | 'to-confirm' | 'confirmed' | 'all';
 type StatusFilter = 'all' | 'DRAFT' | 'PENDING_REVIEW' | 'COMMITTED' | 'IN_PROGRESS';
 
 export default function ServicePlansManagement() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<TabType>('to-confirm');
+  const [activeTab, setActiveTab] = useState<TabType>('drafts');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [teamBucketFilter, setTeamBucketFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -56,6 +61,28 @@ export default function ServicePlansManagement() {
   } = useQuery({
     queryKey: ['sst-status'],
     queryFn: () => analyticsApi.getSSTStatus(),
+  });
+
+  // Fetch draft service plans
+  const {
+    data: draftPlans,
+    isLoading: draftsLoading,
+    refetch: refetchDrafts,
+  } = useQuery({
+    queryKey: ['draft-plans'],
+    queryFn: () => servicePlansApi.getAll({ status: 'draft' }),
+    enabled: activeTab === 'drafts' || activeTab === 'all',
+  });
+
+  // Fetch proposals awaiting customer response
+  const {
+    data: proposalsAwaitingResponse,
+    isLoading: proposalsLoading,
+    refetch: refetchProposals,
+  } = useQuery({
+    queryKey: ['proposals-awaiting-response'],
+    queryFn: () => servicePlansApi.getProposalsAwaitingResponse(),
+    enabled: activeTab === 'proposals' || activeTab === 'all',
   });
 
   // Fetch plans to confirm
@@ -94,9 +121,37 @@ export default function ServicePlansManagement() {
 
   const handleRefresh = () => {
     refetchSST();
+    refetchDrafts();
+    refetchProposals();
     refetchToConfirm();
     refetchConfirmed();
   };
+
+  // Filter draft plans by search term
+  const filteredDrafts = useMemo(() => {
+    if (!draftPlans) return [];
+    if (!searchTerm) return draftPlans;
+    const term = searchTerm.toLowerCase();
+    return draftPlans.filter(
+      (p) =>
+        p.name?.toLowerCase().includes(term) ||
+        p.customer?.name?.toLowerCase().includes(term) ||
+        p.customer?.code?.toLowerCase().includes(term)
+    );
+  }, [draftPlans, searchTerm]);
+
+  // Filter proposals by search term
+  const filteredProposals = useMemo(() => {
+    if (!proposalsAwaitingResponse) return [];
+    if (!searchTerm) return proposalsAwaitingResponse;
+    const term = searchTerm.toLowerCase();
+    return proposalsAwaitingResponse.filter(
+      (p) =>
+        p.name?.toLowerCase().includes(term) ||
+        p.customer?.name?.toLowerCase().includes(term) ||
+        p.customer?.code?.toLowerCase().includes(term)
+    );
+  }, [proposalsAwaitingResponse, searchTerm]);
 
   // Filter plans by search term
   const filteredPlansToConfirm = useMemo(() => {
@@ -123,7 +178,19 @@ export default function ServicePlansManagement() {
     );
   }, [confirmedPlans, searchTerm]);
 
-  const isLoading = sstLoading || (activeTab === 'to-confirm' && toConfirmLoading) || (activeTab === 'confirmed' && confirmedLoading);
+  const isLoading = sstLoading ||
+    (activeTab === 'drafts' && draftsLoading) ||
+    (activeTab === 'proposals' && proposalsLoading) ||
+    (activeTab === 'to-confirm' && toConfirmLoading) ||
+    (activeTab === 'confirmed' && confirmedLoading);
+
+  // Calculate days since proposal sent
+  const getDaysSinceSent = (sentAt: string | undefined) => {
+    if (!sentAt) return 0;
+    const sent = new Date(sentAt);
+    const now = new Date();
+    return Math.floor((now.getTime() - sent.getTime()) / (1000 * 60 * 60 * 24));
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -173,7 +240,39 @@ export default function ServicePlansManagement() {
 
       {/* SST Status Overview */}
       {sstStatus && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+          {/* Draft Plans (Service Plan Builder) */}
+          <div
+            className="card p-4 border-l-4 border-l-indigo-500 cursor-pointer hover:shadow-md"
+            onClick={() => {
+              setActiveTab('drafts');
+              setCurrentPage(1);
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <DocumentCheckIcon className="h-4 w-4 text-indigo-600" />
+              <span className="text-xs font-medium text-indigo-700">Draft Plans</span>
+            </div>
+            <p className="text-2xl font-bold text-indigo-900">{draftPlans?.length || 0}</p>
+            <p className="text-xs text-steel-500">In progress</p>
+          </div>
+
+          {/* Proposals Awaiting Response */}
+          <div
+            className="card p-4 border-l-4 border-l-purple-500 cursor-pointer hover:shadow-md"
+            onClick={() => {
+              setActiveTab('proposals');
+              setCurrentPage(1);
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <PaperAirplaneIcon className="h-4 w-4 text-purple-600" />
+              <span className="text-xs font-medium text-purple-700">Proposals Sent</span>
+            </div>
+            <p className="text-2xl font-bold text-purple-900">{proposalsAwaitingResponse?.length || 0}</p>
+            <p className="text-xs text-steel-500">Awaiting customer</p>
+          </div>
+
           {/* Needs Planning */}
           <div
             className="card p-4 border-l-4 border-l-red-500 cursor-pointer hover:shadow-md"
@@ -323,6 +422,44 @@ export default function ServicePlansManagement() {
         <nav className="flex gap-4">
           <button
             onClick={() => {
+              setActiveTab('drafts');
+              setStatusFilter('all');
+              setCurrentPage(1);
+            }}
+            className={`py-3 px-1 border-b-2 text-sm font-medium transition-colors ${
+              activeTab === 'drafts'
+                ? 'border-rail-600 text-rail-600'
+                : 'border-transparent text-steel-500 hover:text-steel-700'
+            }`}
+          >
+            Draft Plans
+            {draftPlans && (
+              <span className="ml-2 bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-xs">
+                {draftPlans.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('proposals');
+              setStatusFilter('all');
+              setCurrentPage(1);
+            }}
+            className={`py-3 px-1 border-b-2 text-sm font-medium transition-colors ${
+              activeTab === 'proposals'
+                ? 'border-rail-600 text-rail-600'
+                : 'border-transparent text-steel-500 hover:text-steel-700'
+            }`}
+          >
+            Proposals Sent
+            {proposalsAwaitingResponse && (
+              <span className="ml-2 bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">
+                {proposalsAwaitingResponse.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => {
               setActiveTab('to-confirm');
               setStatusFilter('all');
               setCurrentPage(1);
@@ -425,6 +562,152 @@ export default function ServicePlansManagement() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rail-600 mx-auto"></div>
               <p className="mt-3 text-sm text-steel-500">Loading plans...</p>
             </div>
+          </div>
+        ) : activeTab === 'drafts' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-steel-50 border-b border-steel-200">
+                <tr>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Plan Name</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Customer</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Cars</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Options</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Created</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Last Updated</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-steel-100">
+                {filteredDrafts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-steel-500">
+                      <div className="flex flex-col items-center gap-2">
+                        <DocumentCheckIcon className="h-8 w-8 text-steel-400" />
+                        <p>No draft plans</p>
+                        <button
+                          onClick={() => navigate('/service-plans/new')}
+                          className="text-rail-600 hover:text-rail-800 font-medium"
+                        >
+                          Create New Plan
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDrafts.map((draft) => (
+                    <tr key={draft.id} className="hover:bg-steel-50">
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-steel-900">{draft.name}</div>
+                        {draft.description && (
+                          <div className="text-xs text-steel-500 truncate max-w-[200px]">{draft.description}</div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="text-steel-900">{draft.customer?.name || '-'}</div>
+                        <div className="text-xs text-steel-500">{draft.customer?.code || ''}</div>
+                      </td>
+                      <td className="py-3 px-4 text-steel-700">{draft.selectedCarCount || draft.cars?.length || 0}</td>
+                      <td className="py-3 px-4 text-steel-700">{draft.options?.length || 0}</td>
+                      <td className="py-3 px-4 text-steel-700">
+                        {new Date(draft.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-4 text-steel-700">
+                        {new Date(draft.updatedAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-4">
+                        <button
+                          onClick={() => navigate(`/service-plans/${draft.id}`)}
+                          className="text-rail-600 hover:text-rail-800 text-sm font-medium flex items-center gap-1"
+                        >
+                          <ChevronRightIcon className="h-4 w-4" />
+                          Continue Editing
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : activeTab === 'proposals' ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-steel-50 border-b border-steel-200">
+                <tr>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Plan Name</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Customer</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Cars</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Options</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Sent</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-steel-500 uppercase">Days Waiting</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Status</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-steel-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-steel-100">
+                {filteredProposals.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-steel-500">
+                      No proposals awaiting customer response
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProposals.map((proposal) => {
+                    const daysSinceSent = getDaysSinceSent(proposal.lastSentAt || proposal.proposedAt);
+                    return (
+                      <tr key={proposal.id} className="hover:bg-steel-50">
+                        <td className="py-3 px-4">
+                          <div className="font-medium text-steel-900">{proposal.name}</div>
+                          {proposal.description && (
+                            <div className="text-xs text-steel-500 truncate max-w-[200px]">{proposal.description}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="text-steel-900">{proposal.customer?.name || '-'}</div>
+                          <div className="text-xs text-steel-500">{proposal.customer?.code || ''}</div>
+                        </td>
+                        <td className="py-3 px-4 text-steel-700">{proposal.selectedCarCount}</td>
+                        <td className="py-3 px-4 text-steel-700">{proposal.options?.length || 0}</td>
+                        <td className="py-3 px-4 text-steel-700">
+                          {proposal.lastSentAt || proposal.proposedAt
+                            ? new Date(proposal.lastSentAt || proposal.proposedAt!).toLocaleDateString()
+                            : '-'}
+                        </td>
+                        <td className={`py-3 px-4 text-right ${daysSinceSent > 7 ? 'text-red-600 font-medium' : daysSinceSent > 3 ? 'text-amber-600' : 'text-steel-600'}`}>
+                          {daysSinceSent}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-100 text-purple-700 border-purple-300">
+                            Awaiting Response
+                          </span>
+                          {proposal.revisionCount && proposal.revisionCount > 0 && (
+                            <span className="ml-1 text-xs text-steel-500">
+                              (Rev {proposal.revisionCount})
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => navigate(`/service-plans/${proposal.id}`)}
+                              className="text-rail-600 hover:text-rail-800 text-sm font-medium"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => navigate(`/service-plans/${proposal.id}?tab=feedback`)}
+                              className="text-green-600 hover:text-green-800 text-sm font-medium"
+                            >
+                              Record Feedback
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         ) : activeTab === 'to-confirm' ? (
           <div className="overflow-x-auto">

@@ -1289,10 +1289,154 @@ export class ServicePlanService {
 
   /**
    * Mark service plan as proposed (sent to customer)
+   * Creates an immutable snapshot of the proposal for historical tracking
    */
   async proposeServicePlan(
     servicePlanId: string,
     proposedById: string,
+    sentToEmail?: string,
+    sentToName?: string,
+    companyId?: string
+  ): Promise<ServicePlanWithDetails> {
+    const servicePlan = await this.prismaClient.servicePlan.findUnique({
+      where: { id: servicePlanId },
+      include: this.getServicePlanInclude(),
+    });
+
+    if (!servicePlan) {
+      throw new Error(`Service plan not found: ${servicePlanId}`);
+    }
+
+    if (companyId && servicePlan.companyId !== companyId) {
+      throw new Error('Access denied');
+    }
+
+    // Get the next snapshot number
+    const existingSnapshots = await this.prismaClient.proposalSnapshot.count({
+      where: { servicePlanId },
+    });
+    const snapshotNumber = existingSnapshots + 1;
+
+    // Create snapshot data (immutable record of what was sent)
+    const snapshotData = {
+      planName: servicePlan.name,
+      description: servicePlan.description,
+      customer: servicePlan.customer,
+      carFlowRate: servicePlan.carFlowRate,
+      startMonth: servicePlan.startMonth,
+      startYear: servicePlan.startYear,
+      endMonth: servicePlan.endMonth,
+      endYear: servicePlan.endYear,
+      cars: servicePlan.cars.map((c: any) => ({
+        id: c.id,
+        carId: c.carId,
+        railcarNumber: c.car.railcarNumber,
+        carType: c.car.carType,
+        shoppingStatus: c.shoppingStatus,
+        qualificationDueDate: c.qualificationDueDate,
+        contractExpiration: c.contractExpiration,
+        autoAssignedMonth: c.autoAssignedMonth,
+        autoAssignedYear: c.autoAssignedYear,
+        userAssignedMonth: c.userAssignedMonth,
+        userAssignedYear: c.userAssignedYear,
+      })),
+      options: servicePlan.options.map((o: any) => ({
+        id: o.id,
+        name: o.name,
+        description: o.description,
+        totalEstimatedCost: o.totalEstimatedCost,
+        totalEstimatedDays: o.totalEstimatedDays,
+        shopCount: o.shopCount,
+        assignments: o.assignments.map((a: any) => ({
+          carId: a.servicePlanCar.carId,
+          railcarNumber: a.servicePlanCar.car.railcarNumber,
+          shopId: a.shopId,
+          shopName: a.shop.name,
+          shopCode: a.shop.code,
+          plannedMonth: a.plannedMonth,
+          plannedYear: a.plannedYear,
+          estimatedCost: a.estimatedCost,
+          estimatedDays: a.estimatedDays,
+          shopReason: a.shopReason,
+        })),
+      })),
+      summary: {
+        totalCars: servicePlan.cars.length,
+        totalOptions: servicePlan.options.length,
+        totalEstimatedCost: servicePlan.options.reduce((sum: number, o: any) => sum + o.totalEstimatedCost, 0),
+      },
+      sentAt: new Date().toISOString(),
+    };
+
+    // Calculate version string
+    const version = snapshotNumber === 1 ? '1.0' : `1.${snapshotNumber - 1}`;
+
+    // Use transaction to ensure atomic update
+    const [snapshot, updated] = await this.prismaClient.$transaction([
+      // Create the proposal snapshot
+      this.prismaClient.proposalSnapshot.create({
+        data: {
+          servicePlanId,
+          snapshotNumber,
+          version,
+          snapshotType: snapshotNumber === 1 ? 'initial_proposal' : 'revision',
+          snapshotData: JSON.stringify(snapshotData),
+          sentToCustomer: true,
+          sentAt: new Date(),
+          sentById: proposedById,
+          sentToEmail: sentToEmail || '',
+          sentToName: sentToName || '',
+          customerResponseStatus: 'pending',
+          carCount: servicePlan.cars.length,
+          optionCount: servicePlan.options.length,
+          totalEstimatedCost: snapshotData.summary.totalEstimatedCost,
+          createdById: proposedById,
+          companyId: servicePlan.companyId,
+        },
+      }),
+      // Update the service plan
+      this.prismaClient.servicePlan.update({
+        where: { id: servicePlanId },
+        data: {
+          status: 'proposed',
+          proposedAt: new Date(),
+          proposedById,
+          customerResponseStatus: 'awaiting_response',
+          lastSentAt: new Date(),
+          revisionCount: snapshotNumber - 1,
+        },
+        include: this.getServicePlanInclude(),
+      }),
+    ]);
+
+    // Update the currentSnapshotId after transaction
+    await this.prismaClient.servicePlan.update({
+      where: { id: servicePlanId },
+      data: { currentSnapshotId: snapshot.id },
+    });
+
+    // Log audit event
+    await this.logAuditEvent(servicePlanId, 'proposal_sent', servicePlan.version, proposedById, servicePlan.companyId, {
+      snapshotId: snapshot.id,
+      snapshotNumber,
+      sentToEmail,
+      sentToName,
+      carCount: servicePlan.cars.length,
+      optionCount: servicePlan.options.length,
+    });
+
+    console.log(`[ServicePlanService] Proposed service plan: ${servicePlanId}, snapshot: ${snapshot.id}`);
+    return updated as ServicePlanWithDetails;
+  }
+
+  /**
+   * Record customer feedback on a proposal
+   */
+  async recordCustomerFeedback(
+    servicePlanId: string,
+    responseStatus: 'approved' | 'rejected' | 'revision_requested',
+    feedback: string,
+    respondedBy: string,
     companyId?: string
   ): Promise<ServicePlanWithDetails> {
     const servicePlan = await this.prismaClient.servicePlan.findUnique({
@@ -1307,18 +1451,145 @@ export class ServicePlanService {
       throw new Error('Access denied');
     }
 
+    if (servicePlan.status !== 'proposed') {
+      throw new Error('Can only record feedback on proposed plans');
+    }
+
+    // Update the current snapshot with customer response
+    if (servicePlan.currentSnapshotId) {
+      await this.prismaClient.proposalSnapshot.update({
+        where: { id: servicePlan.currentSnapshotId },
+        data: {
+          customerResponseStatus: responseStatus,
+          customerRespondedAt: new Date(),
+          customerResponseNotes: feedback,
+          ...(responseStatus === 'revision_requested' && {
+            revisionRequestedAt: new Date(),
+            revisionNotes: feedback,
+          }),
+        },
+      });
+    }
+
+    // Update the service plan status
+    const newStatus = responseStatus === 'approved' ? 'approved' :
+                      responseStatus === 'rejected' ? 'cancelled' : 'draft';
+
     const updated = await this.prismaClient.servicePlan.update({
       where: { id: servicePlanId },
       data: {
-        status: 'proposed',
-        proposedAt: new Date(),
-        proposedById,
+        status: newStatus,
+        customerResponseStatus: responseStatus,
+        customerRespondedAt: new Date(),
+        customerFeedback: feedback,
+        // If revision requested, go back to draft for editing
+        ...(responseStatus === 'revision_requested' && { status: 'draft' }),
       },
       include: this.getServicePlanInclude(),
     });
 
-    console.log(`[ServicePlanService] Proposed service plan: ${servicePlanId}`);
+    // Log audit event
+    await this.logAuditEvent(servicePlanId, `customer_${responseStatus}`, servicePlan.version, respondedBy, servicePlan.companyId, {
+      feedback,
+      previousStatus: servicePlan.status,
+      newStatus,
+    });
+
+    console.log(`[ServicePlanService] Customer feedback recorded: ${servicePlanId}, status: ${responseStatus}`);
     return updated as ServicePlanWithDetails;
+  }
+
+  /**
+   * Get proposal history (all snapshots) for a service plan
+   */
+  async getProposalHistory(servicePlanId: string, companyId?: string): Promise<any[]> {
+    const servicePlan = await this.prismaClient.servicePlan.findUnique({
+      where: { id: servicePlanId },
+    });
+
+    if (!servicePlan) {
+      throw new Error(`Service plan not found: ${servicePlanId}`);
+    }
+
+    if (companyId && servicePlan.companyId !== companyId) {
+      throw new Error('Access denied');
+    }
+
+    const snapshots = await this.prismaClient.proposalSnapshot.findMany({
+      where: { servicePlanId },
+      orderBy: { snapshotNumber: 'desc' },
+    });
+
+    return snapshots.map((s) => ({
+      ...s,
+      snapshotData: JSON.parse(s.snapshotData),
+    }));
+  }
+
+  /**
+   * List proposals awaiting customer response
+   */
+  async listProposalsAwaitingResponse(companyId: string): Promise<ServicePlanWithDetails[]> {
+    const servicePlans = await this.prismaClient.servicePlan.findMany({
+      where: {
+        companyId,
+        status: 'proposed',
+        customerResponseStatus: 'awaiting_response',
+      },
+      include: {
+        customer: { select: { id: true, name: true, code: true } },
+        creator: { select: { id: true, firstName: true, lastName: true } },
+        cars: { select: { id: true } },
+        options: { select: { id: true, name: true, status: true, totalEstimatedCost: true } },
+      },
+      orderBy: { lastSentAt: 'desc' },
+    });
+
+    return servicePlans.map((sp) => ({
+      ...sp,
+      selectedCarCount: sp.cars.length,
+    })) as ServicePlanWithDetails[];
+  }
+
+  /**
+   * Log an audit event for a service plan
+   */
+  private async logAuditEvent(
+    servicePlanId: string,
+    eventType: string,
+    planVersion: number,
+    performedById: string,
+    companyId: string,
+    eventDetails: any,
+    servicePlanCarId?: string,
+    carId?: string,
+    railcarNumber?: string
+  ): Promise<void> {
+    try {
+      // Get user name for audit trail
+      const user = await this.prismaClient.user.findUnique({
+        where: { id: performedById },
+        select: { firstName: true, lastName: true },
+      });
+      const performedByName = user ? `${user.firstName} ${user.lastName}` : '';
+
+      await this.prismaClient.servicePlanAuditEvent.create({
+        data: {
+          servicePlanId,
+          eventType,
+          planVersion,
+          servicePlanCarId,
+          carId,
+          railcarNumber,
+          eventDetails: JSON.stringify(eventDetails),
+          performedById,
+          performedByName,
+          companyId,
+        },
+      });
+    } catch (err) {
+      console.error(`[ServicePlanService] Failed to log audit event:`, err);
+    }
   }
 
   // ===========================================================================
