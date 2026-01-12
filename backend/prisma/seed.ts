@@ -839,6 +839,8 @@ async function generateRandomCars(
   const qualificationTypes = ['full', 'partial', ''];
   const planStatuses = ['planned', 'in_progress', 'completed', 'pending', ''];
   const reasonsShopped = ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'];
+  // Sample customers for random data generation
+  const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
 
   console.log(`   Generating ${count} random cars...`);
 
@@ -949,8 +951,6 @@ async function generateRandomCars(
   console.log(`✓ Upserted ${createdCars.length} railcars (random data, using railcarNumber as unique key)`);
   return createdCars;
 }
-
-const customers = ['Shell', 'Cargill', 'ADM', 'Koch Industries', 'ExxonMobil', 'Chevron', 'BNSF Logistics', 'UP Fleet', 'CSX Transport', 'CN Rail'];
 
 // Dynamic year calculation at module scope for use in generateRandomCars
 const CURRENT_YEAR = new Date().getFullYear();
@@ -1546,6 +1546,111 @@ async function main() {
 
   console.log(`📦 Total cars available for planning: ${cars.length}`);
 
+  // ==========================================================================
+  // CREATE CUSTOMERS FROM CAR DATA
+  // ==========================================================================
+  // Extract unique customer names from imported cars and create Customer records
+  // Then link cars to their respective customers via customerId
+  // ==========================================================================
+  console.log(`\n👥 Creating customers from car data...`);
+
+  // Get all unique customer names from cars
+  const allCarsWithCustomers = await prisma.car.findMany({
+    where: { companyId: company.id },
+    select: { id: true, customer: true },
+  });
+
+  const uniqueCustomerNames = new Set<string>();
+  for (const car of allCarsWithCustomers) {
+    if (car.customer && car.customer.trim()) {
+      uniqueCustomerNames.add(car.customer.trim());
+    }
+  }
+
+  console.log(`   Found ${uniqueCustomerNames.size} unique customers in car data`);
+
+  // Create Customer records for each unique customer name
+  const customerNameToId = new Map<string, string>();
+  let customerIndex = 0;
+
+  for (const customerName of uniqueCustomerNames) {
+    const code = customerName
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .substring(0, 8)
+      .toUpperCase() || `CUST${customerIndex}`;
+
+    try {
+      const customer = await prisma.customer.upsert({
+        where: {
+          companyId_code: {
+            companyId: company.id,
+            code: code,
+          },
+        },
+        update: {
+          name: customerName,
+        },
+        create: {
+          id: uuidv4(),
+          name: customerName,
+          code: code,
+          contactName: `Contact for ${customerName}`,
+          contactEmail: `contact@${code.toLowerCase()}.example.com`,
+          contactPhone: `(555) ${100 + (customerIndex % 900)}-${1000 + (customerIndex % 9000)}`,
+          address: `${100 + customerIndex} Industrial Blvd`,
+          isActive: true,
+          companyId: company.id,
+        },
+      });
+      customerNameToId.set(customerName, customer.id);
+      customerIndex++;
+    } catch (error) {
+      // If upsert fails due to duplicate code, try with a unique suffix
+      const uniqueCode = `${code}${customerIndex}`.substring(0, 10);
+      const customer = await prisma.customer.create({
+        data: {
+          id: uuidv4(),
+          name: customerName,
+          code: uniqueCode,
+          contactName: `Contact for ${customerName}`,
+          contactEmail: `contact@${uniqueCode.toLowerCase()}.example.com`,
+          contactPhone: `(555) ${100 + (customerIndex % 900)}-${1000 + (customerIndex % 9000)}`,
+          address: `${100 + customerIndex} Industrial Blvd`,
+          isActive: true,
+          companyId: company.id,
+        },
+      });
+      customerNameToId.set(customerName, customer.id);
+      customerIndex++;
+    }
+  }
+
+  console.log(`✓ Created ${customerNameToId.size} customer records`);
+
+  // Link cars to their customers via customerId
+  console.log(`   Linking cars to customers...`);
+  let linkedCount = 0;
+
+  for (const car of allCarsWithCustomers) {
+    if (car.customer && car.customer.trim()) {
+      const customerId = customerNameToId.get(car.customer.trim());
+      if (customerId) {
+        await prisma.car.update({
+          where: { id: car.id },
+          data: { customerId },
+        });
+        linkedCount++;
+      }
+    }
+  }
+
+  console.log(`✓ Linked ${linkedCount} cars to their customers`);
+
+  // Store customer records for later use
+  const customerRecords = await prisma.customer.findMany({
+    where: { companyId: company.id },
+  });
+
   // Create 2 plans with dynamic years
   const planCurrentYear = await prisma.plan.create({
     data: {
@@ -1688,28 +1793,7 @@ async function main() {
   // ==========================================================================
   // LEASE QUALIFICATION ENGINE DATA
   // ==========================================================================
-
-  // Create Customer master records
-  const customerRecords = await Promise.all(
-    customers.map(async (name, index) => {
-      const code = name.replace(/\s+/g, '').substring(0, 4).toUpperCase();
-      return prisma.customer.create({
-        data: {
-          id: uuidv4(),
-          name,
-          code,
-          contactName: `Contact for ${name}`,
-          contactEmail: `contact@${code.toLowerCase()}.com`,
-          contactPhone: `(555) ${100 + index}-${1000 + index}`,
-          address: `${100 + index} Industrial Blvd, Houston, TX`,
-          isActive: true,
-          companyId: company.id,
-        },
-      });
-    })
-  );
-
-  console.log(`✓ Created ${customerRecords.length} customer records`);
+  // Note: Customer records were already created from car data above
 
   // Create Lease Contracts (upcoming releases within 6 months)
   // Note: 'now' is already declared at the top of the seed function
