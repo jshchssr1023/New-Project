@@ -149,6 +149,28 @@ VALUES (
 );
 ```
 
+### Shop Tier Assignments
+
+Current shop network tier classifications:
+
+| Tier | Shops | Capabilities |
+|------|-------|--------------|
+| **Tier 1** | Trinity, Curry, AITX | Full AAR M-1003, tank requalification, hydro testing, wheel work, heavy structural |
+| **Tier 2** | Guardian/Cathcart, Cypress, TMC, Iron Horse | Light structural, component replacement, PM, Rule 88B |
+| **Tier 3** | All others | Field service, quick repairs, overflow, emergency response |
+
+```sql
+-- Example: Assign existing shops to tiers
+UPDATE Shop SET tierId = (SELECT id FROM ShopTier WHERE code = 'TIER1')
+WHERE name IN ('Trinity', 'Curry', 'AITX');
+
+UPDATE Shop SET tierId = (SELECT id FROM ShopTier WHERE code = 'TIER2')
+WHERE name IN ('Guardian', 'Cathcart', 'Cypress', 'TMC', 'Iron Horse');
+
+UPDATE Shop SET tierId = (SELECT id FROM ShopTier WHERE code = 'TIER3')
+WHERE tierId IS NULL;  -- All others default to Tier 3
+```
+
 ---
 
 ## 2. Shop Model Enhancement
