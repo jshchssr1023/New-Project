@@ -6,6 +6,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 // Eager load - frequently accessed, small pages
 import Login from './pages/Login';
+import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 
 // Lazy load - heavy pages with code splitting
@@ -36,6 +37,9 @@ const SchedulingQueue = lazy(() => import('./pages/SchedulingQueue'));
 // Scheduling Visibility - New UX Components
 const SchedulingDashboard = lazy(() => import('./pages/SchedulingDashboard'));
 const PlanOverviewDashboard = lazy(() => import('./pages/PlanOverviewDashboard'));
+
+// Service Plans Management - SST based plans view
+const ServicePlansManagement = lazy(() => import('./pages/ServicePlansManagement'));
 
 // Page loading fallback with accessibility support
 function PageLoader({ message = 'Loading...' }: { message?: string }) {
@@ -94,7 +98,8 @@ export default function App() {
               </PrivateRoute>
             }
           >
-            <Route index element={<Dashboard />} />
+            <Route index element={<LandingPage />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="shops" element={<ShopManagement />} />
             <Route path="shop-networks" element={<ShopNetworks />} />
             <Route path="cars" element={<CarsPage />} />
@@ -103,6 +108,7 @@ export default function App() {
             <Route path="service-plans/:id" element={<ServicePlanBuilder />} />
             <Route path="service-plan-confirmation/:id" element={<ServicePlanConfirmation />} />
             <Route path="service-plan-reports" element={<ServicePlanReports />} />
+            <Route path="service-plans-management" element={<ServicePlansManagement />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
 
             {/* S&OP Planning Module Routes */}

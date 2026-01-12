@@ -25,6 +25,8 @@ const ALLOWED_TABLES = new Set([
   'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
   // Service Plan Builder tables
   'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment', 'CapacityReservation',
+  // SST (Single Source of Truth) table
+  'UnifiedAssignment',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -363,6 +365,12 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
   },
   ServicePlanAuditEvent: {
     servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+  },
+  // SST (Single Source of Truth) - UnifiedAssignment relationships
+  UnifiedAssignment: {
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
   },
 };
 
@@ -1078,6 +1086,9 @@ export const prisma = {
 
   // Shop Network table
   shopNetwork: createTableHandler('ShopNetwork'),
+
+  // SST (Single Source of Truth) table - UnifiedAssignment
+  unifiedAssignment: createTableHandler('UnifiedAssignment'),
 
   // Raw query support - SECURITY: Use parameterized queries only
   // WARNING: These functions should be used sparingly and only with parameterized queries

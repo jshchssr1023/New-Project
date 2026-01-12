@@ -31,11 +31,12 @@ import NotificationBell from './NotificationBell';
 
 // Core Workflow - Primary planning sequence
 const workflowNavigation = [
-  { name: 'Dashboard', href: '/', icon: HomeIcon },
+  { name: 'Home', href: '/', icon: HomeIcon },
+  { name: 'Dashboard', href: '/dashboard', icon: ChartBarIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
-  { name: 'Service Plans', href: '/service-plans', icon: DocumentTextIcon, description: 'Customer Proposals' },
-  { name: 'Scheduling Status', href: '/scheduling-dashboard', icon: ClipboardDocumentListIcon, description: 'See What\'s Scheduled' },
-  { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentCheckIcon, description: 'Approved Plans' },
+  { name: 'Service Plans', href: '/service-plans-management', icon: ClipboardDocumentCheckIcon, description: 'View/Confirm Plans' },
+  { name: 'Plan Builder', href: '/service-plans', icon: DocumentTextIcon, description: 'Create Proposals' },
+  { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentListIcon, description: 'Approved Plans' },
 ];
 
 // Shops & Capacity - Shop management
