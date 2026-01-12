@@ -1269,16 +1269,18 @@ export class ServicePlanConfirmationService {
       throw new Error('Access denied');
     }
 
-    // Get shop details
-    const shopIds = [...new Set(plan.cars.map((c: any) => c.assignedShopId).filter(Boolean))];
-    const shops = shopIds.length > 0
-      ? await this.prismaClient.shop.findMany({ where: { id: { in: shopIds } } })
-      : [];
-    const shopMap = new Map<string, { id: string; name: string; code: string }>(
-      shops.map((s: any) => [s.id, s])
-    );
+    // Get ALL active shops for selection (not just assigned ones)
+    const allShops = await this.prismaClient.shop.findMany({
+      where: { companyId, isActive: true },
+      orderBy: { name: 'asc' },
+    });
 
     const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // Create shop map for lookups
+    const shopMap = new Map<string, { id: string; name: string; code: string }>(
+      allShops.map((s: any) => [s.id, s])
+    );
 
     // Separate by status
     const pendingCars = plan.cars.filter((c: any) => c.status === 'pending');
@@ -1318,11 +1320,12 @@ export class ServicePlanConfirmationService {
         confirmedById: spc.confirmedById,
         addedAt: spc.addedAt,
       })),
-      shops: shops.map((s: any) => ({
+      shops: allShops.map((s: any) => ({
         id: s.id,
         name: s.name,
         code: s.code,
         location: s.location,
+        capacity: s.capacity,
       })),
     };
   }
