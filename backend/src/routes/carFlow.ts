@@ -463,6 +463,172 @@ router.patch('/plans/:id/cancel', async (req: AuthRequest, res: Response) => {
   }
 });
 
+/**
+ * PATCH /car-flow/plans/:id/confirm
+ * Confirm a CarFlowPlan (status: Planned → Confirmed)
+ */
+router.patch('/plans/:id/confirm', async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const existingPlan = await prisma.carFlowPlan.findUnique({
+      where: { id },
+      include: { car: { select: { companyId: true } } },
+    });
+
+    if (!existingPlan || existingPlan.car.companyId !== req.user!.companyId) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    if (existingPlan.status !== 'Planned') {
+      return res.status(400).json({ message: `Cannot confirm plan with status: ${existingPlan.status}` });
+    }
+
+    const plan = await prisma.carFlowPlan.update({
+      where: { id },
+      data: { status: 'Confirmed' },
+      include: {
+        car: { select: { id: true, railcarNumber: true, carType: true, customer: true } },
+        shop: { select: { id: true, name: true, code: true } },
+      },
+    });
+
+    logger.info('CarFlowPlan confirmed', { planId: id, carId: plan.carId });
+    res.json(plan);
+  } catch (error) {
+    logger.error('Failed to confirm car flow plan', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /car-flow/plans/:id/schedule
+ * Schedule a CarFlowPlan into the MasterPlan (Confirmed → Scheduled)
+ * This promotes the CarFlowPlan to MasterPlanCommitment
+ */
+router.post('/plans/:id/schedule', async (req: AuthRequest, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const existingPlan = await prisma.carFlowPlan.findUnique({
+      where: { id },
+      include: { car: { select: { companyId: true, railcarNumber: true } } },
+    });
+
+    if (!existingPlan || existingPlan.car.companyId !== req.user!.companyId) {
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+
+    if (existingPlan.status !== 'Confirmed') {
+      return res.status(400).json({
+        message: `Plan must be Confirmed to schedule. Current status: ${existingPlan.status}`,
+      });
+    }
+
+    // SST: Promote to MasterPlanCommitment
+    const result = await sstConsolidationService.promoteToMasterPlan(id, req.user!.id);
+
+    logger.info('CarFlowPlan scheduled into MasterPlan', {
+      planId: id,
+      carId: existingPlan.carId,
+      railcarNumber: existingPlan.car.railcarNumber,
+      commitmentId: result.commitmentId,
+      masterPlanId: result.masterPlanId,
+    });
+
+    res.json({
+      success: true,
+      message: 'Plan scheduled into Master Plan',
+      carFlowPlanId: id,
+      ...result,
+    });
+  } catch (error) {
+    logger.error('Failed to schedule car flow plan', error);
+    res.status(500).json({
+      message: error instanceof Error ? error.message : 'Internal server error',
+    });
+  }
+});
+
+/**
+ * POST /car-flow/plans/bulk-schedule
+ * Bulk schedule multiple confirmed plans into MasterPlan
+ */
+router.post('/plans/bulk-schedule', async (req: AuthRequest, res: Response) => {
+  const { planIds } = req.body as { planIds: string[] };
+
+  if (!Array.isArray(planIds) || planIds.length === 0) {
+    return res.status(400).json({ message: 'planIds must be a non-empty array' });
+  }
+
+  try {
+    const companyId = req.user!.companyId;
+
+    // Verify all plans exist and are confirmed
+    const plans = await prisma.carFlowPlan.findMany({
+      where: {
+        id: { in: planIds },
+        car: { companyId },
+      },
+      include: { car: { select: { railcarNumber: true } } },
+    });
+
+    const planMap = new Map(plans.map(p => [p.id, p]));
+    const notFound = planIds.filter(id => !planMap.has(id));
+    const notConfirmed = plans.filter(p => p.status !== 'Confirmed');
+
+    if (notFound.length > 0) {
+      return res.status(400).json({
+        message: 'Some plans not found',
+        notFoundIds: notFound,
+      });
+    }
+
+    if (notConfirmed.length > 0) {
+      return res.status(400).json({
+        message: 'All plans must be Confirmed to schedule',
+        invalidPlans: notConfirmed.map(p => ({
+          id: p.id,
+          status: p.status,
+          railcarNumber: p.car.railcarNumber,
+        })),
+      });
+    }
+
+    // Promote all plans
+    const results: { planId: string; commitmentId: string; masterPlanId: string }[] = [];
+    const errors: { planId: string; error: string }[] = [];
+
+    for (const planId of planIds) {
+      try {
+        const result = await sstConsolidationService.promoteToMasterPlan(planId, req.user!.id);
+        results.push({ planId, ...result });
+      } catch (error) {
+        errors.push({
+          planId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    logger.info('Bulk schedule completed', {
+      total: planIds.length,
+      scheduled: results.length,
+      errors: errors.length,
+    });
+
+    res.json({
+      success: errors.length === 0,
+      message: `Scheduled ${results.length} of ${planIds.length} plans`,
+      scheduled: results,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error) {
+    logger.error('Failed to bulk schedule plans', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // =============================================================================
 // CAPACITY - Shop capacity by month
 // =============================================================================

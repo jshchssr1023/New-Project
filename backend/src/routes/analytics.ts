@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import sstConsolidationService from '../services/sstConsolidationService';
 
 const router = Router();
 
@@ -44,18 +45,47 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     const shopsWithCarsCount = uniqueShopsWithArrivedCars.size;
 
     // ==========================================================================
-    // S&OP PLANNING SUMMARY - Calculate from car data and CarFlowPlan
+    // S&OP PLANNING SUMMARY - SST: Use MasterPlan for scheduled, CarFlowPlan for planned
     // ==========================================================================
 
-    // Get all cars with their planning status
+    // SST: Get dashboard metrics from MasterPlan (scheduled) + CarFlowPlan (planned)
+    const sstMetrics = await sstConsolidationService.getDashboardMetrics(companyId);
+
+    // Calculate overdue cars (cars with qualification dates in past that aren't planned/scheduled)
+    const overdueCarIds = new Set<string>();
+
+    // Get car IDs that are already planned or scheduled
+    const plannedCarIds = await prisma.carFlowPlan.findMany({
+      where: {
+        companyId,
+        status: { in: ['Planned', 'Confirmed', 'Scheduled'] },
+      },
+      select: { carId: true },
+    });
+    const plannedSet = new Set(plannedCarIds.map((p: { carId: string }) => p.carId));
+
+    // Get active MasterPlan commitments
+    const activePlan = await prisma.masterPlan.findFirst({
+      where: { companyId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+
+    if (activePlan) {
+      const scheduledCarIds = await prisma.masterPlanCommitment.findMany({
+        where: {
+          masterPlanId: activePlan.id,
+          status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+        },
+        select: { carId: true },
+      });
+      scheduledCarIds.forEach((c: { carId: string }) => plannedSet.add(c.carId));
+    }
+
+    // Find overdue cars that aren't planned/scheduled
     const allCarsForSOP = await prisma.car.findMany({
       where: { companyId },
       select: {
         id: true,
-        railcarNumber: true,
-        customer: true,
-        planStatus: true,
-        status: true,
         tankQualDueDate: true,
         contractExpiration: true,
         minNoLining: true,
@@ -70,50 +100,9 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Get all active CarFlowPlans
-    const activeCarFlowPlans = await prisma.carFlowPlan.findMany({
-      where: {
-        companyId,
-        status: { in: ['Planned', 'In Progress', 'confirmed', 'Confirmed'] },
-      },
-      select: {
-        carId: true,
-        status: true,
-      },
-    });
-
-    // Create a map of carId to CarFlowPlan status
-    const carPlanStatusMap = new Map<string, string>();
-    activeCarFlowPlans.forEach((plan: { carId: string; status: string }) => {
-      carPlanStatusMap.set(plan.carId, plan.status);
-    });
-
-    // Calculate S&OP metrics
-    let sopNotPlanned = 0;
-    let sopOverdue = 0;
-    let sopPlanned = 0;
-    let sopScheduled = 0;
-
     allCarsForSOP.forEach((car: any) => {
-      const hasCarFlowPlan = carPlanStatusMap.has(car.id);
-      const carFlowPlanStatus = carPlanStatusMap.get(car.id) || '';
-      const planStatusLower = (car.planStatus || '').toLowerCase().trim();
+      if (plannedSet.has(car.id)) return; // Already planned/scheduled
 
-      // Check if car is scheduled (confirmed status in CarFlowPlan)
-      if (carFlowPlanStatus.toLowerCase() === 'confirmed' ||
-          carFlowPlanStatus.toLowerCase() === 'in progress' ||
-          planStatusLower === 'committed') {
-        sopScheduled++;
-        return;
-      }
-
-      // Check if car has a shopping plan (any active CarFlowPlan)
-      if (hasCarFlowPlan || planStatusLower === 'planned') {
-        sopPlanned++;
-        return;
-      }
-
-      // Check if overdue (any qualification date in prior years)
       const qualDates = [
         car.tankQualDueDate,
         car.contractExpiration,
@@ -128,26 +117,24 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         car.tankQualification,
       ].filter(Boolean);
 
-      let isOverdue = false;
       for (const dateStr of qualDates) {
         const date = new Date(dateStr);
         if (!isNaN(date.getTime()) && date.getFullYear() < currentYear) {
-          isOverdue = true;
+          overdueCarIds.add(car.id);
           break;
         }
       }
-
-      if (isOverdue) {
-        sopOverdue++;
-        return;
-      }
-
-      // Check if not planned (planStatus is "Not planned" or empty and no CarFlowPlan)
-      if (planStatusLower === 'not planned' || planStatusLower === 'not confirmed' ||
-          planStatusLower === 'not committed' || planStatusLower === '' || !hasCarFlowPlan) {
-        sopNotPlanned++;
-      }
     });
+
+    // SST metrics:
+    // - Planned = CarFlowPlan (Planned + Confirmed)
+    // - Scheduled = MasterPlanCommitment (SCHEDULED + IN_PROGRESS)
+    // - Overdue = Cars with past qualification dates, not planned/scheduled
+    // - Not Planned = Total - Planned - Scheduled - Overdue - InShop
+    const sopPlanned = sstMetrics.planned + sstMetrics.confirmed;
+    const sopScheduled = sstMetrics.scheduled + sstMetrics.inProgress;
+    const sopOverdue = overdueCarIds.size;
+    const sopNotPlanned = Math.max(0, totalCars - sopPlanned - sopScheduled - sopOverdue - totalCarsInShop);
 
     // ==========================================================================
     // MY QUEUE - Cars with no plan, listed by car number and customer
@@ -311,41 +298,66 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       { category: 'Other', amount: 55000 },
     ];
 
-    // SST: Upcoming services from CarFlowPlan
-    const currentMonthNum = parseInt(currentMonth.split('-')[1]);
-    const currentYearNum = parseInt(currentMonth.split('-')[0]);
-    const upcomingCarFlowPlans = await prisma.carFlowPlan.findMany({
-      where: {
-        companyId,
-        status: { in: ['Planned', 'Confirmed'] },
-        OR: [
-          { plannedYear: { gt: currentYearNum } },
-          { plannedYear: currentYearNum, plannedMonth: { gte: currentMonthNum } },
-        ],
-      },
-      include: {
-        car: { select: { id: true, railcarNumber: true } },
-        shop: { select: { name: true } },
-      },
-      take: 10,
-      orderBy: [{ plannedYear: 'asc' }, { plannedMonth: 'asc' }],
-    });
-
-    const upcomingServices = upcomingCarFlowPlans.map((p) => ({
-      carId: p.car.id,
-      vehicleNumber: p.car.railcarNumber,
-      railcarNumber: p.car.railcarNumber,
-      scheduledDate: `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}-15`,
-      shopName: p.shop.name,
+    // SST: Upcoming services from MasterPlanCommitment (scheduled shoppings)
+    const upcomingShoppings = await sstConsolidationService.getUpcomingShoppings(companyId, 10);
+    const upcomingServices = upcomingShoppings.map((s) => ({
+      carId: s.carId,
+      vehicleNumber: s.railcarNumber,
+      railcarNumber: s.railcarNumber,
+      scheduledDate: `${s.plannedYear}-${String(s.plannedMonth).padStart(2, '0')}-15`,
+      shopName: s.shopName,
+      status: s.status,
     }));
 
     // ==========================================================================
-    // MONTHLY SHOPPINGS BY NETWORK - Stacked bar chart data
+    // SST: MONTHLY SHOPPINGS BY NETWORK - From MasterPlanCommitment
     // ==========================================================================
-    const carFlowPlansWithShops = await prisma.carFlowPlan.findMany({
+    const monthlyByNetwork: Record<string, { aitx: number; thirdParty: number; total: number; byShop: Record<string, number> }> = {};
+
+    // Get from active MasterPlan (SST for scheduled shoppings)
+    if (activePlan) {
+      const masterPlanCommitments = await prisma.masterPlanCommitment.findMany({
+        where: {
+          masterPlanId: activePlan.id,
+          status: { in: ['SCHEDULED', 'IN_PROGRESS', 'COMPLETE'] },
+          plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
+        },
+        include: {
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              isAitxInternal: true,
+              networkId: true,
+            },
+          },
+        },
+      });
+
+      masterPlanCommitments.forEach((commitment: any) => {
+        const monthKey = `${commitment.plannedYear}-${String(commitment.plannedMonth).padStart(2, '0')}`;
+        if (!monthlyByNetwork[monthKey]) {
+          monthlyByNetwork[monthKey] = { aitx: 0, thirdParty: 0, total: 0, byShop: {} };
+        }
+
+        monthlyByNetwork[monthKey].total++;
+        if (commitment.shop?.isAitxInternal) {
+          monthlyByNetwork[monthKey].aitx++;
+        } else {
+          monthlyByNetwork[monthKey].thirdParty++;
+        }
+
+        const shopKey = commitment.shop?.name || 'Unknown';
+        monthlyByNetwork[monthKey].byShop[shopKey] = (monthlyByNetwork[monthKey].byShop[shopKey] || 0) + 1;
+      });
+    }
+
+    // Also include CarFlowPlan (planned but not yet scheduled)
+    const pendingPlans = await prisma.carFlowPlan.findMany({
       where: {
         companyId,
-        status: { in: ['Planned', 'In Progress', 'confirmed', 'Confirmed', 'Complete'] },
+        status: { in: ['Planned', 'Confirmed'] },
         plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
       },
       include: {
@@ -361,10 +373,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Group by month and network
-    const monthlyByNetwork: Record<string, { aitx: number; thirdParty: number; total: number; byShop: Record<string, number> }> = {};
-
-    carFlowPlansWithShops.forEach((plan: any) => {
+    pendingPlans.forEach((plan: any) => {
       const monthKey = `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`;
       if (!monthlyByNetwork[monthKey]) {
         monthlyByNetwork[monthKey] = { aitx: 0, thirdParty: 0, total: 0, byShop: {} };
@@ -377,7 +386,6 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         monthlyByNetwork[monthKey].thirdParty++;
       }
 
-      // Track by shop for drill-down
       const shopKey = plan.shop?.name || 'Unknown';
       monthlyByNetwork[monthKey].byShop[shopKey] = (monthlyByNetwork[monthKey].byShop[shopKey] || 0) + 1;
     });

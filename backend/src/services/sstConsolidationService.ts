@@ -766,6 +766,354 @@ export async function onCarFlowPlanStatusChange(
 }
 
 // =============================================================================
+// MASTER PLAN SST - The Single Source of Truth for Scheduled Shoppings
+// =============================================================================
+
+/**
+ * Get or create the active MasterPlan for a company.
+ * The active MasterPlan is the SST for all scheduled shoppings.
+ */
+export async function getOrCreateActiveMasterPlan(
+  companyId: string,
+  userId: string
+): Promise<{ id: string; name: string; isNew: boolean }> {
+  try {
+    // Check for existing active plan
+    const existingPlan = await prisma.masterPlan.findFirst({
+      where: { companyId, status: 'ACTIVE' },
+      select: { id: true, name: true },
+    });
+
+    if (existingPlan) {
+      logger.debug('[SST MasterPlan] Found existing active MasterPlan', {
+        planId: existingPlan.id,
+        name: existingPlan.name,
+      });
+      return { ...existingPlan, isNew: false };
+    }
+
+    // Create new active plan
+    const currentYear = new Date().getFullYear();
+    const planName = `Master Plan ${currentYear}`;
+    const now = new Date();
+    const yearEnd = new Date(currentYear, 11, 31);
+
+    const newPlan = await prisma.masterPlan.create({
+      data: {
+        name: planName,
+        description: `Active master plan for ${currentYear}`,
+        status: 'ACTIVE',
+        validFrom: now,
+        validTo: yearEnd,
+        planningHorizonStart: now,
+        planningHorizonEnd: yearEnd,
+        companyId,
+        createdById: userId,
+      },
+      select: { id: true, name: true },
+    });
+
+    logger.info('[SST MasterPlan] Created new active MasterPlan', {
+      planId: newPlan.id,
+      name: newPlan.name,
+      companyId,
+    });
+
+    return { ...newPlan, isNew: true };
+  } catch (error) {
+    logger.error('[SST MasterPlan] Failed to get/create active MasterPlan', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Promote a CarFlowPlan to MasterPlanCommitment.
+ * This is the workflow: CarFlowPlan (Confirmed) → MasterPlanCommitment (SCHEDULED)
+ */
+export async function promoteToMasterPlan(
+  carFlowPlanId: string,
+  userId: string
+): Promise<{ commitmentId: string; masterPlanId: string }> {
+  try {
+    // Get the CarFlowPlan
+    const carFlowPlan = await prisma.carFlowPlan.findUnique({
+      where: { id: carFlowPlanId },
+      include: {
+        car: { select: { id: true, railcarNumber: true, companyId: true } },
+        shop: { select: { id: true, name: true } },
+        customer: { select: { id: true } },
+      },
+    });
+
+    if (!carFlowPlan) {
+      throw new Error(`CarFlowPlan not found: ${carFlowPlanId}`);
+    }
+
+    if (carFlowPlan.status !== 'Confirmed') {
+      throw new Error(`CarFlowPlan must be Confirmed to promote. Current status: ${carFlowPlan.status}`);
+    }
+
+    // Get or create active MasterPlan
+    const masterPlan = await getOrCreateActiveMasterPlan(
+      carFlowPlan.car.companyId,
+      userId
+    );
+
+    // Check if commitment already exists
+    const existing = await prisma.masterPlanCommitment.findFirst({
+      where: {
+        masterPlanId: masterPlan.id,
+        carId: carFlowPlan.carId,
+        plannedMonth: carFlowPlan.plannedMonth,
+        plannedYear: carFlowPlan.plannedYear,
+        status: { notIn: ['CANCELLED', 'DEFERRED'] },
+      },
+    });
+
+    if (existing) {
+      logger.warn('[SST MasterPlan] Commitment already exists for this car-month', {
+        carFlowPlanId,
+        existingCommitmentId: existing.id,
+        carId: carFlowPlan.carId,
+      });
+      return { commitmentId: existing.id, masterPlanId: masterPlan.id };
+    }
+
+    // Create MasterPlanCommitment
+    const commitment = await prisma.masterPlanCommitment.create({
+      data: {
+        masterPlanId: masterPlan.id,
+        carId: carFlowPlan.carId,
+        shopId: carFlowPlan.shopId,
+        customerId: carFlowPlan.customerId,
+        plannedMonth: carFlowPlan.plannedMonth,
+        plannedYear: carFlowPlan.plannedYear,
+        status: 'SCHEDULED',
+        scheduledAt: new Date(),
+        sourceType: 'car_flow_plan',
+        shopReason: carFlowPlan.shopReason || '',
+      },
+    });
+
+    // Update CarFlowPlan status to indicate it's been scheduled
+    await prisma.carFlowPlan.update({
+      where: { id: carFlowPlanId },
+      data: {
+        status: 'Scheduled',
+        notes: `Promoted to MasterPlanCommitment: ${commitment.id}`,
+      },
+    });
+
+    logger.info('[SST MasterPlan] Promoted CarFlowPlan to MasterPlanCommitment', {
+      carFlowPlanId,
+      commitmentId: commitment.id,
+      masterPlanId: masterPlan.id,
+      carId: carFlowPlan.carId,
+      railcarNumber: carFlowPlan.car.railcarNumber,
+      plannedMonth: carFlowPlan.plannedMonth,
+      plannedYear: carFlowPlan.plannedYear,
+    });
+
+    return { commitmentId: commitment.id, masterPlanId: masterPlan.id };
+  } catch (error) {
+    logger.error('[SST MasterPlan] Failed to promote CarFlowPlan', {
+      carFlowPlanId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get dashboard metrics from the SST (MasterPlan + MasterPlanCommitment).
+ * This is the canonical source for scheduled shopping counts.
+ */
+export async function getDashboardMetrics(companyId: string): Promise<{
+  planned: number;       // CarFlowPlan with status Planned
+  confirmed: number;     // CarFlowPlan with status Confirmed
+  scheduled: number;     // MasterPlanCommitment with status SCHEDULED
+  inProgress: number;    // MasterPlanCommitment with status IN_PROGRESS
+  completed: number;     // MasterPlanCommitment with status COMPLETE
+  byMonth: Record<string, { planned: number; scheduled: number }>;
+}> {
+  try {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+
+    // Get CarFlowPlan counts (planning stage)
+    const [plannedCount, confirmedCount] = await Promise.all([
+      prisma.carFlowPlan.count({
+        where: { companyId, status: 'Planned' },
+      }),
+      prisma.carFlowPlan.count({
+        where: { companyId, status: 'Confirmed' },
+      }),
+    ]);
+
+    // Get MasterPlanCommitment counts from active plan (SST for scheduled)
+    const activePlan = await prisma.masterPlan.findFirst({
+      where: { companyId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+
+    let scheduledCount = 0;
+    let inProgressCount = 0;
+    let completedCount = 0;
+    const byMonth: Record<string, { planned: number; scheduled: number }> = {};
+
+    if (activePlan) {
+      const [scheduled, inProgress, completed] = await Promise.all([
+        prisma.masterPlanCommitment.count({
+          where: { masterPlanId: activePlan.id, status: 'SCHEDULED' },
+        }),
+        prisma.masterPlanCommitment.count({
+          where: { masterPlanId: activePlan.id, status: 'IN_PROGRESS' },
+        }),
+        prisma.masterPlanCommitment.count({
+          where: { masterPlanId: activePlan.id, status: 'COMPLETE' },
+        }),
+      ]);
+
+      scheduledCount = scheduled;
+      inProgressCount = inProgress;
+      completedCount = completed;
+
+      // Get by-month breakdown for next 12 months
+      const commitmentsByMonth = await prisma.masterPlanCommitment.groupBy({
+        by: ['plannedYear', 'plannedMonth'],
+        where: {
+          masterPlanId: activePlan.id,
+          status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+          OR: [
+            { plannedYear: { gt: currentYear } },
+            { plannedYear: currentYear, plannedMonth: { gte: currentMonth } },
+          ],
+        },
+        _count: { id: true },
+      });
+
+      const plansByMonth = await prisma.carFlowPlan.groupBy({
+        by: ['plannedYear', 'plannedMonth'],
+        where: {
+          companyId,
+          status: { in: ['Planned', 'Confirmed'] },
+          OR: [
+            { plannedYear: { gt: currentYear } },
+            { plannedYear: currentYear, plannedMonth: { gte: currentMonth } },
+          ],
+        },
+        _count: { id: true },
+      });
+
+      // Merge into byMonth
+      commitmentsByMonth.forEach((c) => {
+        const key = `${c.plannedYear}-${String(c.plannedMonth).padStart(2, '0')}`;
+        if (!byMonth[key]) byMonth[key] = { planned: 0, scheduled: 0 };
+        byMonth[key].scheduled = c._count.id;
+      });
+
+      plansByMonth.forEach((p) => {
+        const key = `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}`;
+        if (!byMonth[key]) byMonth[key] = { planned: 0, scheduled: 0 };
+        byMonth[key].planned = p._count.id;
+      });
+    }
+
+    logger.debug('[SST MasterPlan] Dashboard metrics retrieved', {
+      companyId,
+      planned: plannedCount,
+      confirmed: confirmedCount,
+      scheduled: scheduledCount,
+      inProgress: inProgressCount,
+      completed: completedCount,
+    });
+
+    return {
+      planned: plannedCount,
+      confirmed: confirmedCount,
+      scheduled: scheduledCount,
+      inProgress: inProgressCount,
+      completed: completedCount,
+      byMonth,
+    };
+  } catch (error) {
+    logger.error('[SST MasterPlan] Failed to get dashboard metrics', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+/**
+ * Get upcoming shoppings from the SST (MasterPlanCommitment).
+ */
+export async function getUpcomingShoppings(
+  companyId: string,
+  limit: number = 10
+): Promise<Array<{
+  id: string;
+  carId: string;
+  railcarNumber: string;
+  customer: string | null;
+  shopName: string;
+  plannedMonth: number;
+  plannedYear: number;
+  status: string;
+}>> {
+  try {
+    const activePlan = await prisma.masterPlan.findFirst({
+      where: { companyId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+
+    if (!activePlan) {
+      return [];
+    }
+
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+
+    const commitments = await prisma.masterPlanCommitment.findMany({
+      where: {
+        masterPlanId: activePlan.id,
+        status: { in: ['SCHEDULED', 'IN_PROGRESS'] },
+        OR: [
+          { plannedYear: { gt: currentYear } },
+          { plannedYear: currentYear, plannedMonth: { gte: currentMonth } },
+        ],
+      },
+      include: {
+        car: { select: { id: true, railcarNumber: true, customer: true } },
+        shop: { select: { name: true } },
+      },
+      orderBy: [{ plannedYear: 'asc' }, { plannedMonth: 'asc' }],
+      take: limit,
+    });
+
+    return commitments.map((c) => ({
+      id: c.id,
+      carId: c.carId,
+      railcarNumber: c.car.railcarNumber || '',
+      customer: c.car.customer,
+      shopName: c.shop.name,
+      plannedMonth: c.plannedMonth,
+      plannedYear: c.plannedYear,
+      status: c.status,
+    }));
+  } catch (error) {
+    logger.error('[SST MasterPlan] Failed to get upcoming shoppings', {
+      companyId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    throw error;
+  }
+}
+
+// =============================================================================
 // EXPORTS
 // =============================================================================
 
@@ -782,4 +1130,9 @@ export default {
   updateCarShoppingStatus,
   batchUpdateShoppingStatus,
   onCarFlowPlanStatusChange,
+  // MasterPlan SST
+  getOrCreateActiveMasterPlan,
+  promoteToMasterPlan,
+  getDashboardMetrics,
+  getUpcomingShoppings,
 };
