@@ -153,11 +153,95 @@ VALUES (
 
 Current shop network tier classifications:
 
-| Tier | Shops | Capabilities |
-|------|-------|--------------|
-| **Tier 1** | Trinity, Curry, AITX | Full AAR M-1003, tank requalification, hydro testing, wheel work, heavy structural |
-| **Tier 2** | Guardian/Cathcart, Cypress, TMC, Iron Horse | Light structural, component replacement, PM, Rule 88B |
-| **Tier 3** | All others | Field service, quick repairs, overflow, emergency response |
+| Tier | Shops | Work Types | Routing Method |
+|------|-------|------------|----------------|
+| **Tier 1** | Trinity, Curry, AITX | Qualifications, Assignments & Releases | Planning process (automatic) |
+| **Tier 2** | Guardian/Cathcart, Cypress, TMC, Iron Horse | Assignments & Releases, Overflow Quals, Bad Orders | Manual shopping |
+| **Tier 3** | All others | Overflow Assignments & Releases, Bad Orders | Manual shopping |
+
+### Work Type Routing Rules
+
+```typescript
+// Work type definitions and tier routing
+enum WorkType {
+  QUALIFICATION = 'QUAL',           // Tank requalification, hydro testing
+  ASSIGNMENT = 'ASSIGN',            // Standard assignment work
+  RELEASE = 'RELEASE',              // Release preparation
+  BAD_ORDER = 'BAD_ORDER',          // Bad order repairs
+  OVERFLOW_QUAL = 'OVERFLOW_QUAL',  // Overflow qualifications (when Tier 1 at capacity)
+  OVERFLOW_AR = 'OVERFLOW_AR',      // Overflow assignments & releases
+}
+
+// Routing configuration
+const WORK_TYPE_ROUTING: Record<WorkType, TierRouting> = {
+  [WorkType.QUALIFICATION]: {
+    primaryTier: 1,
+    allowedTiers: [1],              // Quals ONLY at Tier 1
+    routingMethod: 'PLANNING',      // Through planning process
+    requiresApproval: false,
+  },
+  [WorkType.ASSIGNMENT]: {
+    primaryTier: 1,
+    allowedTiers: [1, 2],           // Tier 1 primary, Tier 2 allowed
+    routingMethod: 'PLANNING',      // Through planning process for Tier 1
+    requiresApproval: false,
+  },
+  [WorkType.RELEASE]: {
+    primaryTier: 1,
+    allowedTiers: [1, 2],           // Tier 1 primary, Tier 2 allowed
+    routingMethod: 'PLANNING',
+    requiresApproval: false,
+  },
+  [WorkType.BAD_ORDER]: {
+    primaryTier: 2,
+    allowedTiers: [2, 3],           // Tier 2 & 3 only
+    routingMethod: 'MANUAL',        // Manual shopping
+    requiresApproval: true,         // Requires dispatcher approval
+  },
+  [WorkType.OVERFLOW_QUAL]: {
+    primaryTier: 2,
+    allowedTiers: [2],              // Tier 2 only for overflow quals
+    routingMethod: 'MANUAL',
+    requiresApproval: true,         // Must confirm Tier 1 is at capacity
+  },
+  [WorkType.OVERFLOW_AR]: {
+    primaryTier: 3,
+    allowedTiers: [2, 3],           // Tier 2 & 3 for overflow A&R
+    routingMethod: 'MANUAL',
+    requiresApproval: true,
+  },
+};
+```
+
+### Routing Decision Logic
+
+```
+FUNCTION DetermineShopRouting(workType, railcar, targetPeriod):
+
+  1. IF workType = QUALIFICATION:
+       // Quals MUST go to Tier 1 - no exceptions
+       eligibleShops = GetTier1Shops()
+       routingMethod = "PLANNING"
+
+  2. ELSE IF workType IN (ASSIGNMENT, RELEASE):
+       // Check Tier 1 capacity first
+       tier1Shops = GetTier1ShopsWithCapacity(targetPeriod)
+       IF tier1Shops.hasAvailability:
+         eligibleShops = tier1Shops
+         routingMethod = "PLANNING"
+       ELSE:
+         // Overflow to Tier 2 - requires manual shopping
+         eligibleShops = GetTier2Shops()
+         routingMethod = "MANUAL"
+         workType = OVERFLOW_AR
+
+  3. ELSE IF workType = BAD_ORDER:
+       // Bad orders go to Tier 2 or 3, manually shopped
+       eligibleShops = GetTier2And3Shops()
+       routingMethod = "MANUAL"
+
+  4. RETURN { eligibleShops, routingMethod, requiresApproval: routingMethod = "MANUAL" }
+```
 
 ```sql
 -- Example: Assign existing shops to tiers
