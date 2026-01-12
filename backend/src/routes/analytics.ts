@@ -1284,10 +1284,9 @@ router.get('/sst-status', async (req: AuthRequest, res: Response) => {
         companyId,
         status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
       },
-      select: { carId: true },
-      distinct: ['carId'],
     });
-    const plannedCarIds = new Set(carsWithActivePlans.map((a: { carId: string }) => a.carId));
+    // Use Set to get unique car IDs (distinct is not supported in SQLite wrapper)
+    const plannedCarIds = new Set(carsWithActivePlans.map((a: any) => a.carId));
     const carsPlanned = plannedCarIds.size;
     const carsNotPlanned = totalCars - carsPlanned;
 
@@ -1304,7 +1303,6 @@ router.get('/sst-status', async (req: AuthRequest, res: Response) => {
     // ==========================================================================
     const carsWithBucketData = await prisma.car.findMany({
       where: { companyId },
-      select: { id: true, reasonsShopped: true },
     });
 
     // Get assignments grouped by car for team bucket analysis
@@ -1313,7 +1311,6 @@ router.get('/sst-status', async (req: AuthRequest, res: Response) => {
         companyId,
         status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
       },
-      select: { carId: true, status: true },
     });
 
     const carIdToAssignment = new Map<string, string>();
@@ -1350,16 +1347,8 @@ router.get('/sst-status', async (req: AuthRequest, res: Response) => {
     // ==========================================================================
     // Breakdown by Urgency (from qualification dates)
     // ==========================================================================
-    const carsWithQualDates = await prisma.car.findMany({
-      where: { companyId },
-      select: {
-        id: true,
-        tankQualDueDate: true,
-        tankQualification: true,
-        minNoLining: true,
-        minWLining: true,
-      },
-    });
+    // Note: Reuse carsWithBucketData to avoid extra query - it has all fields we need
+    const carsWithQualDates = carsWithBucketData;
 
     const byUrgency: Record<string, { needsPlanning: number; notConfirmed: number; confirmed: number; total: number }> = {
       Overdue: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
@@ -1478,28 +1467,8 @@ router.get('/plans-to-confirm', async (req: AuthRequest, res: Response) => {
         status: { in: statusFilter },
       },
       include: {
-        car: {
-          select: {
-            id: true,
-            railcarNumber: true,
-            customer: true,
-            carType: true,
-            reasonsShopped: true,
-            tankQualDueDate: true,
-            tankQualification: true,
-            minNoLining: true,
-            minWLining: true,
-          },
-        },
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            region: true,
-            isAitxInternal: true,
-          },
-        },
+        car: true,
+        shop: true,
       },
       orderBy: [
         { status: 'asc' },          // DRAFT before PENDING_REVIEW
@@ -1661,26 +1630,8 @@ router.get('/confirmed-plans', async (req: AuthRequest, res: Response) => {
     const confirmedPlans = await prisma.unifiedAssignment.findMany({
       where: whereClause,
       include: {
-        car: {
-          select: {
-            id: true,
-            railcarNumber: true,
-            customer: true,
-            carType: true,
-            reasonsShopped: true,
-            tankQualDueDate: true,
-            tankQualification: true,
-          },
-        },
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            region: true,
-            isAitxInternal: true,
-          },
-        },
+        car: true,
+        shop: true,
       },
       orderBy: [
         { status: 'desc' },           // IN_PROGRESS before COMMITTED
