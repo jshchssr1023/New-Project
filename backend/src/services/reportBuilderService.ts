@@ -1,6 +1,7 @@
 // Custom Report Builder Service
 // Supports custom column selection, filters, and multiple output formats
 import { prisma } from './db';
+import { safeJsonParse, safeJsonParseArray, safeJsonParseObject } from '../utils/safeJson';
 
 
 // Available columns for each entity type
@@ -62,16 +63,20 @@ export const ENTITY_COLUMNS: Record<string, {
     { key: 'endDate', label: 'End Date', type: 'date', sortable: true, filterable: true, defaultVisible: true },
     { key: 'status', label: 'Status', type: 'string', sortable: true, filterable: true, defaultVisible: true },
   ],
+  // Assignment entity now uses CarFlowPlan (SST) instead of legacy PlanAssignment
   Assignment: [
     { key: 'car.railcarNumber', label: 'Railcar Number', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'car.carType', label: 'Car Type', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'car.customer', label: 'Customer', type: 'string', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'car.shoppingStatus', label: 'Shopping Status', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'shop.name', label: 'Assigned Shop', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'shop.region', label: 'Shop Region', type: 'string', sortable: true, filterable: true, defaultVisible: false },
-    { key: 'scheduledMonth', label: 'Scheduled Month', type: 'string', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'plannedMonth', label: 'Planned Month', type: 'number', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'plannedYear', label: 'Planned Year', type: 'number', sortable: true, filterable: true, defaultVisible: true },
     { key: 'estimatedCost', label: 'Estimated Cost', type: 'number', sortable: true, filterable: true, defaultVisible: true },
-    { key: 'estimatedDuration', label: 'Est. Duration (days)', type: 'number', sortable: true, filterable: true, defaultVisible: true },
     { key: 'status', label: 'Status', type: 'string', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'source', label: 'Source', type: 'string', sortable: true, filterable: true, defaultVisible: false },
+    { key: 'shopReason', label: 'Shop Reason', type: 'string', sortable: false, filterable: true, defaultVisible: false },
     { key: 'notes', label: 'Notes', type: 'string', sortable: false, filterable: false, defaultVisible: false },
   ],
   Scenario: [
@@ -258,14 +263,33 @@ export async function executeReport(
       ]);
       break;
 
+    // SST: Assignment now queries CarFlowPlan instead of legacy PlanAssignment
     case 'Assignment':
       [data, total] = await Promise.all([
-        prisma.planAssignment.findMany({
+        prisma.carFlowPlan.findMany({
           where: baseWhere,
-          include: { car: true, shop: true },
+          include: {
+            car: {
+              select: {
+                id: true,
+                railcarNumber: true,
+                carType: true,
+                customer: true,
+                shoppingStatus: true,
+              },
+            },
+            shop: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                region: true,
+              },
+            },
+          },
           orderBy,
         }),
-        prisma.planAssignment.count({ where: baseWhere }),
+        prisma.carFlowPlan.count({ where: baseWhere }),
       ]);
       break;
 
@@ -428,10 +452,10 @@ export async function getTemplates(companyId: string, userId: string) {
 
   return templates.map(t => ({
     ...t,
-    columns: JSON.parse(t.columns),
-    filters: JSON.parse(t.filters),
-    sortConfig: JSON.parse(t.sortConfig),
-    outputFormats: JSON.parse(t.outputFormats),
+    columns: safeJsonParseArray<string>(t.columns, 'template.columns'),
+    filters: safeJsonParseArray(t.filters, 'template.filters'),
+    sortConfig: safeJsonParseObject(t.sortConfig, 'template.sortConfig'),
+    outputFormats: safeJsonParseArray<string>(t.outputFormats, 'template.outputFormats'),
   }));
 }
 
@@ -445,10 +469,10 @@ export async function getTemplate(templateId: string, companyId: string) {
 
   return {
     ...template,
-    columns: JSON.parse(template.columns),
-    filters: JSON.parse(template.filters),
-    sortConfig: JSON.parse(template.sortConfig),
-    outputFormats: JSON.parse(template.outputFormats),
+    columns: safeJsonParseArray<string>(template.columns, 'template.columns'),
+    filters: safeJsonParseArray(template.filters, 'template.filters'),
+    sortConfig: safeJsonParseObject(template.sortConfig, 'template.sortConfig'),
+    outputFormats: safeJsonParseArray<string>(template.outputFormats, 'template.outputFormats'),
   };
 }
 

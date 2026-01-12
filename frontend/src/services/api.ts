@@ -43,6 +43,13 @@ export {
   sopApi,
   leaseQualificationApi,
   servicePlansApi,
+  // Car Flow Planning (SST for planning data)
+  carFlowApi,
+  carFlowPlanApi,
+  capacityApi,
+  sopCommitmentApi,
+  shoppingStatusApi,
+  customersApi,
 } from './api/index';
 
 // Re-export all types
@@ -78,4 +85,14 @@ export type {
   ImportSessionData,
   ShopHistoryEntry,
   MasterPlanAuditEntry,
+  // Car Flow Planning types
+  CarFlowPlan,
+  CreateCarFlowPlanRequest,
+  SOPCommitment,
+  CreateSOPCommitmentRequest,
+  CapacityResponse,
+  ShoppingStatusStats,
+  BulkPlanAssignment,
+  BulkPlanConflict,
+  BulkPlanResponse,
 } from './api/index';
