@@ -41,6 +41,11 @@ const TABLES_WITHOUT_TIMESTAMPS = new Set<string>([
   // Currently empty - all tables now have timestamps
 ]);
 
+// Tables that use different timestamp field names (e.g., addedAt instead of createdAt)
+const TABLES_WITH_CUSTOM_TIMESTAMPS: Record<string, { created?: string; updated?: string }> = {
+  'ServicePlanCar': { created: 'addedAt', updated: 'updatedAt' },
+};
+
 /**
  * Validates a table name against the whitelist
  * @throws Error if table name is not allowed
@@ -522,12 +527,16 @@ function createTableHandler(tableName: string) {
 
       // Add timestamps if not provided (skip for tables without timestamp columns)
       const now = new Date().toISOString();
-      if (!data.createdAt && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
-        data.createdAt = now;
+      const customTimestamps = TABLES_WITH_CUSTOM_TIMESTAMPS[tableName];
+      const createdField = customTimestamps?.created || 'createdAt';
+      const updatedField = customTimestamps?.updated || 'updatedAt';
+
+      if (!data[createdField] && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+        data[createdField] = now;
       }
       // Only add updatedAt for tables that have this column
-      if (!data.updatedAt && !TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
-        data.updatedAt = now;
+      if (!data[updatedField] && !TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+        data[updatedField] = now;
       }
 
       // Handle nested create/connect syntax
@@ -672,19 +681,23 @@ function createTableHandler(tableName: string) {
 
     createMany: async (options: { data: any[] }) => {
       const now = new Date().toISOString();
+      const customTimestamps = TABLES_WITH_CUSTOM_TIMESTAMPS[tableName];
+      const createdField = customTimestamps?.created || 'createdAt';
+      const updatedField = customTimestamps?.updated || 'updatedAt';
       let count = 0;
+      const errors: string[] = [];
 
       for (const item of options.data) {
         // Generate UUID if no id provided
         if (!item.id) {
           item.id = uuidv4();
         }
-        // Add timestamps
-        if (!item.createdAt) {
-          item.createdAt = now;
+        // Add timestamps using the correct field names for this table
+        if (!item[createdField] && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+          item[createdField] = now;
         }
-        if (!item.updatedAt) {
-          item.updatedAt = now;
+        if (!item[updatedField] && !TABLES_WITHOUT_UPDATED_AT.has(tableName) && !TABLES_WITHOUT_TIMESTAMPS.has(tableName)) {
+          item[updatedField] = now;
         }
 
         const keys = Object.keys(item);
@@ -707,8 +720,13 @@ function createTableHandler(tableName: string) {
           count++;
         } catch (error: any) {
           console.error(`[DB] CreateMany error in ${tableName}:`, error.message);
-          // Continue with other records
+          errors.push(error.message);
         }
+      }
+
+      // If all records failed, throw an error
+      if (count === 0 && errors.length > 0) {
+        throw new Error(`Failed to create any records: ${errors[0]}`);
       }
 
       return { count };
