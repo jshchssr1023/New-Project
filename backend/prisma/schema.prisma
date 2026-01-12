@@ -2375,7 +2375,7 @@ model ProposalSnapshot {
 
   // Immutable snapshot data (JSON)
   // Contains: { cars: [], options: [], selectedOption: {}, summary: {} }
-  snapshotData          String              @db.Text // JSON blob of entire proposal state
+  snapshotData          String              // JSON blob of entire proposal state
 
   // Customer communication tracking
   sentToCustomer        Boolean             @default(false)
