@@ -870,7 +870,7 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
         currentMonth: currentMonthAssignments,
         previousMonth: prevMonthAssignments,
         change: Math.round(volumeChange * 10) / 10,
-        totalYTD: completedPlans.length,
+        totalYTD: completedAssignments.length,
         totalEstimatedCost: Math.round(totalEstimatedCost),
       },
     });
@@ -1237,6 +1237,558 @@ router.get('/fleet', async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Get fleet analytics error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// =============================================================================
+// SST STATUS SUMMARY - Complete visibility into UnifiedAssignment status breakdown
+// Shows: DRAFT, PENDING_REVIEW, COMMITTED, IN_PROGRESS, COMPLETED counts
+// Plus: Total fleet planned vs not planned
+// =============================================================================
+router.get('/sst-status', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+
+  try {
+    const companyId = req.user!.companyId;
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+
+    // Get all cars in the fleet
+    const totalCars = await prisma.car.count({ where: { companyId } });
+
+    // ==========================================================================
+    // SST Status Breakdown - From UnifiedAssignment (THE SST)
+    // ==========================================================================
+    const [
+      draftCount,
+      pendingReviewCount,
+      committedCount,
+      inProgressCount,
+      completedCount,
+      cancelledCount,
+      supersededCount,
+    ] = await Promise.all([
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'DRAFT' } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'PENDING_REVIEW' } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'COMMITTED' } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'IN_PROGRESS' } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'COMPLETED' } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'CANCELLED' } }),
+      prisma.unifiedAssignment.count({ where: { companyId, status: 'SUPERSEDED' } }),
+    ]);
+
+    // Get unique car IDs that have active plans (exclude cancelled/superseded)
+    const carsWithActivePlans = await prisma.unifiedAssignment.findMany({
+      where: {
+        companyId,
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+      },
+      select: { carId: true },
+      distinct: ['carId'],
+    });
+    const plannedCarIds = new Set(carsWithActivePlans.map((a: { carId: string }) => a.carId));
+    const carsPlanned = plannedCarIds.size;
+    const carsNotPlanned = totalCars - carsPlanned;
+
+    // ==========================================================================
+    // Planning States - User-friendly groupings
+    // ==========================================================================
+    // NOT_CONFIRMED = DRAFT + PENDING_REVIEW (created but not yet committed)
+    const notConfirmed = draftCount + pendingReviewCount;
+    // CONFIRMED = COMMITTED + IN_PROGRESS (finalized/scheduled)
+    const confirmed = committedCount + inProgressCount;
+
+    // ==========================================================================
+    // Breakdown by Team Bucket (from reasonsShopped on cars)
+    // ==========================================================================
+    const carsWithBucketData = await prisma.car.findMany({
+      where: { companyId },
+      select: { id: true, reasonsShopped: true },
+    });
+
+    // Get assignments grouped by car for team bucket analysis
+    const assignmentsByCar = await prisma.unifiedAssignment.findMany({
+      where: {
+        companyId,
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+      },
+      select: { carId: true, status: true },
+    });
+
+    const carIdToAssignment = new Map<string, string>();
+    assignmentsByCar.forEach((a: { carId: string; status: string }) => {
+      carIdToAssignment.set(a.carId, a.status);
+    });
+
+    const byTeamBucket: Record<string, { needsPlanning: number; notConfirmed: number; confirmed: number; total: number }> = {
+      Qualification: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+      Assignment: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+      'In-Service Repairs': { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+      Other: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+    };
+
+    carsWithBucketData.forEach((car: { id: string; reasonsShopped: string | null }) => {
+      const reasons = (car.reasonsShopped || '').toUpperCase();
+      let bucket = 'Other';
+      if (reasons.includes('TANK')) bucket = 'Qualification';
+      else if (reasons.includes('RELE')) bucket = 'Assignment';
+      else if (reasons.includes('BAD')) bucket = 'In-Service Repairs';
+
+      byTeamBucket[bucket].total++;
+
+      const status = carIdToAssignment.get(car.id);
+      if (!status) {
+        byTeamBucket[bucket].needsPlanning++;
+      } else if (['DRAFT', 'PENDING_REVIEW'].includes(status)) {
+        byTeamBucket[bucket].notConfirmed++;
+      } else {
+        byTeamBucket[bucket].confirmed++;
+      }
+    });
+
+    // ==========================================================================
+    // Breakdown by Urgency (from qualification dates)
+    // ==========================================================================
+    const carsWithQualDates = await prisma.car.findMany({
+      where: { companyId },
+      select: {
+        id: true,
+        tankQualDueDate: true,
+        tankQualification: true,
+        minNoLining: true,
+        minWLining: true,
+      },
+    });
+
+    const byUrgency: Record<string, { needsPlanning: number; notConfirmed: number; confirmed: number; total: number }> = {
+      Overdue: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+      Urgent: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+      Upcoming: { needsPlanning: 0, notConfirmed: 0, confirmed: 0, total: 0 },
+    };
+
+    carsWithQualDates.forEach((car: any) => {
+      // Determine urgency
+      const qualDates = [
+        car.tankQualDueDate,
+        car.tankQualification,
+        car.minNoLining,
+        car.minWLining,
+      ].filter(Boolean);
+
+      let urgency = 'Upcoming';
+      for (const dateVal of qualDates) {
+        const year = typeof dateVal === 'number' ? dateVal : new Date(dateVal).getFullYear();
+        if (!isNaN(year)) {
+          if (year < currentYear) {
+            urgency = 'Overdue';
+            break;
+          } else if (year === currentYear) {
+            urgency = 'Urgent';
+          }
+        }
+      }
+
+      byUrgency[urgency].total++;
+
+      const status = carIdToAssignment.get(car.id);
+      if (!status) {
+        byUrgency[urgency].needsPlanning++;
+      } else if (['DRAFT', 'PENDING_REVIEW'].includes(status)) {
+        byUrgency[urgency].notConfirmed++;
+      } else {
+        byUrgency[urgency].confirmed++;
+      }
+    });
+
+    res.json({
+      // ==========================================================================
+      // Overall SST Status Counts
+      // ==========================================================================
+      statusCounts: {
+        draft: draftCount,
+        pendingReview: pendingReviewCount,
+        committed: committedCount,
+        inProgress: inProgressCount,
+        completed: completedCount,
+        cancelled: cancelledCount,
+        superseded: supersededCount,
+        total: draftCount + pendingReviewCount + committedCount + inProgressCount + completedCount,
+      },
+
+      // ==========================================================================
+      // Planning State Summary (User-Friendly Groupings)
+      // ==========================================================================
+      planningStates: {
+        needsPlanning: carsNotPlanned,      // No UnifiedAssignment record
+        notConfirmed: notConfirmed,         // DRAFT + PENDING_REVIEW
+        confirmed: confirmed,                // COMMITTED + IN_PROGRESS
+        completed: completedCount,           // COMPLETED
+      },
+
+      // ==========================================================================
+      // Fleet Coverage
+      // ==========================================================================
+      fleetCoverage: {
+        totalCars: totalCars,
+        carsPlanned: carsPlanned,           // Cars with active UnifiedAssignment
+        carsNotPlanned: carsNotPlanned,     // Cars without UnifiedAssignment
+        planningRate: totalCars > 0 ? Math.round((carsPlanned / totalCars) * 100) : 0,
+      },
+
+      // ==========================================================================
+      // Breakdown by Team Bucket (from reasonsShopped)
+      // ==========================================================================
+      byTeamBucket,
+
+      // ==========================================================================
+      // Breakdown by Urgency (from qual dates)
+      // ==========================================================================
+      byUrgency,
+    });
+  } catch (error) {
+    console.error('Get SST status error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// =============================================================================
+// PLANS TO CONFIRM - List of plans awaiting confirmation (DRAFT/PENDING_REVIEW)
+// These are plans created/sent to customers but not yet confirmed to schedule
+// =============================================================================
+router.get('/plans-to-confirm', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+
+  try {
+    const companyId = req.user!.companyId;
+    const currentDate = new Date();
+    const { status, teamBucket, page = '1', pageSize = '50' } = req.query;
+
+    // Build filter
+    const statusFilter = status === 'DRAFT'
+      ? ['DRAFT']
+      : status === 'PENDING_REVIEW'
+        ? ['PENDING_REVIEW']
+        : ['DRAFT', 'PENDING_REVIEW'];
+
+    // Get plans that need confirmation
+    const plansToConfirm = await prisma.unifiedAssignment.findMany({
+      where: {
+        companyId,
+        status: { in: statusFilter },
+      },
+      include: {
+        car: {
+          select: {
+            id: true,
+            railcarNumber: true,
+            customer: true,
+            carType: true,
+            reasonsShopped: true,
+            tankQualDueDate: true,
+            tankQualification: true,
+            minNoLining: true,
+            minWLining: true,
+          },
+        },
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            region: true,
+            isAitxInternal: true,
+          },
+        },
+      },
+      orderBy: [
+        { status: 'asc' },          // DRAFT before PENDING_REVIEW
+        { plannedYear: 'asc' },
+        { plannedMonth: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    // Enrich with team bucket, urgency, and days until scheduled
+    const currentYear = currentDate.getFullYear();
+    const enrichedPlans = plansToConfirm.map((plan: any) => {
+      const car = plan.car;
+
+      // Determine team bucket from reasonsShopped
+      const reasons = (car?.reasonsShopped || '').toUpperCase();
+      let bucket = 'Other';
+      if (reasons.includes('TANK')) bucket = 'Qualification';
+      else if (reasons.includes('RELE')) bucket = 'Assignment';
+      else if (reasons.includes('BAD')) bucket = 'In-Service Repairs';
+
+      // Determine urgency from qual dates
+      const qualDates = [
+        car?.tankQualDueDate,
+        car?.tankQualification,
+        car?.minNoLining,
+        car?.minWLining,
+      ].filter(Boolean);
+
+      let urgency = 'Upcoming';
+      for (const dateVal of qualDates) {
+        const year = typeof dateVal === 'number' ? dateVal : new Date(dateVal).getFullYear();
+        if (!isNaN(year)) {
+          if (year < currentYear) {
+            urgency = 'Overdue';
+            break;
+          } else if (year === currentYear) {
+            urgency = 'Urgent';
+          }
+        }
+      }
+
+      // Calculate days until scheduled month
+      const scheduledDate = new Date(plan.plannedYear, plan.plannedMonth - 1, 15);
+      const daysUntilScheduled = Math.ceil((scheduledDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      return {
+        id: plan.id,
+        carId: plan.carId,
+        railcarNumber: car?.railcarNumber || 'Unknown',
+        customer: car?.customer || '',
+        carType: car?.carType || '',
+        shopId: plan.shopId,
+        shopName: plan.shop?.name || 'Unknown',
+        shopCode: plan.shop?.code || '',
+        shopRegion: plan.shop?.region || '',
+        isAitxInternal: plan.shop?.isAitxInternal || false,
+        plannedMonth: plan.plannedMonth,
+        plannedYear: plan.plannedYear,
+        scheduledMonth: `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`,
+        status: plan.status,
+        statusLabel: plan.status === 'DRAFT' ? 'Draft' : 'Pending Review',
+        teamBucket: bucket,
+        urgency,
+        daysUntilScheduled,
+        workType: plan.workType,
+        estimatedDays: plan.estimatedDays,
+        estimatedCost: plan.estimatedCost,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        source: plan.source,
+        notes: plan.notes,
+      };
+    });
+
+    // Filter by team bucket if specified
+    let filteredPlans = enrichedPlans;
+    if (teamBucket) {
+      filteredPlans = enrichedPlans.filter((p: any) => p.teamBucket === teamBucket);
+    }
+
+    // Paginate
+    const pageNum = parseInt(page as string) || 1;
+    const pageSizeNum = Math.min(parseInt(pageSize as string) || 50, 200);
+    const startIdx = (pageNum - 1) * pageSizeNum;
+    const paginatedPlans = filteredPlans.slice(startIdx, startIdx + pageSizeNum);
+
+    // Group by status for summary
+    const draftPlans = enrichedPlans.filter((p: any) => p.status === 'DRAFT');
+    const pendingReviewPlans = enrichedPlans.filter((p: any) => p.status === 'PENDING_REVIEW');
+
+    // Group by team bucket for summary
+    const byTeamBucket: Record<string, number> = {};
+    enrichedPlans.forEach((p: any) => {
+      byTeamBucket[p.teamBucket] = (byTeamBucket[p.teamBucket] || 0) + 1;
+    });
+
+    res.json({
+      // ==========================================================================
+      // Summary
+      // ==========================================================================
+      summary: {
+        total: enrichedPlans.length,
+        draft: draftPlans.length,
+        pendingReview: pendingReviewPlans.length,
+        byTeamBucket,
+      },
+
+      // ==========================================================================
+      // Plans List
+      // ==========================================================================
+      plans: paginatedPlans,
+
+      // ==========================================================================
+      // Pagination Info
+      // ==========================================================================
+      pagination: {
+        page: pageNum,
+        pageSize: pageSizeNum,
+        totalItems: filteredPlans.length,
+        totalPages: Math.ceil(filteredPlans.length / pageSizeNum),
+      },
+    });
+  } catch (error) {
+    console.error('Get plans to confirm error:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// =============================================================================
+// CONFIRMED PLANS - List of finalized plans (COMMITTED/IN_PROGRESS)
+// These are plans that have been confirmed and scheduled
+// =============================================================================
+router.get('/confirmed-plans', async (req: AuthRequest, res: Response) => {
+  const prisma: any = req.app.locals.prisma;
+
+  try {
+    const companyId = req.user!.companyId;
+    const currentDate = new Date();
+    const { status, teamBucket, shopId, page = '1', pageSize = '50' } = req.query;
+
+    // Build filter
+    const statusFilter = status === 'COMMITTED'
+      ? ['COMMITTED']
+      : status === 'IN_PROGRESS'
+        ? ['IN_PROGRESS']
+        : ['COMMITTED', 'IN_PROGRESS'];
+
+    const whereClause: any = {
+      companyId,
+      status: { in: statusFilter },
+    };
+
+    if (shopId) {
+      whereClause.shopId = shopId;
+    }
+
+    // Get confirmed plans
+    const confirmedPlans = await prisma.unifiedAssignment.findMany({
+      where: whereClause,
+      include: {
+        car: {
+          select: {
+            id: true,
+            railcarNumber: true,
+            customer: true,
+            carType: true,
+            reasonsShopped: true,
+            tankQualDueDate: true,
+            tankQualification: true,
+          },
+        },
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            region: true,
+            isAitxInternal: true,
+          },
+        },
+      },
+      orderBy: [
+        { status: 'desc' },           // IN_PROGRESS before COMMITTED
+        { plannedYear: 'asc' },
+        { plannedMonth: 'asc' },
+      ],
+    });
+
+    // Enrich with team bucket and urgency
+    const currentYear = currentDate.getFullYear();
+    const enrichedPlans = confirmedPlans.map((plan: any) => {
+      const car = plan.car;
+
+      // Determine team bucket
+      const reasons = (car?.reasonsShopped || '').toUpperCase();
+      let bucket = 'Other';
+      if (reasons.includes('TANK')) bucket = 'Qualification';
+      else if (reasons.includes('RELE')) bucket = 'Assignment';
+      else if (reasons.includes('BAD')) bucket = 'In-Service Repairs';
+
+      // Calculate days until/since scheduled
+      const scheduledDate = new Date(plan.plannedYear, plan.plannedMonth - 1, 15);
+      const daysUntilScheduled = Math.ceil((scheduledDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Calculate days in progress if IN_PROGRESS
+      let daysInProgress = 0;
+      if (plan.status === 'IN_PROGRESS' && plan.actualArrivalDate) {
+        daysInProgress = Math.floor((currentDate.getTime() - new Date(plan.actualArrivalDate).getTime()) / (1000 * 60 * 60 * 24));
+      }
+
+      return {
+        id: plan.id,
+        carId: plan.carId,
+        railcarNumber: car?.railcarNumber || 'Unknown',
+        customer: car?.customer || '',
+        carType: car?.carType || '',
+        shopId: plan.shopId,
+        shopName: plan.shop?.name || 'Unknown',
+        shopCode: plan.shop?.code || '',
+        shopRegion: plan.shop?.region || '',
+        isAitxInternal: plan.shop?.isAitxInternal || false,
+        plannedMonth: plan.plannedMonth,
+        plannedYear: plan.plannedYear,
+        scheduledMonth: `${plan.plannedYear}-${String(plan.plannedMonth).padStart(2, '0')}`,
+        status: plan.status,
+        statusLabel: plan.status === 'COMMITTED' ? 'Scheduled' : 'In Progress',
+        teamBucket: bucket,
+        daysUntilScheduled,
+        daysInProgress,
+        workType: plan.workType,
+        estimatedDays: plan.estimatedDays,
+        actualDays: plan.actualDays,
+        estimatedCost: plan.estimatedCost,
+        actualCost: plan.actualCost,
+        actualArrivalDate: plan.actualArrivalDate,
+        scheduledCompletionDate: plan.scheduledCompletionDate,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        source: plan.source,
+      };
+    });
+
+    // Filter by team bucket if specified
+    let filteredPlans = enrichedPlans;
+    if (teamBucket) {
+      filteredPlans = enrichedPlans.filter((p: any) => p.teamBucket === teamBucket);
+    }
+
+    // Paginate
+    const pageNum = parseInt(page as string) || 1;
+    const pageSizeNum = Math.min(parseInt(pageSize as string) || 50, 200);
+    const startIdx = (pageNum - 1) * pageSizeNum;
+    const paginatedPlans = filteredPlans.slice(startIdx, startIdx + pageSizeNum);
+
+    // Summary stats
+    const committedCount = enrichedPlans.filter((p: any) => p.status === 'COMMITTED').length;
+    const inProgressCount = enrichedPlans.filter((p: any) => p.status === 'IN_PROGRESS').length;
+
+    // Group by shop
+    const byShop: Record<string, number> = {};
+    enrichedPlans.forEach((p: any) => {
+      byShop[p.shopName] = (byShop[p.shopName] || 0) + 1;
+    });
+
+    // Group by month
+    const byMonth: Record<string, number> = {};
+    enrichedPlans.forEach((p: any) => {
+      byMonth[p.scheduledMonth] = (byMonth[p.scheduledMonth] || 0) + 1;
+    });
+
+    res.json({
+      summary: {
+        total: enrichedPlans.length,
+        committed: committedCount,
+        inProgress: inProgressCount,
+        byShop,
+        byMonth,
+      },
+      plans: paginatedPlans,
+      pagination: {
+        page: pageNum,
+        pageSize: pageSizeNum,
+        totalItems: filteredPlans.length,
+        totalPages: Math.ceil(filteredPlans.length / pageSizeNum),
+      },
+    });
+  } catch (error) {
+    console.error('Get confirmed plans error:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
