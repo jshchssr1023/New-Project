@@ -63,20 +63,26 @@ export const ENTITY_COLUMNS: Record<string, {
     { key: 'endDate', label: 'End Date', type: 'date', sortable: true, filterable: true, defaultVisible: true },
     { key: 'status', label: 'Status', type: 'string', sortable: true, filterable: true, defaultVisible: true },
   ],
-  // Assignment entity now uses CarFlowPlan (SST) instead of legacy PlanAssignment
+  // ==========================================================================
+  // SST: Assignment entity uses UnifiedAssignment (Single Source of Truth)
+  // ==========================================================================
   Assignment: [
     { key: 'car.railcarNumber', label: 'Railcar Number', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'car.carType', label: 'Car Type', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'car.customer', label: 'Customer', type: 'string', sortable: true, filterable: true, defaultVisible: true },
-    { key: 'car.shoppingStatus', label: 'Shopping Status', type: 'string', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'car.reasonsShopped', label: 'Team Bucket', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'shop.name', label: 'Assigned Shop', type: 'string', sortable: true, filterable: true, defaultVisible: true },
     { key: 'shop.region', label: 'Shop Region', type: 'string', sortable: true, filterable: true, defaultVisible: false },
+    { key: 'shop.isAitxInternal', label: 'AITX Network', type: 'boolean', sortable: true, filterable: true, defaultVisible: true },
     { key: 'plannedMonth', label: 'Planned Month', type: 'number', sortable: true, filterable: true, defaultVisible: true },
     { key: 'plannedYear', label: 'Planned Year', type: 'number', sortable: true, filterable: true, defaultVisible: true },
     { key: 'estimatedCost', label: 'Estimated Cost', type: 'number', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'estimatedDays', label: 'Estimated Days', type: 'number', sortable: true, filterable: true, defaultVisible: false },
     { key: 'status', label: 'Status', type: 'string', sortable: true, filterable: true, defaultVisible: true },
-    { key: 'source', label: 'Source', type: 'string', sortable: true, filterable: true, defaultVisible: false },
+    { key: 'workType', label: 'Work Type', type: 'string', sortable: true, filterable: true, defaultVisible: true },
+    { key: 'sourceType', label: 'Source', type: 'string', sortable: true, filterable: true, defaultVisible: false },
     { key: 'shopReason', label: 'Shop Reason', type: 'string', sortable: false, filterable: true, defaultVisible: false },
+    { key: 'priority', label: 'Priority', type: 'number', sortable: true, filterable: true, defaultVisible: false },
     { key: 'notes', label: 'Notes', type: 'string', sortable: false, filterable: false, defaultVisible: false },
   ],
   Scenario: [
@@ -263,10 +269,12 @@ export async function executeReport(
       ]);
       break;
 
-    // SST: Assignment now queries CarFlowPlan instead of legacy PlanAssignment
+    // ==========================================================================
+    // SST: Assignment queries UnifiedAssignment (Single Source of Truth)
+    // ==========================================================================
     case 'Assignment':
       [data, total] = await Promise.all([
-        prisma.carFlowPlan.findMany({
+        prisma.unifiedAssignment.findMany({
           where: baseWhere,
           include: {
             car: {
@@ -275,7 +283,7 @@ export async function executeReport(
                 railcarNumber: true,
                 carType: true,
                 customer: true,
-                shoppingStatus: true,
+                reasonsShopped: true,
               },
             },
             shop: {
@@ -284,12 +292,13 @@ export async function executeReport(
                 name: true,
                 code: true,
                 region: true,
+                isAitxInternal: true,
               },
             },
           },
           orderBy,
         }),
-        prisma.carFlowPlan.count({ where: baseWhere }),
+        prisma.unifiedAssignment.count({ where: baseWhere }),
       ]);
       break;
 
