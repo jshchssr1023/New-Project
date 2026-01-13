@@ -1517,10 +1517,29 @@ export default function ServicePlanBuilder() {
               {servicePlan.status === 'draft' && (
                 <>
                   <button
-                    onClick={() => {
-                      // Show save confirmation
-                      setSaveMessage('Draft saved! You can find this plan in the Service Plans Management dashboard.');
-                      setTimeout(() => setSaveMessage(null), 5000);
+                    onClick={async () => {
+                      // Actually save the current plan state to the backend
+                      try {
+                        setIsSaving(true);
+                        await servicePlansApi.update(servicePlan.id, {
+                          name: servicePlan.name,
+                          description: servicePlan.description,
+                          customerId: servicePlan.customerId || undefined,
+                          projectNumber: servicePlan.projectNumber,
+                          carFlowRate: servicePlan.carFlowRate,
+                          startMonth: servicePlan.startMonth,
+                          startYear: servicePlan.startYear,
+                          endMonth: servicePlan.endMonth,
+                          endYear: servicePlan.endYear,
+                        });
+                        setSaveMessage('Draft saved! You can find this plan in the Service Plans Management dashboard.');
+                        setTimeout(() => setSaveMessage(null), 5000);
+                      } catch (err) {
+                        console.error('Failed to save draft:', err);
+                        setError('Failed to save draft. Please try again.');
+                      } finally {
+                        setIsSaving(false);
+                      }
                     }}
                     disabled={isSaving}
                     className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-1 disabled:opacity-50"

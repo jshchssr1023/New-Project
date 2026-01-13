@@ -111,13 +111,13 @@ export default function PlanOverviewDashboard() {
     reasonsShopped: [],
   });
 
-  // Active filters
+  // Active filters - no defaults so all confirmed/planned cars show
   const [filters, setFilters] = useState<PlanFilters>({
     lesseeName: '',
     carType: '',
-    currentStatus: 'arrived', // Default like in screenshot
+    currentStatus: '', // No default - show all statuses including 'To Be Routed' from confirmed plans
     yearDue: '',
-    tankQualFlag: 'Yes', // Default like in screenshot
+    tankQualFlag: '', // No default - show all cars
     planStatus: '',
     qualificationPlanner: '',
     networkHierarchy: '',
