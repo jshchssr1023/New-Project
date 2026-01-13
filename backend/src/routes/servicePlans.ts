@@ -104,6 +104,128 @@ router.get('/proposals/awaiting-response', async (req: AuthRequest, res: Respons
 });
 
 /**
+ * GET /service-plans/scheduling-queue
+ * Get ServicePlans that have confirmed cars and are ready for final confirmation
+ * This supplements the old proposal-based scheduling queue with the new ServicePlan workflow
+ * NOTE: Must be defined BEFORE /:id routes
+ */
+router.get('/scheduling-queue', async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = req.user!.companyId;
+
+    // Find service plans that:
+    // 1. Have status 'customer_approved' OR 'proposed' with confirmed cars
+    // 2. Are not yet 'final_confirmed' or 'scheduled'
+    const servicePlans = await prisma.servicePlan.findMany({
+      where: {
+        companyId,
+        status: { in: ['customer_approved', 'proposed', 'draft'] },
+        // Has at least one confirmed car
+        cars: {
+          some: {
+            status: 'confirmed',
+          },
+        },
+      },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            contactEmail: true,
+          },
+        },
+        cars: {
+          where: {
+            status: { in: ['confirmed', 'pending'] },
+          },
+          include: {
+            car: {
+              select: {
+                id: true,
+                railcarNumber: true,
+                customer: true,
+                carType: true,
+              },
+            },
+            assignedShop: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+                networkName: true,
+                isAitxInternal: true,
+              },
+            },
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    // Transform to scheduling queue format
+    const queue = servicePlans.map((plan) => {
+      const confirmedCars = plan.cars.filter((c: any) => c.status === 'confirmed');
+      const pendingCars = plan.cars.filter((c: any) => c.status === 'pending');
+
+      // Calculate total estimated cost from confirmed cars
+      const totalEstimatedCost = confirmedCars.reduce((sum: number, c: any) => sum + (c.estimatedCost || 0), 0);
+
+      // Get unique shops
+      const uniqueShops = new Set(confirmedCars.map((c: any) => c.assignedShopId).filter(Boolean));
+
+      // Get planning horizon
+      const months = confirmedCars.map((c: any) => ({
+        month: c.plannedMonth,
+        year: c.plannedYear,
+      }));
+      const sortedMonths = months.sort((a: any, b: any) => a.year - b.year || a.month - b.month);
+      const earliestMonth = sortedMonths[0];
+      const latestMonth = sortedMonths[sortedMonths.length - 1];
+
+      return {
+        id: plan.id,
+        name: plan.name,
+        description: plan.description,
+        status: plan.status,
+        version: plan.version,
+        customer: plan.customer,
+        confirmedCarCount: confirmedCars.length,
+        pendingCarCount: pendingCars.length,
+        totalCarCount: confirmedCars.length + pendingCars.length,
+        shopCount: uniqueShops.size,
+        totalEstimatedCost,
+        planningHorizonStart: earliestMonth ? `${earliestMonth.year}-${String(earliestMonth.month).padStart(2, '0')}-01` : null,
+        planningHorizonEnd: latestMonth ? `${latestMonth.year}-${String(latestMonth.month).padStart(2, '0')}-01` : null,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        createdBy: plan.createdBy,
+        // Flags for UI
+        canFinalConfirm: confirmedCars.length > 0 && pendingCars.length === 0,
+        hasPendingCars: pendingCars.length > 0,
+        source: 'service_plan', // To distinguish from proposal-based items
+      };
+    });
+
+    // Filter to only plans that have confirmed cars
+    const readyQueue = queue.filter((p) => p.confirmedCarCount > 0);
+
+    res.json(readyQueue);
+  } catch (error: any) {
+    logger.error('Get service plans scheduling queue error', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
  * POST /service-plans
  * Create a new service plan
  */

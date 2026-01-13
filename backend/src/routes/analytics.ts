@@ -716,9 +716,12 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
       .toISOString().slice(0, 7);
 
     // ==========================================================================
-    // SST: Get completed assignments from UnifiedAssignment for OTP calculation
+    // CONSOLIDATED DATA: Pull from BOTH UnifiedAssignment AND CarFlowPlan
+    // This ensures we capture data from all workflows (old proposals AND new service plans)
     // ==========================================================================
-    const completedAssignments = await prisma.unifiedAssignment.findMany({
+
+    // Get completed assignments from UnifiedAssignment
+    const uaCompleted = await prisma.unifiedAssignment.findMany({
       where: {
         companyId,
         status: 'COMPLETED',
@@ -728,6 +731,51 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
         car: true,
       },
     });
+
+    // Get completed assignments from CarFlowPlan (service plan workflow)
+    const cfpCompleted = await prisma.carFlowPlan.findMany({
+      where: {
+        companyId,
+        status: 'Complete',
+      },
+      include: {
+        shop: true,
+        car: true,
+      },
+    });
+
+    // Merge both sources - de-duplicate by carId to avoid double-counting
+    const completedCarIds = new Set<string>();
+    const completedAssignments: any[] = [];
+
+    // Add UnifiedAssignment completed first
+    for (const ua of uaCompleted) {
+      if (!completedCarIds.has(ua.carId)) {
+        completedCarIds.add(ua.carId);
+        completedAssignments.push({
+          ...ua,
+          source: 'unified_assignment',
+        });
+      }
+    }
+
+    // Add CarFlowPlan completed (if not already counted)
+    for (const cfp of cfpCompleted) {
+      if (!completedCarIds.has(cfp.carId)) {
+        completedCarIds.add(cfp.carId);
+        completedAssignments.push({
+          ...cfp,
+          source: 'car_flow_plan',
+          // Map CFP fields to UA-compatible structure
+          actualCompletionDate: cfp.completedAt,
+          scheduledCompletionDate: cfp.plannedCompletionDate,
+          actualDays: cfp.actualDays,
+          estimatedDays: cfp.estimatedDays || (cfp.car?.estimatedDaysInShop || 14),
+          actualCost: cfp.actualCost,
+          estimatedCost: cfp.estimatedCost || (cfp.car?.estimatedServiceCost || 0),
+        });
+      }
+    }
 
     // Calculate On-Time Performance (compare actual vs scheduled completion)
     const totalCompleted = completedAssignments.length;
@@ -750,12 +798,12 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
       : 0;
 
     // ==========================================================================
-    // SST: Get shop utilization using UnifiedAssignment counts
+    // CONSOLIDATED: Get shop utilization from BOTH UnifiedAssignment AND CarFlowPlan
     // ==========================================================================
     const currentMonthNum = parseInt(currentMonth.split('-')[1]);
     const currentYearNum = parseInt(currentMonth.split('-')[0]);
 
-    const [shops, uaPlanCounts] = await Promise.all([
+    const [shops, uaPlanCounts, cfpPlanCounts] = await Promise.all([
       prisma.shop.findMany({
         where: { companyId, isActive: true },
         select: { id: true, capacity: true },
@@ -770,9 +818,30 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
         },
         _count: { id: true },
       }),
+      // Also get CarFlowPlan counts for the same period
+      prisma.carFlowPlan.groupBy({
+        by: ['shopId'],
+        where: {
+          companyId,
+          plannedMonth: currentMonthNum,
+          plannedYear: currentYearNum,
+          status: { in: ['Planned', 'In Progress'] },
+        },
+        _count: { id: true },
+      }),
     ]);
 
-    const planCountMap = new Map(uaPlanCounts.map((p: { shopId: string; _count: { id: number } }) => [p.shopId, p._count.id]));
+    // Merge counts from both sources
+    const planCountMap = new Map<string, number>();
+    // Add UnifiedAssignment counts
+    uaPlanCounts.forEach((p: { shopId: string; _count: { id: number } }) => {
+      planCountMap.set(p.shopId, p._count.id);
+    });
+    // Add CarFlowPlan counts (add to existing if shop already has UA counts)
+    cfpPlanCounts.forEach((p: { shopId: string; _count: { id: number } }) => {
+      const existing = planCountMap.get(p.shopId) || 0;
+      planCountMap.set(p.shopId, existing + p._count.id);
+    });
     const avgUtilization = shops.length > 0
       ? shops.reduce((sum, shop) => {
           const count = planCountMap.get(shop.id) || 0;
@@ -796,12 +865,12 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
     const reworkRate = 2.3; // 2.3% rework (simulated)
 
     // ==========================================================================
-    // SST: Get comparison with previous period using UnifiedAssignment
+    // CONSOLIDATED: Get comparison with previous period from BOTH sources
     // ==========================================================================
     const lastMonthNum = parseInt(lastMonth.split('-')[1]);
     const lastYearNum = parseInt(lastMonth.split('-')[0]);
 
-    const [prevMonthCount, currentMonthCount] = await Promise.all([
+    const [prevMonthUACount, currentMonthUACount, prevMonthCFPCount, currentMonthCFPCount] = await Promise.all([
       prisma.unifiedAssignment.count({
         where: {
           companyId,
@@ -818,10 +887,29 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
           status: { notIn: ['CANCELLED', 'SUPERSEDED'] },
         },
       }),
+      // Also count CarFlowPlan for previous month
+      prisma.carFlowPlan.count({
+        where: {
+          companyId,
+          plannedMonth: lastMonthNum,
+          plannedYear: lastYearNum,
+          status: { notIn: ['Cancelled'] },
+        },
+      }),
+      // And CarFlowPlan for current month
+      prisma.carFlowPlan.count({
+        where: {
+          companyId,
+          plannedMonth: currentMonthNum,
+          plannedYear: currentYearNum,
+          status: { notIn: ['Cancelled'] },
+        },
+      }),
     ]);
 
-    const prevMonthAssignments = prevMonthCount;
-    const currentMonthAssignments = currentMonthCount;
+    // Combine counts from both sources
+    const prevMonthAssignments = prevMonthUACount + prevMonthCFPCount;
+    const currentMonthAssignments = currentMonthUACount + currentMonthCFPCount;
 
     const volumeChange = prevMonthAssignments > 0
       ? ((currentMonthAssignments - prevMonthAssignments) / prevMonthAssignments) * 100
@@ -905,24 +993,44 @@ router.get('/forecast', async (req: AuthRequest, res: Response) => {
     });
 
     // ==========================================================================
-    // SST: Get historical UnifiedAssignment for trend analysis
+    // CONSOLIDATED: Get historical data from BOTH UnifiedAssignment AND CarFlowPlan
     // ==========================================================================
     const sixMonthsAgo = new Date(currentDate.getFullYear(), currentDate.getMonth() - 6, 1);
-    const historicalAssignments = await prisma.unifiedAssignment.groupBy({
-      by: ['plannedYear', 'plannedMonth', 'shopId'],
-      where: {
-        companyId,
-        status: { notIn: ['CANCELLED', 'SUPERSEDED'] },
-        OR: [
-          { plannedYear: { gt: sixMonthsAgo.getFullYear() } },
-          {
-            plannedYear: sixMonthsAgo.getFullYear(),
-            plannedMonth: { gte: sixMonthsAgo.getMonth() + 1 },
-          },
-        ],
-      },
-      _count: { id: true },
-    });
+    const [historicalUA, historicalCFP] = await Promise.all([
+      prisma.unifiedAssignment.groupBy({
+        by: ['plannedYear', 'plannedMonth', 'shopId'],
+        where: {
+          companyId,
+          status: { notIn: ['CANCELLED', 'SUPERSEDED'] },
+          OR: [
+            { plannedYear: { gt: sixMonthsAgo.getFullYear() } },
+            {
+              plannedYear: sixMonthsAgo.getFullYear(),
+              plannedMonth: { gte: sixMonthsAgo.getMonth() + 1 },
+            },
+          ],
+        },
+        _count: { id: true },
+      }),
+      prisma.carFlowPlan.groupBy({
+        by: ['plannedYear', 'plannedMonth', 'shopId'],
+        where: {
+          companyId,
+          status: { notIn: ['Cancelled'] },
+          OR: [
+            { plannedYear: { gt: sixMonthsAgo.getFullYear() } },
+            {
+              plannedYear: sixMonthsAgo.getFullYear(),
+              plannedMonth: { gte: sixMonthsAgo.getMonth() + 1 },
+            },
+          ],
+        },
+        _count: { id: true },
+      }),
+    ]);
+
+    // Merge historical data from both sources
+    const historicalAssignments = [...historicalUA, ...historicalCFP];
 
     // Build forecast data
     const forecast = [];
@@ -933,22 +1041,38 @@ router.get('/forecast', async (req: AuthRequest, res: Response) => {
       const monthKey = forecastDate.toISOString().slice(0, 7);
 
       // ==========================================================================
-      // SST: Get UnifiedAssignment counts for this month
+      // CONSOLIDATED: Get counts from BOTH UnifiedAssignment AND CarFlowPlan for this month
       // ==========================================================================
-      const plannedCounts = await prisma.unifiedAssignment.groupBy({
-        by: ['shopId'],
-        where: {
-          companyId,
-          plannedYear: forecastYear,
-          plannedMonth: forecastMonth,
-          status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
-        },
-        _count: { id: true },
-      });
+      const [uaPlannedCounts, cfpPlannedCounts] = await Promise.all([
+        prisma.unifiedAssignment.groupBy({
+          by: ['shopId'],
+          where: {
+            companyId,
+            plannedYear: forecastYear,
+            plannedMonth: forecastMonth,
+            status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+          },
+          _count: { id: true },
+        }),
+        prisma.carFlowPlan.groupBy({
+          by: ['shopId'],
+          where: {
+            companyId,
+            plannedYear: forecastYear,
+            plannedMonth: forecastMonth,
+            status: { in: ['Planned', 'In Progress'] },
+          },
+          _count: { id: true },
+        }),
+      ]);
 
+      // Merge counts from both sources
       const plannedByShop: Record<string, number> = {};
-      plannedCounts.forEach((p: { shopId: string; _count: { id: number } }) => {
-        plannedByShop[p.shopId] = p._count.id;
+      uaPlannedCounts.forEach((p: { shopId: string; _count: { id: number } }) => {
+        plannedByShop[p.shopId] = (plannedByShop[p.shopId] || 0) + p._count.id;
+      });
+      cfpPlannedCounts.forEach((p: { shopId: string; _count: { id: number } }) => {
+        plannedByShop[p.shopId] = (plannedByShop[p.shopId] || 0) + p._count.id;
       });
 
       // Calculate total capacity and utilization

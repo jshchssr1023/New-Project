@@ -687,6 +687,35 @@ export const servicePlansApi = {
   },
 
   /**
+   * Get service plans that have confirmed cars and are ready for scheduling
+   * This is the new workflow - supplements the old proposal-based scheduling queue
+   */
+  getSchedulingQueue: async (): Promise<{
+    id: string;
+    name: string;
+    description: string;
+    status: string;
+    version: number;
+    customer: { id: string; name: string; code: string; contactEmail?: string } | null;
+    confirmedCarCount: number;
+    pendingCarCount: number;
+    totalCarCount: number;
+    shopCount: number;
+    totalEstimatedCost: number;
+    planningHorizonStart: string | null;
+    planningHorizonEnd: string | null;
+    createdAt: string;
+    updatedAt: string;
+    createdBy: { id: string; firstName: string; lastName: string } | null;
+    canFinalConfirm: boolean;
+    hasPendingCars: boolean;
+    source: 'service_plan';
+  }[]> => {
+    const response = await apiClient.get('/service-plans/scheduling-queue');
+    return response.data;
+  },
+
+  /**
    * Record customer feedback on a proposal
    */
   recordCustomerFeedback: async (
