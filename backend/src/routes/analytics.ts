@@ -320,7 +320,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         daysInShop,
         shopEntryDate: (cfp as any).arrivedAt || cfp.updatedAt,
         assignmentId: cfp.id,
-        estimatedDays: (cfp as any).estimatedDays,
+        estimatedDays: (cfp as any).car?.estimatedDaysInShop || 14,  // CarFlowPlan doesn't have estimatedDays
         workType: 'service_plan',
         source: 'car_flow_plan',
       });
@@ -442,35 +442,32 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       .slice(-12);
 
     // ==========================================================================
-    // SHOP PERFORMANCE - Consolidated from BOTH sources
+    // SHOP PERFORMANCE - SST: UnifiedAssignment is the source of truth
+    // Note: estimatedDays column not yet in database, using default of 14 days
     // ==========================================================================
     const shopsWithAssignments = await prisma.shop.findMany({
       where: { companyId, isActive: true },
       include: {
         unifiedAssignments: {
           where: { status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] } },
-          select: { id: true, estimatedDays: true },
+          select: { id: true },  // estimatedDays not yet in database
         },
         carFlowPlans: {
           where: { status: { in: ['Planned', 'In Progress', 'Complete'] } },
-          select: { id: true, estimatedDays: true },
+          select: { id: true },  // CarFlowPlan doesn't have estimatedDays column
         },
       },
     });
 
     const shopPerformance = shopsWithAssignments.map((shop: any) => {
       const totalAssignments = shop.unifiedAssignments.length + shop.carFlowPlans.length;
-      const allEstimatedDays = [
-        ...shop.unifiedAssignments.map((a: any) => a.estimatedDays || 14),
-        ...shop.carFlowPlans.map((a: any) => a.estimatedDays || 14),
-      ];
+      // Use default of 14 days (estimatedDays column pending database migration)
+      const avgTurnTimeDays = 14;
       return {
         shopId: shop.id,
         shopName: shop.name,
         utilization: Math.min(100, Math.round((totalAssignments / (shop.capacity * 12)) * 100)),
-        avgTurnTime: totalAssignments > 0
-          ? Math.round(allEstimatedDays.reduce((sum: number, d: number) => sum + d, 0) / totalAssignments)
-          : 0,
+        avgTurnTime: avgTurnTimeDays,
       };
     });
 
@@ -928,7 +925,7 @@ router.get('/kpis', async (req: AuthRequest, res: Response) => {
           actualCompletionDate: cfp.completedAt,
           scheduledCompletionDate: cfp.plannedCompletionDate,
           actualDays: cfp.actualDays,
-          estimatedDays: cfp.estimatedDays || (cfp.car?.estimatedDaysInShop || 14),
+          estimatedDays: cfp.car?.estimatedDaysInShop || 14,  // CarFlowPlan doesn't have estimatedDays
           actualCost: cfp.actualCost,
           estimatedCost: cfp.estimatedCost || (cfp.car?.estimatedServiceCost || 0),
         });
