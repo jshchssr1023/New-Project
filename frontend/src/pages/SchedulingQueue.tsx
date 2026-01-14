@@ -767,7 +767,7 @@ export default function SchedulingQueue() {
                   )}
                 </button>
                 <a
-                  href={`/service-plan-builder/${plan.id}`}
+                  href={`/service-plans/${plan.id}`}
                   className="inline-flex items-center px-4 py-2 border border-steel-300 text-sm font-medium rounded-md text-steel-700 bg-white hover:bg-steel-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rail-500"
                 >
                   <DocumentTextIcon className="h-4 w-4 mr-2" />

@@ -45,24 +45,48 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     const shopsWithCarsCount = uniqueShopsWithArrivedCars.size;
 
     // ==========================================================================
-    // S&OP PLANNING SUMMARY - SST: UnifiedAssignment is the Single Source of Truth
+    // S&OP PLANNING SUMMARY - Consolidate from BOTH UnifiedAssignment AND CarFlowPlan
     // ==========================================================================
 
-    // SST: Get dashboard metrics from UnifiedAssignment (THE SST)
+    // SST: Get dashboard metrics from UnifiedAssignment
     const sstMetrics = await sstConsolidationService.getUnifiedDashboardMetrics(companyId);
+
+    // Also get CarFlowPlan counts for the new workflow
+    const cfpCounts = await prisma.carFlowPlan.groupBy({
+      by: ['status'],
+      where: {
+        companyId,
+        status: { in: ['Planned', 'In Progress', 'Complete'] },
+      },
+      _count: { id: true },
+    });
+    const cfpPlanned = cfpCounts.find((c: any) => c.status === 'Planned')?._count?.id || 0;
+    const cfpInProgress = cfpCounts.find((c: any) => c.status === 'In Progress')?._count?.id || 0;
 
     // Calculate overdue cars (cars with qualification dates in past that aren't assigned)
     const overdueCarIds = new Set<string>();
 
-    // Get car IDs that already have an assignment
-    const assignedCarIds = await prisma.unifiedAssignment.findMany({
-      where: {
-        companyId,
-        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
-      },
-      select: { carId: true },
-    });
-    const assignedSet = new Set(assignedCarIds.map((a: { carId: string }) => a.carId));
+    // Get car IDs that have an assignment from BOTH sources
+    const [uaAssignedCarIds, cfpAssignedCarIds] = await Promise.all([
+      prisma.unifiedAssignment.findMany({
+        where: {
+          companyId,
+          status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+        },
+        select: { carId: true },
+      }),
+      prisma.carFlowPlan.findMany({
+        where: {
+          companyId,
+          status: { in: ['Planned', 'In Progress'] },
+        },
+        select: { carId: true },
+      }),
+    ]);
+    const assignedSet = new Set([
+      ...uaAssignedCarIds.map((a: { carId: string }) => a.carId),
+      ...cfpAssignedCarIds.map((a: { carId: string }) => a.carId),
+    ]);
 
     // Find overdue cars that aren't assigned
     const allCarsForSOP = await prisma.car.findMany({
@@ -109,29 +133,41 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       }
     });
 
-    // SST metrics from UnifiedAssignment:
-    // - Pending = DRAFT + PENDING_REVIEW (not yet committed)
-    // - Committed = COMMITTED + IN_PROGRESS (confirmed/scheduled)
+    // Consolidated metrics from BOTH UnifiedAssignment AND CarFlowPlan:
+    // - Pending = UA(DRAFT + PENDING_REVIEW) + CFP(Planned)
+    // - Scheduled = UA(COMMITTED + IN_PROGRESS) + CFP(In Progress)
     // - Overdue = Cars with past qualification dates, not assigned
-    // - Not Planned = Total - Pending - Committed - Overdue - InShop
-    const sopPlanned = sstMetrics.draft + sstMetrics.pendingReview;
-    const sopScheduled = sstMetrics.committed + sstMetrics.inProgress;
+    // - Not Planned = Total - Pending - Scheduled - Overdue - InShop
+    const sopPlanned = sstMetrics.draft + sstMetrics.pendingReview + cfpPlanned;
+    const sopScheduled = sstMetrics.committed + sstMetrics.inProgress + cfpInProgress;
     const sopOverdue = overdueCarIds.size;
     const sopNotPlanned = Math.max(0, totalCars - sopPlanned - sopScheduled - sopOverdue - totalCarsInShop);
 
     // ==========================================================================
-    // MY QUEUE - Cars that need planning (SST: No UnifiedAssignment record)
+    // MY QUEUE - Cars that need planning (no assignment in EITHER source)
     // Shows team bucket from reasonsShopped and urgency from qual dates
     // ==========================================================================
-    // Get car IDs that have an active UnifiedAssignment (these are already planned)
-    const carsWithAssignments = await prisma.unifiedAssignment.findMany({
-      where: {
-        companyId,
-        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
-      },
-      select: { carId: true },
-    });
-    const plannedCarIds = new Set(carsWithAssignments.map((a: { carId: string }) => a.carId));
+    // Get car IDs that have an active assignment from BOTH sources
+    const [carsWithUAAssignments, carsWithCFPAssignments] = await Promise.all([
+      prisma.unifiedAssignment.findMany({
+        where: {
+          companyId,
+          status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+        },
+        select: { carId: true },
+      }),
+      prisma.carFlowPlan.findMany({
+        where: {
+          companyId,
+          status: { in: ['Planned', 'In Progress'] },
+        },
+        select: { carId: true },
+      }),
+    ]);
+    const plannedCarIds = new Set([
+      ...carsWithUAAssignments.map((a: { carId: string }) => a.carId),
+      ...carsWithCFPAssignments.map((a: { carId: string }) => a.carId),
+    ]);
 
     // Get cars that need planning (no active UnifiedAssignment)
     const allCarsForQueue = await prisma.car.findMany({
@@ -190,50 +226,103 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       .slice(0, 50); // Limit to 50 for performance
 
     // ==========================================================================
-    // IN SHOP STATUS - Cars with UnifiedAssignment status = IN_PROGRESS
-    // SST: UnifiedAssignment is the source of truth for in-shop status
+    // IN SHOP STATUS - Cars in progress from BOTH UnifiedAssignment AND CarFlowPlan
     // ==========================================================================
-    const inProgressAssignments = await prisma.unifiedAssignment.findMany({
-      where: {
-        companyId,
-        status: 'IN_PROGRESS',
-      },
-      include: {
-        car: true,
-        shop: {
-          select: { id: true, name: true, code: true },
+    const [uaInProgressAssignments, cfpInProgressAssignments] = await Promise.all([
+      prisma.unifiedAssignment.findMany({
+        where: {
+          companyId,
+          status: 'IN_PROGRESS',
         },
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 20,
-    });
+        include: {
+          car: true,
+          shop: {
+            select: { id: true, name: true, code: true },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      }),
+      prisma.carFlowPlan.findMany({
+        where: {
+          companyId,
+          status: 'In Progress',
+        },
+        include: {
+          car: true,
+          shop: {
+            select: { id: true, name: true, code: true },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      }),
+    ]);
 
-    const inShopCars = inProgressAssignments.map((assignment: any) => {
-      const car = assignment.car;
-      // Calculate days in shop from actual arrival or assignment update
+    const inShopCarIds = new Set<string>();
+    const inShopCars: any[] = [];
+
+    // Add from UnifiedAssignment
+    for (const assignment of uaInProgressAssignments) {
+      if (inShopCarIds.has(assignment.carId)) continue;
+      inShopCarIds.add(assignment.carId);
+
+      const car = (assignment as any).car;
       let daysInShop = car?.daysInShop || 0;
-      if (!daysInShop && assignment.actualArrivalDate) {
-        const arrivalDate = new Date(assignment.actualArrivalDate);
+      if (!daysInShop && (assignment as any).actualArrivalDate) {
+        const arrivalDate = new Date((assignment as any).actualArrivalDate);
         daysInShop = Math.floor((currentDate.getTime() - arrivalDate.getTime()) / (1000 * 60 * 60 * 24));
       } else if (!daysInShop && assignment.updatedAt) {
         const updateDate = new Date(assignment.updatedAt);
         daysInShop = Math.floor((currentDate.getTime() - updateDate.getTime()) / (1000 * 60 * 60 * 24));
       }
 
-      return {
+      inShopCars.push({
         id: car?.id || assignment.carId,
         railcarNumber: car?.railcarNumber || 'Unknown',
         customer: car?.customer || '',
         status: 'IN_PROGRESS',
-        shopName: assignment.shop?.name || 'Unknown',
-        shopCode: assignment.shop?.code || '',
+        shopName: (assignment as any).shop?.name || 'Unknown',
+        shopCode: (assignment as any).shop?.code || '',
         daysInShop,
-        shopEntryDate: assignment.actualArrivalDate || assignment.updatedAt,
+        shopEntryDate: (assignment as any).actualArrivalDate || assignment.updatedAt,
         assignmentId: assignment.id,
-        estimatedDays: assignment.estimatedDays,
-        workType: assignment.workType,
-      };
-    });
+        estimatedDays: (assignment as any).estimatedDays,
+        workType: (assignment as any).workType,
+        source: 'unified_assignment',
+      });
+    }
+
+    // Add from CarFlowPlan (if not already included)
+    for (const cfp of cfpInProgressAssignments) {
+      if (inShopCarIds.has(cfp.carId)) continue;
+      inShopCarIds.add(cfp.carId);
+
+      const car = (cfp as any).car;
+      let daysInShop = car?.daysInShop || 0;
+      if (!daysInShop && (cfp as any).arrivedAt) {
+        const arrivalDate = new Date((cfp as any).arrivedAt);
+        daysInShop = Math.floor((currentDate.getTime() - arrivalDate.getTime()) / (1000 * 60 * 60 * 24));
+      } else if (!daysInShop && cfp.updatedAt) {
+        const updateDate = new Date(cfp.updatedAt);
+        daysInShop = Math.floor((currentDate.getTime() - updateDate.getTime()) / (1000 * 60 * 60 * 24));
+      }
+
+      inShopCars.push({
+        id: car?.id || cfp.carId,
+        railcarNumber: car?.railcarNumber || 'Unknown',
+        customer: car?.customer || '',
+        status: 'In Progress',
+        shopName: (cfp as any).shop?.name || 'Unknown',
+        shopCode: (cfp as any).shop?.code || '',
+        daysInShop,
+        shopEntryDate: (cfp as any).arrivedAt || cfp.updatedAt,
+        assignmentId: cfp.id,
+        estimatedDays: (cfp as any).estimatedDays,
+        workType: 'service_plan',
+        source: 'car_flow_plan',
+      });
+    }
 
     // Get overdue cars (nextServiceDue in the past and still available)
     const overdueCars = await prisma.car.count({
@@ -247,12 +336,12 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     });
 
     // ==========================================================================
-    // CAPACITY ALERTS - SST: Use UnifiedAssignment for shop capacity tracking
+    // CAPACITY ALERTS - Consolidated from BOTH UnifiedAssignment AND CarFlowPlan
     // ==========================================================================
     const currentMonthNum = parseInt(currentMonth.split('-')[1]);
     const currentYearNum = parseInt(currentMonth.split('-')[0]);
 
-    const [shops, uaAssignmentCounts] = await Promise.all([
+    const [shopsForCapacity, uaAssignmentCounts, cfpAssignmentCounts] = await Promise.all([
       prisma.shop.findMany({
         where: {
           companyId,
@@ -265,7 +354,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
           capacity: true,
         },
       }),
-      // SST: Use UnifiedAssignment for capacity tracking
+      // From UnifiedAssignment
       prisma.unifiedAssignment.groupBy({
         by: ['shopId'],
         where: {
@@ -276,12 +365,29 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
         },
         _count: { id: true },
       }),
+      // From CarFlowPlan
+      prisma.carFlowPlan.groupBy({
+        by: ['shopId'],
+        where: {
+          companyId,
+          plannedMonth: currentMonthNum,
+          plannedYear: currentYearNum,
+          status: { in: ['Planned', 'In Progress'] },
+        },
+        _count: { id: true },
+      }),
     ]);
 
-    // Build Map for O(1) lookup
-    const assignmentMap = new Map(
-      uaAssignmentCounts.map((a: { shopId: string; _count: { id: number } }) => [a.shopId, a._count.id])
-    );
+    // Build Map for O(1) lookup - merge both sources
+    const assignmentMap = new Map<string, number>();
+    uaAssignmentCounts.forEach((a: { shopId: string; _count: { id: number } }) => {
+      assignmentMap.set(a.shopId, a._count.id);
+    });
+    cfpAssignmentCounts.forEach((a: { shopId: string; _count: { id: number } }) => {
+      const existing = assignmentMap.get(a.shopId) || 0;
+      assignmentMap.set(a.shopId, existing + a._count.id);
+    });
+    const shops = shopsForCapacity;
 
     const capacityAlerts = shops
       .map(shop => {
@@ -299,18 +405,31 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       .filter(shop => shop.currentLoad > shop.capacity);
 
     // ==========================================================================
-    // MONTHLY SERVICE COUNTS - SST: Use UnifiedAssignment
+    // MONTHLY SERVICE COUNTS - Consolidated from BOTH sources
     // ==========================================================================
-    const uaMonthlyPlans = await prisma.unifiedAssignment.findMany({
-      where: {
-        companyId,
-        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] },
-      },
-      select: { plannedMonth: true, plannedYear: true },
-    });
+    const [uaMonthlyPlans, cfpMonthlyPlans] = await Promise.all([
+      prisma.unifiedAssignment.findMany({
+        where: {
+          companyId,
+          status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] },
+        },
+        select: { plannedMonth: true, plannedYear: true },
+      }),
+      prisma.carFlowPlan.findMany({
+        where: {
+          companyId,
+          status: { in: ['Planned', 'In Progress', 'Complete'] },
+        },
+        select: { plannedMonth: true, plannedYear: true },
+      }),
+    ]);
 
     const monthCounts: Record<string, number> = {};
     uaMonthlyPlans.forEach((p: { plannedMonth: number; plannedYear: number }) => {
+      const monthKey = `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}`;
+      monthCounts[monthKey] = (monthCounts[monthKey] || 0) + 1;
+    });
+    cfpMonthlyPlans.forEach((p: { plannedMonth: number; plannedYear: number }) => {
       const monthKey = `${p.plannedYear}-${String(p.plannedMonth).padStart(2, '0')}`;
       monthCounts[monthKey] = (monthCounts[monthKey] || 0) + 1;
     });
@@ -321,7 +440,7 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       .slice(-12);
 
     // ==========================================================================
-    // SHOP PERFORMANCE - SST: Use UnifiedAssignment
+    // SHOP PERFORMANCE - Consolidated from BOTH sources
     // ==========================================================================
     const shopsWithAssignments = await prisma.shop.findMany({
       where: { companyId, isActive: true },
@@ -330,17 +449,28 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
           where: { status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] } },
           include: { car: { select: { estimatedDaysInShop: true } } },
         },
+        carFlowPlans: {
+          where: { status: { in: ['Planned', 'In Progress', 'Complete'] } },
+          include: { car: { select: { estimatedDaysInShop: true } } },
+        },
       },
     });
 
-    const shopPerformance = shopsWithAssignments.map((shop: any) => ({
-      shopId: shop.id,
-      shopName: shop.name,
-      utilization: Math.min(100, Math.round((shop.unifiedAssignments.length / (shop.capacity * 12)) * 100)),
-      avgTurnTime: shop.unifiedAssignments.length > 0
-        ? Math.round(shop.unifiedAssignments.reduce((sum: number, a: any) => sum + (a.estimatedDays || a.car?.estimatedDaysInShop || 14), 0) / shop.unifiedAssignments.length)
-        : 0,
-    }));
+    const shopPerformance = shopsWithAssignments.map((shop: any) => {
+      const totalAssignments = shop.unifiedAssignments.length + shop.carFlowPlans.length;
+      const allEstimatedDays = [
+        ...shop.unifiedAssignments.map((a: any) => a.estimatedDays || a.car?.estimatedDaysInShop || 14),
+        ...shop.carFlowPlans.map((a: any) => a.estimatedDays || a.car?.estimatedDaysInShop || 14),
+      ];
+      return {
+        shopId: shop.id,
+        shopName: shop.name,
+        utilization: Math.min(100, Math.round((totalAssignments / (shop.capacity * 12)) * 100)),
+        avgTurnTime: totalAssignments > 0
+          ? Math.round(allEstimatedDays.reduce((sum: number, d: number) => sum + d, 0) / totalAssignments)
+          : 0,
+      };
+    });
 
     // Cost breakdown (simulated)
     const costBreakdown = [
@@ -364,29 +494,55 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     }));
 
     // ==========================================================================
-    // SST: MONTHLY SHOPPINGS BY NETWORK - From UnifiedAssignment (THE SST)
+    // MONTHLY SHOPPINGS BY NETWORK - Consolidated from BOTH sources
     // ==========================================================================
     const monthlyByNetwork: Record<string, { aitx: number; thirdParty: number; total: number; byShop: Record<string, number> }> = {};
 
-    // Get all active assignments from UnifiedAssignment
-    const allAssignments = await prisma.unifiedAssignment.findMany({
-      where: {
-        companyId,
-        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] },
-        plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
-      },
-      include: {
-        shop: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-            isAitxInternal: true,
-            networkId: true,
+    // Get all active assignments from BOTH sources
+    const [uaAllAssignments, cfpAllAssignments] = await Promise.all([
+      prisma.unifiedAssignment.findMany({
+        where: {
+          companyId,
+          status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] },
+          plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
+        },
+        include: {
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              isAitxInternal: true,
+              networkId: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.carFlowPlan.findMany({
+        where: {
+          companyId,
+          status: { in: ['Planned', 'In Progress', 'Complete'] },
+          plannedYear: { gte: currentYear - 1, lte: currentYear + 1 },
+        },
+        include: {
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              isAitxInternal: true,
+              networkId: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Merge both sources
+    const allAssignments = [
+      ...uaAllAssignments.map((a: any) => ({ ...a, source: 'unified_assignment' })),
+      ...cfpAllAssignments.map((a: any) => ({ ...a, source: 'car_flow_plan' })),
+    ];
 
     allAssignments.forEach((assignment: any) => {
       const monthKey = `${assignment.plannedYear}-${String(assignment.plannedMonth).padStart(2, '0')}`;
