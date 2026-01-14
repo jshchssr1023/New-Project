@@ -460,13 +460,15 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     });
 
     const shopPerformance = shopsWithAssignments.map((shop: any) => {
-      const totalAssignments = shop.unifiedAssignments.length + shop.carFlowPlans.length;
+      const uaCount = (shop.unifiedAssignments || []).length;
+      const cfpCount = (shop.carFlowPlans || []).length;
+      const totalAssignments = uaCount + cfpCount;
       // Use default of 14 days (estimatedDays column pending database migration)
       const avgTurnTimeDays = 14;
       return {
         shopId: shop.id,
         shopName: shop.name,
-        utilization: Math.min(100, Math.round((totalAssignments / (shop.capacity * 12)) * 100)),
+        utilization: Math.min(100, Math.round((totalAssignments / ((shop.capacity || 1) * 12)) * 100)),
         avgTurnTime: avgTurnTimeDays,
       };
     });
