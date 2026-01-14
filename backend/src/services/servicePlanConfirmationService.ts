@@ -803,24 +803,28 @@ export class ServicePlanConfirmationService {
         },
       });
 
-      // 2. Send confirmed cars to Master Schedule (CarFlowPlan)
-      // Sync or async based on feature flag
+      // 2. Send confirmed cars to UnifiedAssignment (THE SST)
+      // All writes go to UnifiedAssignment as the single source of truth
       const isAsync = featureFlags.isMasterScheduleAsync();
       const masterScheduleStartTime = Date.now();
 
       for (const spc of confirmedCars) {
-        await this.prismaClient.carFlowPlan.create({
+        // SST: Write to UnifiedAssignment (single source of truth)
+        await this.prismaClient.unifiedAssignment.create({
           data: {
             carId: spc.carId,
             shopId: spc.assignedShopId,
             customerId: servicePlan.customerId,
             plannedMonth: spc.plannedMonth,
             plannedYear: spc.plannedYear,
-            status: 'Planned',
-            source: 'service_plan',
+            scheduledMonth: `${spc.plannedYear}-${String(spc.plannedMonth).padStart(2, '0')}`,
+            status: 'COMMITTED', // Final confirmed cars are committed
+            sourceType: 'service_plan',
+            workType: 'full_qualification',
             shopReason: spc.shopReason || '',
             priority: 3,
             committedById: userId,
+            committedAt: new Date(),
             companyId,
           },
         });

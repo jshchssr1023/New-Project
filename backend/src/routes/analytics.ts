@@ -45,13 +45,14 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     const shopsWithCarsCount = uniqueShopsWithArrivedCars.size;
 
     // ==========================================================================
-    // S&OP PLANNING SUMMARY - Consolidate from BOTH UnifiedAssignment AND CarFlowPlan
+    // S&OP PLANNING SUMMARY - UnifiedAssignment is the Single Source of Truth (SST)
+    // Note: CarFlowPlan reads kept for backward compatibility with legacy data
     // ==========================================================================
 
-    // SST: Get dashboard metrics from UnifiedAssignment
+    // SST: Get dashboard metrics from UnifiedAssignment (the single source of truth)
     const sstMetrics = await sstConsolidationService.getUnifiedDashboardMetrics(companyId);
 
-    // Also get CarFlowPlan counts for the new workflow
+    // Legacy: Also check CarFlowPlan for any older data not yet migrated
     const cfpCounts = await prisma.carFlowPlan.groupBy({
       by: ['status'],
       where: {
@@ -144,10 +145,10 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     const sopNotPlanned = Math.max(0, totalCars - sopPlanned - sopScheduled - sopOverdue - totalCarsInShop);
 
     // ==========================================================================
-    // MY QUEUE - Cars that need planning (no assignment in EITHER source)
-    // Shows team bucket from reasonsShopped and urgency from qual dates
+    // MY QUEUE - Cars that need planning (no assignment in UnifiedAssignment)
+    // UnifiedAssignment is the SST; CarFlowPlan checked for legacy data
     // ==========================================================================
-    // Get car IDs that have an active assignment from BOTH sources
+    // Get car IDs that have an active assignment from SST + legacy sources
     const [carsWithUAAssignments, carsWithCFPAssignments] = await Promise.all([
       prisma.unifiedAssignment.findMany({
         where: {
@@ -226,7 +227,8 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       .slice(0, 50); // Limit to 50 for performance
 
     // ==========================================================================
-    // IN SHOP STATUS - Cars in progress from BOTH UnifiedAssignment AND CarFlowPlan
+    // IN SHOP STATUS - Cars in progress from UnifiedAssignment (SST)
+    // CarFlowPlan checked for backward compatibility with legacy data
     // ==========================================================================
     const [uaInProgressAssignments, cfpInProgressAssignments] = await Promise.all([
       prisma.unifiedAssignment.findMany({
