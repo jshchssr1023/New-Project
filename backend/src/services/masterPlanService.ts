@@ -382,12 +382,47 @@ export class MasterPlanService {
         data: commitmentData,
       });
 
+      // SST: Also create UnifiedAssignment records (the single source of truth)
+      // This ensures all planning data is consolidated in UnifiedAssignment
+      const unifiedAssignmentData = scenario.sopAssignments.map((assignment) => {
+        const customerName = assignment.car.customer || 'Unknown';
+        const custId = customerMap.get(customerName);
+
+        // Parse month from monthKey (e.g., "2026-01")
+        const [yStr, mStr] = assignment.monthKey.split('-');
+        const pYear = parseInt(yStr, 10);
+        const pMonth = parseInt(mStr, 10);
+
+        return {
+          carId: assignment.carId,
+          shopId: assignment.shopId,
+          customerId: custId,
+          plannedYear: pYear,
+          plannedMonth: pMonth,
+          scheduledMonth: assignment.monthKey,
+          status: 'COMMITTED', // MasterPlan commitments are committed
+          sourceType: 'master_plan',
+          workType: 'full_qualification',
+          shopReason: assignment.reasonsShopped || '',
+          estimatedCost: assignment.estimatedCost || 0,
+          estimatedDays: assignment.estimatedDays || 14,
+          priority: assignment.priority || 3,
+          notes: `Created from MasterPlan: ${input.planName}`,
+          companyId: scenario.companyId,
+          committedAt: new Date(),
+        };
+      });
+
+      await tx.unifiedAssignment.createMany({
+        data: unifiedAssignmentData,
+      });
+
       return plan;
     });
 
     console.log(
       `[MasterPlanService] Created MasterPlan ${masterPlan.id} (FY${fiscalYear} v${newVersion}) ` +
-        `with ${scenario.sopAssignments.length} commitments from scenario ${scenario.name}`
+        `with ${scenario.sopAssignments.length} commitments from scenario ${scenario.name} (SST synced)`
     );
 
     // Return the full plan with commitments
@@ -767,9 +802,9 @@ export class MasterPlanService {
   /**
    * Get commitments for a specific shop and month (for shop work orders)
    *
-   * This method checks two data sources:
-   * 1. MasterPlanCommitments (formal versioned plan)
-   * 2. CarFlowPlan entries (from CSV imports and manual assignments)
+   * SST: Now reads from UnifiedAssignment (single source of truth)
+   * for all operational data, supplemented by MasterPlanCommitments
+   * for formal versioned plans.
    *
    * @param shopId - The shop to get work orders for
    * @param scheduledMonth - The month in YYYY-MM format
@@ -784,65 +819,13 @@ export class MasterPlanService {
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
 
-    // First, try to get from active MasterPlan
-    const plan = await this.prisma.masterPlan.findFirst({
-      where: {
-        status: 'active',
-        validFrom: { lte: new Date(`${scheduledMonth}-01`) },
-        validTo: { gte: new Date(`${scheduledMonth}-01`) },
-      },
-    });
-
-    let commitments: any[] = [];
-
-    if (plan) {
-      commitments = await this.prisma.masterPlanCommitment.findMany({
-        where: {
-          masterPlanId: plan.id,
-          shopId,
-          scheduledMonth,
-        },
-        include: {
-          car: {
-            select: {
-              id: true,
-              railcarNumber: true,
-              carType: true,
-              isTankCar: true,
-              commodity: true,
-              customer: true,
-              status: true,
-            },
-          },
-          shop: {
-            select: {
-              id: true,
-              name: true,
-              code: true,
-              location: true,
-              region: true,
-            },
-          },
-          customer: {
-            select: {
-              id: true,
-              name: true,
-              code: true,
-            },
-          },
-        },
-        orderBy: [{ priority: 'asc' }, { plannedArrival: 'asc' }],
-      });
-    }
-
-    // Also get CarFlowPlan entries (from CSV imports and manual assignments)
-    // These may not be in the formal MasterPlan yet
-    const carFlowPlans = await this.prisma.carFlowPlan.findMany({
+    // SST: Get work orders from UnifiedAssignment (the single source of truth)
+    const unifiedAssignments = await this.prisma.unifiedAssignment.findMany({
       where: {
         shopId,
         plannedYear: year,
         plannedMonth: month,
-        status: { in: ['Planned', 'In Progress'] },
+        status: { in: ['PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
       },
       include: {
         car: {
@@ -876,42 +859,37 @@ export class MasterPlanService {
       orderBy: [{ priority: 'asc' }, { committedAt: 'asc' }],
     });
 
-    // Merge CarFlowPlan entries that aren't already in MasterPlanCommitments
-    const existingCarIds = new Set(commitments.map((c: any) => c.car?.id));
-
-    for (const cfp of carFlowPlans) {
-      if (!existingCarIds.has(cfp.car?.id)) {
-        // Map CarFlowPlan to MasterPlanCommitment-like structure
-        const carStatus = cfp.car?.status?.toLowerCase() || '';
-        let workOrderStatus = 'committed';
-        if (carStatus === 'arrived') {
-          workOrderStatus = 'arrived';
-        } else if (cfp.status === 'In Progress') {
-          workOrderStatus = 'in_progress';
-        } else if (cfp.status === 'Complete') {
-          workOrderStatus = 'released';
-        }
-
-        commitments.push({
-          id: cfp.id,
-          carId: cfp.carId,
-          shopId: cfp.shopId,
-          customerId: cfp.customerId,
-          scheduledMonth: scheduledMonth,
-          priority: cfp.priority,
-          status: workOrderStatus,
-          reasonsShopped: cfp.shopReason,
-          estimatedCost: cfp.estimatedCost,
-          plannedArrival: null,
-          notes: cfp.notes,
-          car: cfp.car,
-          shop: cfp.shop,
-          customer: cfp.customer,
-          // Source indicator for debugging
-          _source: 'CarFlowPlan',
-        });
+    // Map UnifiedAssignment to MasterPlanCommitment-like structure
+    const commitments: any[] = unifiedAssignments.map((ua) => {
+      // Map SST status to work order status
+      let workOrderStatus = 'committed';
+      if (ua.status === 'IN_PROGRESS') {
+        workOrderStatus = 'in_progress';
+      } else if (ua.status === 'COMPLETED') {
+        workOrderStatus = 'released';
+      } else if (ua.car?.status?.toLowerCase() === 'arrived') {
+        workOrderStatus = 'arrived';
       }
-    }
+
+      return {
+        id: ua.id,
+        carId: ua.carId,
+        shopId: ua.shopId,
+        customerId: ua.customerId,
+        scheduledMonth: scheduledMonth,
+        priority: ua.priority,
+        status: workOrderStatus,
+        reasonsShopped: ua.shopReason,
+        estimatedCost: ua.estimatedCost,
+        plannedArrival: null,
+        notes: ua.notes,
+        car: ua.car,
+        shop: ua.shop,
+        customer: ua.customer,
+        // Source indicator for debugging
+        _source: 'UnifiedAssignment',
+      };
+    });
 
     // Sort by priority then by car number
     commitments.sort((a: any, b: any) => {
