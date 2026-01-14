@@ -447,11 +447,11 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
       include: {
         unifiedAssignments: {
           where: { status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS', 'COMPLETED'] } },
-          include: { car: { select: { estimatedDaysInShop: true } } },
+          select: { id: true, estimatedDays: true },
         },
         carFlowPlans: {
           where: { status: { in: ['Planned', 'In Progress', 'Complete'] } },
-          include: { car: { select: { estimatedDaysInShop: true } } },
+          select: { id: true, estimatedDays: true },
         },
       },
     });
@@ -459,8 +459,8 @@ router.get('/dashboard', async (req: AuthRequest, res: Response) => {
     const shopPerformance = shopsWithAssignments.map((shop: any) => {
       const totalAssignments = shop.unifiedAssignments.length + shop.carFlowPlans.length;
       const allEstimatedDays = [
-        ...shop.unifiedAssignments.map((a: any) => a.estimatedDays || a.car?.estimatedDaysInShop || 14),
-        ...shop.carFlowPlans.map((a: any) => a.estimatedDays || a.car?.estimatedDaysInShop || 14),
+        ...shop.unifiedAssignments.map((a: any) => a.estimatedDays || 14),
+        ...shop.carFlowPlans.map((a: any) => a.estimatedDays || 14),
       ];
       return {
         shopId: shop.id,
