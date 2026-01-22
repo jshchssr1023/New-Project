@@ -247,8 +247,13 @@ export class MasterPlanService {
     const validFrom = new Date(`${firstMonth}-01T00:00:00Z`);
 
     // validTo is the last day of the last month
+    // BUG FIX: JavaScript Date months are 0-indexed (0=Jan, 11=Dec)
+    // lastMonthNum from "YYYY-MM" is 1-indexed (1=Jan, 12=Dec)
+    // new Date(year, month, 0) gives last day of PREVIOUS month
+    // So for Dec (12), we need new Date(year, 12, 0) = Dec 31 of same year
     const [lastYear, lastMonthNum] = lastMonth.split('-').map(Number);
-    const validTo = new Date(lastYear, lastMonthNum, 0); // Day 0 of next month = last day of this month
+    // Using day 0 of the NEXT month (lastMonthNum is already 1-indexed, so it acts as next month in 0-indexed)
+    const validTo = new Date(Date.UTC(lastYear, lastMonthNum, 0, 23, 59, 59, 999));
 
     // Step 3: Find the highest existing version for this fiscal year
     const existingPlan = await this.prisma.masterPlan.findFirst({

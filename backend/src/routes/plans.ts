@@ -1,10 +1,38 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import websocketService from '../services/websocketService';
 import { recommendShopsForCar } from '../services/ruleEngine';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
 import sstConsolidationService from '../services/sstConsolidationService';
+import auditService from '../services/auditService';
+
+// INPUT VALIDATION SCHEMAS
+const CreatePlanSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255, 'Name too long'),
+  description: z.string().max(1000, 'Description too long').optional(),
+  startDate: z.string().refine((val) => !isNaN(Date.parse(val)), 'Invalid start date'),
+  endDate: z.string().refine((val) => !isNaN(Date.parse(val)), 'Invalid end date'),
+});
+
+const UpdatePlanSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  description: z.string().max(1000).optional(),
+  startDate: z.string().refine((val) => !isNaN(Date.parse(val)), 'Invalid start date').optional(),
+  endDate: z.string().refine((val) => !isNaN(Date.parse(val)), 'Invalid end date').optional(),
+  status: z.enum(['draft', 'active', 'completed', 'archived']).optional(),
+});
+
+const ScheduleCarSchema = z.object({
+  carId: z.string().uuid('Invalid car ID'),
+  shopId: z.string().uuid('Invalid shop ID').optional(),
+  scheduledMonth: z.string().regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM format'),
+  planId: z.string().uuid('Invalid plan ID').optional(),
+  estimatedCost: z.number().min(0).optional(),
+  estimatedDuration: z.number().int().min(1).max(365).optional(),
+  useRuleEngine: z.boolean().optional(),
+});
 
 const router = Router();
 
@@ -186,7 +214,25 @@ router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
 
 // Create plan
 router.post('/', async (req: AuthRequest, res: Response) => {
-  const { name, description, startDate, endDate } = req.body;
+  // INPUT VALIDATION
+  const validation = CreatePlanSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      message: 'Validation failed',
+      errors: validation.error.errors,
+    });
+    return;
+  }
+
+  const { name, description, startDate, endDate } = validation.data;
+
+  // Validate date range
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (end <= start) {
+    res.status(400).json({ message: 'End date must be after start date' });
+    return;
+  }
 
   try {
     const plan = await prisma.plan.create({
@@ -212,7 +258,17 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 
 // Update plan
 router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const { name, description, startDate, endDate, status } = req.body;
+  // INPUT VALIDATION
+  const validation = UpdatePlanSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      message: 'Validation failed',
+      errors: validation.error.errors,
+    });
+    return;
+  }
+
+  const { name, description, startDate, endDate, status } = validation.data;
 
   try {
     const result = await prisma.plan.updateMany({
@@ -353,6 +409,22 @@ router.put('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Respo
   const { shopId, scheduledMonth, estimatedCost, estimatedDuration, status } = req.body;
 
   try {
+    // SECURITY FIX: Verify the assignment belongs to a plan owned by the user's company
+    const existingAssignment = await prisma.planAssignment.findFirst({
+      where: {
+        id: req.params.assignmentId,
+        plan: {
+          id: req.params.id,
+          companyId: req.user!.companyId,
+        },
+      },
+    });
+
+    if (!existingAssignment) {
+      res.status(404).json({ message: 'Assignment not found' });
+      return;
+    }
+
     const assignment = await prisma.planAssignment.update({
       where: { id: req.params.assignmentId },
       data: {
@@ -379,6 +451,22 @@ router.put('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Respo
 router.delete('/:id/assignments/:assignmentId', async (req: AuthRequest, res: Response) => {
 
   try {
+    // SECURITY FIX: Verify the assignment belongs to a plan owned by the user's company
+    const existingAssignment = await prisma.planAssignment.findFirst({
+      where: {
+        id: req.params.assignmentId,
+        plan: {
+          id: req.params.id,
+          companyId: req.user!.companyId,
+        },
+      },
+    });
+
+    if (!existingAssignment) {
+      res.status(404).json({ message: 'Assignment not found' });
+      return;
+    }
+
     await prisma.planAssignment.delete({
       where: { id: req.params.assignmentId },
     });

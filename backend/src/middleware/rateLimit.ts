@@ -19,20 +19,21 @@ interface RateLimitConfig {
 }
 
 // Default configurations for different endpoints
+// SECURITY: Production-safe rate limits to prevent brute force and DoS attacks
 export const RATE_LIMIT_CONFIGS = {
   login: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 50, // Increased for development
+    maxRequests: 5, // SECURITY FIX: Strict limit to prevent brute force attacks
     message: 'Too many login attempts. Please try again in a minute.',
   },
   api: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 1000, // Increased for development
+    maxRequests: 100, // SECURITY FIX: Reasonable limit for authenticated API calls
     message: 'Too many requests. Please slow down.',
   },
   strict: {
     windowMs: 60 * 1000, // 1 minute
-    maxRequests: 100, // Increased for development
+    maxRequests: 10, // SECURITY FIX: Strict limit for sensitive operations
     message: 'Rate limit exceeded for this operation.',
   },
 };

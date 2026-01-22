@@ -598,8 +598,8 @@ model Plan {
   status      String           @default("draft") // Values: draft, active, completed, archived
   companyId   String
   company     Company          @relation(fields: [companyId], references: [id])
-  createdBy   String
-  creator     User             @relation("PlanCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdBy   String?
+  creator     User?            @relation("PlanCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   assignments PlanAssignment[]
   scenarios   Scenario[]
   createdAt   DateTime         @default(now())
@@ -668,8 +668,8 @@ model Scenario {
 
   companyId      String
   company        Company                @relation(fields: [companyId], references: [id])
-  createdBy      String
-  creator        User                   @relation("ScenarioCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdBy      String?
+  creator        User?                  @relation("ScenarioCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
@@ -799,7 +799,7 @@ model CarFlowPlan {
   // Commitment tracking
   committedAt     DateTime  @default(now())
   committedById   String
-  committedBy     User      @relation("CarFlowPlanCommitter", fields: [committedById], references: [id], onDelete: Cascade)
+  committedBy     User?     @relation("CarFlowPlanCommitter", fields: [committedById], references: [id], onDelete: SetNull)
 
   // Status workflow: Planned → InProgress → Complete, Cancelled
   // - Planned: Committed to the plan, not yet started
@@ -869,7 +869,7 @@ model SOPCommitment {
 
   // Audit fields
   createdById     String
-  createdBy       User     @relation("SOPCommitmentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy       User?    @relation("SOPCommitmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
   updatedById     String?
   updatedBy       User?    @relation("SOPCommitmentUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
@@ -1798,7 +1798,7 @@ model MasterPlan {
 
   // Audit fields
   createdById     String
-  createdBy       User             @relation("MasterPlanCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("MasterPlanCreator", fields: [createdById], references: [id], onDelete: SetNull)
   companyId       String
   company         Company          @relation(fields: [companyId], references: [id])
 
@@ -2102,7 +2102,7 @@ model ServicePlan {
 
   // Audit fields
   createdById           String
-  creator               User                @relation("ServicePlanCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  creator               User?               @relation("ServicePlanCreator", fields: [createdById], references: [id], onDelete: SetNull)
   companyId             String
   company               Company             @relation(fields: [companyId], references: [id])
 

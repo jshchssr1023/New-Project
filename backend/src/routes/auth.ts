@@ -2,8 +2,12 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { authenticate, generateToken, invalidateToken, getTokenFromRequest, AuthRequest } from '../middleware/auth';
+import { createRateLimitMiddleware } from '../middleware/rateLimit';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
+
+// SECURITY FIX: Apply rate limiting to login endpoint
+const loginRateLimit = createRateLimitMiddleware('login');
 
 const router = Router();
 
@@ -13,7 +17,7 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'strict' as const,
-  maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  maxAge: 60 * 60 * 1000, // SECURITY FIX: 1 hour (matches JWT expiration)
   path: '/',
 };
 
@@ -40,7 +44,8 @@ const RegistrationSchema = z.object({
   companyId: z.string().uuid('Invalid company ID'),
 });
 
-router.post('/login', async (req: AuthRequest, res: Response) => {
+// SECURITY FIX: Rate limiting on login to prevent brute force attacks
+router.post('/login', loginRateLimit, async (req: AuthRequest, res: Response) => {
   try {
     // Validate request body
     const validationResult = LoginSchema.safeParse(req.body);
@@ -83,6 +88,9 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     // Set httpOnly cookie with the token
     res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
 
+    // SECURITY FIX: Only return user data, NOT the token
+    // Token is securely stored in httpOnly cookie (set above)
+    // Exposing token in response body defeats httpOnly cookie security
     res.json({
       user: {
         id: user.id,
@@ -94,8 +102,6 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       },
-      // Still include token in response for backward compatibility during transition
-      token,
     });
   } catch (error) {
     logger.error('Login error', error);
@@ -169,8 +175,8 @@ router.post('/refresh', authenticate, async (req: AuthRequest, res: Response) =>
     // Set new httpOnly cookie with the token
     res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
 
-    // Include token in response for backward compatibility
-    res.json({ token });
+    // SECURITY FIX: Token is in httpOnly cookie, don't expose in response
+    res.json({ message: 'Token refreshed successfully' });
   } catch (error) {
     logger.error('Token refresh error', error);
     res.status(500).json({ message: 'Failed to refresh token' });
@@ -211,7 +217,8 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
       return;
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    // SECURITY FIX: Increased bcrypt rounds from 10 to 12 for stronger hashing
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
 
     await prisma.user.update({
       where: { id: req.user!.id },
