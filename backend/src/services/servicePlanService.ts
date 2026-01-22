@@ -13,6 +13,8 @@
  * @version 1.0.0
  */
 
+import logger from '../utils/logger';
+
 import { prisma } from './db';
 
 // =============================================================================
@@ -242,7 +244,7 @@ export class ServicePlanService {
       include: this.getServicePlanInclude(),
     });
 
-    console.log(`[ServicePlanService] Created service plan: ${servicePlan.id} - ${servicePlan.name}`);
+    logger.debug(`[ServicePlanService] Created service plan: ${servicePlan.id} - ${servicePlan.name}`);
     return servicePlan as ServicePlanWithDetails;
   }
 
@@ -263,7 +265,7 @@ export class ServicePlanService {
     }
 
     // Debug logging
-    console.log(`[ServicePlanService] getServicePlan ${id}: selectedCarCount=${servicePlan.selectedCarCount}, cars.length=${servicePlan.cars?.length || 0}`);
+    logger.debug(`[ServicePlanService] getServicePlan ${id}: selectedCarCount=${servicePlan.selectedCarCount}, cars.length=${servicePlan.cars?.length || 0}`);
 
     return servicePlan as ServicePlanWithDetails;
   }
@@ -350,7 +352,7 @@ export class ServicePlanService {
       include: this.getServicePlanInclude(),
     });
 
-    console.log(`[ServicePlanService] Updated service plan: ${id}`);
+    logger.debug(`[ServicePlanService] Updated service plan: ${id}`);
     return servicePlan as ServicePlanWithDetails;
   }
 
@@ -381,7 +383,7 @@ export class ServicePlanService {
       where: { id },
     });
 
-    console.log(`[ServicePlanService] Deleted service plan: ${id}`);
+    logger.debug(`[ServicePlanService] Deleted service plan: ${id}`);
   }
 
   // ===========================================================================
@@ -488,7 +490,7 @@ export class ServicePlanService {
       },
     });
 
-    console.log(`[ServicePlanService] Added ${newCarIds.length} cars to service plan ${servicePlanId}`);
+    logger.debug(`[ServicePlanService] Added ${newCarIds.length} cars to service plan ${servicePlanId}`);
     return createdCars as ServicePlanCarWithDetails[];
   }
 
@@ -572,7 +574,7 @@ export class ServicePlanService {
       await this.updateCapacityReservations(option.id);
     }
 
-    console.log(`[ServicePlanService] Removed car ${servicePlanCarId} from service plan ${servicePlanId}`);
+    logger.debug(`[ServicePlanService] Removed car ${servicePlanCarId} from service plan ${servicePlanId}`);
   }
 
   /**
@@ -661,7 +663,7 @@ export class ServicePlanService {
       include: this.getPlanOptionInclude(),
     });
 
-    console.log(`[ServicePlanService] Created plan option: ${option.id} - ${option.name}`);
+    logger.debug(`[ServicePlanService] Created plan option: ${option.id} - ${option.name}`);
     return option as PlanOptionWithDetails;
   }
 
@@ -720,7 +722,7 @@ export class ServicePlanService {
       where: { id: optionId },
     });
 
-    console.log(`[ServicePlanService] Deleted plan option: ${optionId}`);
+    logger.debug(`[ServicePlanService] Deleted plan option: ${optionId}`);
   }
 
   // ===========================================================================
@@ -1282,7 +1284,7 @@ export class ServicePlanService {
       });
     });
 
-    console.log(`[ServicePlanService] Approved service plan ${servicePlanId} with option ${optionId}`);
+    logger.debug(`[ServicePlanService] Approved service plan ${servicePlanId} with option ${optionId}`);
 
     return this.getServicePlan(servicePlanId, companyId) as Promise<ServicePlanWithDetails>;
   }
@@ -1425,7 +1427,7 @@ export class ServicePlanService {
       optionCount: servicePlan.options.length,
     });
 
-    console.log(`[ServicePlanService] Proposed service plan: ${servicePlanId}, snapshot: ${snapshot.id}`);
+    logger.debug(`[ServicePlanService] Proposed service plan: ${servicePlanId}, snapshot: ${snapshot.id}`);
     return updated as ServicePlanWithDetails;
   }
 
@@ -1495,7 +1497,7 @@ export class ServicePlanService {
       newStatus,
     });
 
-    console.log(`[ServicePlanService] Customer feedback recorded: ${servicePlanId}, status: ${responseStatus}`);
+    logger.debug(`[ServicePlanService] Customer feedback recorded: ${servicePlanId}, status: ${responseStatus}`);
     return updated as ServicePlanWithDetails;
   }
 
@@ -1588,7 +1590,7 @@ export class ServicePlanService {
         },
       });
     } catch (err) {
-      console.error(`[ServicePlanService] Failed to log audit event:`, err);
+      logger.error(`[ServicePlanService] Failed to log audit event:`, err);
     }
   }
 

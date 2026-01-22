@@ -3,6 +3,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../utils/logger';
 
 const dbPath = path.join(__dirname, '../../prisma/dev.db');
 const db = new Database(dbPath);
@@ -218,7 +219,7 @@ function buildOrderByClause(orderBy: OrderByClause | OrderByClause[] | undefined
     // Skip nested relation orderBy (e.g., { shop: { name: 'asc' } })
     // SQLite doesn't support ordering by related table columns without a JOIN
     if (typeof dir === 'object' && dir !== null) {
-      console.warn(`[DB] Skipping nested orderBy for relation "${key}" - not supported in SQLite`);
+      logger.warn(`[DB] Skipping nested orderBy for relation "${key}" - not supported in SQLite`);
       continue;
     }
 
@@ -568,7 +569,7 @@ function createTableHandler(tableName: string) {
       try {
         db.prepare(query).run(...values);
       } catch (error: any) {
-        console.error(`[DB] Create error in ${tableName}:`, error.message);
+        logger.error(`[DB] Create error in ${tableName}:`, error.message);
         throw error;
       }
 
@@ -624,7 +625,7 @@ function createTableHandler(tableName: string) {
       try {
         db.prepare(query).run(...setValues, ...whereParams);
       } catch (error: any) {
-        console.error(`[DB] Update error in ${tableName}:`, error.message);
+        logger.error(`[DB] Update error in ${tableName}:`, error.message);
         throw error;
       }
 
@@ -736,7 +737,7 @@ function createTableHandler(tableName: string) {
           db.prepare(query).run(...values);
           count++;
         } catch (error: any) {
-          console.error(`[DB] CreateMany error in ${tableName}:`, error.message);
+          logger.error(`[DB] CreateMany error in ${tableName}:`, error.message);
           // Continue with other records
         }
       }
@@ -1109,7 +1110,7 @@ export const prisma = {
   // WARNING: These functions should be used sparingly and only with parameterized queries
   $queryRaw: async (query: string, ...params: any[]) => {
     // SECURITY: Log raw query usage for audit
-    console.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', query.substring(0, 100));
+    logger.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', query.substring(0, 100));
     if (query.includes('--') || query.includes(';') && params.length === 0) {
       throw new Error('SECURITY: Potential SQL injection detected in raw query');
     }
@@ -1125,7 +1126,7 @@ export const prisma = {
         throw new Error('SECURITY: Dangerous SQL pattern blocked in raw query');
       }
     }
-    console.warn('[DB SECURITY] Unsafe raw query executed:', query.substring(0, 100));
+    logger.warn('[DB SECURITY] Unsafe raw query executed:', query.substring(0, 100));
     return db.prepare(query).all(...params);
   },
 

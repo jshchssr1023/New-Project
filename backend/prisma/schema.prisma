@@ -229,6 +229,10 @@ model Customer {
   servicePlans          ServicePlan[] @relation("ServicePlanCustomer")
 
   @@unique([code, companyId])
+  // PERFORMANCE FIX: Add missing indexes for common query patterns
+  @@index([companyId])
+  @@index([companyId, isActive])
+  @@index([name])
 }
 
 model Car {
@@ -1123,6 +1127,9 @@ model LeaseQualificationEntry {
   @@index([customerId])
   @@index([carId, queueStatus])
   @@index([customerId, plannedReleaseDate])
+  // PERFORMANCE FIX: Add missing composite index for S&OP queries
+  @@index([companyId, queueStatus, targetQualMonth])
+  @@index([assignedShopId, queueStatus])
 }
 
 // Scheduled events for qualification planning

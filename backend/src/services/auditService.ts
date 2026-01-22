@@ -2,6 +2,7 @@
 import { prisma } from './db';
 import { Request } from 'express';
 import webhookAlertService from './webhookAlertService';
+import logger from '../utils/logger';
 
 
 export interface AuditLogEntry {
@@ -90,7 +91,7 @@ export async function logAudit(
     await triggerWebhookAlert(entry);
   } catch (error) {
     // Log error but don't throw - audit logging should not break main operations
-    console.error('Failed to create audit log:', error);
+    logger.error('Failed to create audit log:', error);
   }
 }
 
@@ -157,7 +158,7 @@ async function triggerWebhookAlert(entry: AuditLogEntry): Promise<void> {
     }
   } catch (error) {
     // Silent fail - webhook alerting should not break audit logging
-    console.error('Failed to trigger webhook alert:', error);
+    logger.error('Failed to trigger webhook alert:', error);
   }
 }
 
