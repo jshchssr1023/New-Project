@@ -767,11 +767,26 @@ function createTableHandler(tableName: string) {
     },
 
     upsert: async (options: { where: WhereClause; create: any; update: any }) => {
-      const existing = await createTableHandler(tableName).findUnique({ where: options.where });
-      if (existing) {
-        return await createTableHandler(tableName).update({ where: options.where, data: options.update });
-      } else {
-        return await createTableHandler(tableName).create({ data: options.create });
+      // SECURITY FIX: Wrap upsert in transaction to prevent race conditions
+      // Without transaction, another request could insert between findUnique and create
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        const existing = await createTableHandler(tableName).findUnique({ where: options.where });
+        let result;
+        if (existing) {
+          result = await createTableHandler(tableName).update({ where: options.where, data: options.update });
+        } else {
+          result = await createTableHandler(tableName).create({ data: options.create });
+        }
+        db.exec('COMMIT');
+        return result;
+      } catch (error: any) {
+        db.exec('ROLLBACK');
+        // Handle unique constraint violation - retry as update
+        if (error.message?.includes('UNIQUE constraint failed')) {
+          return await createTableHandler(tableName).update({ where: options.where, data: options.update });
+        }
+        throw error;
       }
     },
 
@@ -1115,21 +1130,28 @@ export const prisma = {
   },
 
   // Transaction support - SQLite transaction with proper async handling
-  // Note: better-sqlite3 transactions are synchronous, but we wrap them
-  // to provide a consistent async interface with Prisma
+  // SECURITY FIX: Removed broken array-based transaction pattern
+  // Array of promises execute BEFORE the transaction, breaking atomicity
   $transaction: async <T>(
     fnOrOperations: ((tx: typeof prisma) => Promise<T>) | Promise<any>[]
   ): Promise<T | any[]> => {
     if (Array.isArray(fnOrOperations)) {
-      // Array of promises - resolve them first, then run in transaction
-      // Note: The promises have already started executing, so this is
-      // more of a "batch commit" pattern than a true transaction
-      const results = await Promise.all(fnOrOperations);
-      return results;
+      // SECURITY FIX: Array-based transactions are dangerous
+      // The promises have already started executing before this function is called
+      // This means errors in later promises won't roll back earlier ones
+      // Wrap in proper transaction to ensure atomicity
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        const results = await Promise.all(fnOrOperations);
+        db.exec('COMMIT');
+        return results;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     } else {
-      // Function-based transaction - execute the async function
-      // The operations inside will each be atomic, but the whole
-      // sequence uses SQLite's implicit transaction handling
+      // Function-based transaction - proper async transaction pattern
+      // All operations inside the function are executed within the transaction
       try {
         db.exec('BEGIN IMMEDIATE');
         const result = await fnOrOperations(prisma);

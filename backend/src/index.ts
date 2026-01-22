@@ -53,16 +53,17 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
   origin: (origin, callback) => {
-    // In production, reject requests without valid Origin header
-    // (except for same-origin requests which don't have Origin)
+    // SECURITY FIX: In production, ALWAYS require valid Origin header
+    // Requests without Origin header could be from malicious sources
     if (!origin) {
       if (isProduction) {
-        // Allow same-origin requests (no Origin header) but be stricter
-        // Only server-to-server or same-origin browser requests lack Origin
-        callback(null, true);
+        // SECURITY: Reject requests without Origin in production
+        // This prevents CSRF and other attacks that bypass CORS
+        logger.warn('CORS blocked request without Origin header in production');
+        callback(new Error('Origin header required'));
         return;
       }
-      // In development, allow requests without origin (curl, mobile apps, etc.)
+      // In development only, allow requests without origin (curl, Postman, etc.)
       callback(null, true);
       return;
     }
