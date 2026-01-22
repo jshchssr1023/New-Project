@@ -38,6 +38,7 @@ const NETWORK_COLORS: Record<string, { bg: string; fill: string; label: string }
   'Trinity': { bg: 'bg-pink-500', fill: '#EC4899', label: 'Trinity' },
   'Curry': { bg: 'bg-cyan-500', fill: '#06B6D4', label: 'Curry' },
   'Other': { bg: 'bg-green-500', fill: '#22C55E', label: 'Other' },
+  'Unplanned': { bg: 'bg-steel-400', fill: '#9CA3AF', label: 'Unplanned' },
 };
 
 const MONTHS = [
@@ -110,13 +111,13 @@ export default function PlanOverviewDashboard() {
     reasonsShopped: [],
   });
 
-  // Active filters
+  // Active filters - no defaults so all confirmed/planned cars show
   const [filters, setFilters] = useState<PlanFilters>({
     lesseeName: '',
     carType: '',
-    currentStatus: 'arrived', // Default like in screenshot
+    currentStatus: '', // No default - show all statuses including 'To Be Routed' from confirmed plans
     yearDue: '',
-    tankQualFlag: 'Yes', // Default like in screenshot
+    tankQualFlag: '', // No default - show all cars
     planStatus: '',
     qualificationPlanner: '',
     networkHierarchy: '',
@@ -211,30 +212,31 @@ export default function PlanOverviewDashboard() {
     });
   }, [cars, shops, filters]);
 
-  // Calculate volume by network
+  // Calculate volume by network - use activePlan data from cars
   const volumeByNetwork = useMemo<VolumeByNetwork[]>(() => {
     const networkCounts: Record<string, number> = {};
     const total = filteredCars.length;
 
     filteredCars.forEach(car => {
-      const shop = shops.find(s => s.id === car.assignedShopId);
-      let network = shop?.networkName || 'Other';
+      // Use activePlan data if available (from CarFlowPlan)
+      let network = 'Unplanned';
 
-      // Map to known networks
-      if (shop?.isAitxInternal) network = 'AITX';
-      else if (!NETWORK_COLORS[network]) network = 'Other';
+      if (car.activePlan) {
+        // Get network from active plan
+        network = car.activePlan.networkName || (car.activePlan.isAitxInternal ? 'AITX' : 'Other');
+      } else if (car.assignedShopId) {
+        // Fall back to assignedShopId lookup
+        const shop = shops.find(s => s.id === car.assignedShopId);
+        network = shop?.networkName || (shop?.isAitxInternal ? 'AITX' : 'Other');
+      }
+
+      // Map to known networks or Other
+      if (network !== 'Unplanned' && !NETWORK_COLORS[network]) {
+        network = 'Other';
+      }
 
       networkCounts[network] = (networkCounts[network] || 0) + 1;
     });
-
-    // If no shop assignments, use placeholder data
-    if (Object.keys(networkCounts).length === 0) {
-      // Distribute across networks for demo
-      const networks = ['AITX', 'Eagle', 'Marmon', 'Guardian', 'Greenbrier', 'Trinity', 'Curry', 'Other'];
-      networks.forEach(n => {
-        networkCounts[n] = Math.floor(total / networks.length) + (Math.random() > 0.5 ? 1 : 0);
-      });
-    }
 
     return Object.entries(networkCounts)
       .map(([network, count]) => ({
@@ -245,15 +247,26 @@ export default function PlanOverviewDashboard() {
       .sort((a, b) => b.count - a.count);
   }, [filteredCars, shops]);
 
-  // Calculate volume by month
+  // Calculate volume by month - use activePlan month or actual dates
   const volumeByMonth = useMemo<VolumeByMonth[]>(() => {
     const monthCounts: Record<number, number> = {};
 
     filteredCars.forEach(car => {
-      const dateStr = car.arrivalDate || car.shopEntryDate || (car as any).plannedMonth || car.scheduledMonth;
-      if (dateStr) {
-        const date = new Date(dateStr);
-        const monthIndex = date.getMonth();
+      let monthIndex: number | null = null;
+
+      // Use activePlan planned month first (most reliable for planning)
+      if (car.activePlan) {
+        monthIndex = car.activePlan.plannedMonth - 1; // Convert 1-12 to 0-11
+      } else {
+        // Fall back to date fields
+        const dateStr = car.arrivalDate || car.shopEntryDate;
+        if (dateStr) {
+          const date = new Date(dateStr);
+          monthIndex = date.getMonth();
+        }
+      }
+
+      if (monthIndex !== null && monthIndex >= 0 && monthIndex < 12) {
         monthCounts[monthIndex] = (monthCounts[monthIndex] || 0) + 1;
       }
     });
@@ -266,7 +279,7 @@ export default function PlanOverviewDashboard() {
     }));
   }, [filteredCars]);
 
-  // Calculate volume by network by month (for stacked chart)
+  // Calculate volume by network by month (for stacked chart) - use activePlan data
   const volumeByNetworkMonth = useMemo<VolumeByNetworkMonth[]>(() => {
     const data: Record<number, Record<string, number>> = {};
 
@@ -276,16 +289,33 @@ export default function PlanOverviewDashboard() {
     });
 
     filteredCars.forEach(car => {
-      const dateStr = car.arrivalDate || car.shopEntryDate || (car as any).plannedMonth || car.scheduledMonth;
-      if (dateStr) {
-        const date = new Date(dateStr);
-        const monthIndex = date.getMonth();
+      let monthIndex: number | null = null;
+      let network = 'Unplanned';
 
-        const shop = shops.find(s => s.id === car.assignedShopId);
-        let network = shop?.networkName || 'Other';
-        if (shop?.isAitxInternal) network = 'AITX';
-        else if (!NETWORK_COLORS[network]) network = 'Other';
+      // Use activePlan data if available
+      if (car.activePlan) {
+        monthIndex = car.activePlan.plannedMonth - 1; // Convert 1-12 to 0-11
+        network = car.activePlan.networkName || (car.activePlan.isAitxInternal ? 'AITX' : 'Other');
+      } else {
+        // Fall back to date fields and shop lookup
+        const dateStr = car.arrivalDate || car.shopEntryDate;
+        if (dateStr) {
+          const date = new Date(dateStr);
+          monthIndex = date.getMonth();
+        }
 
+        if (car.assignedShopId) {
+          const shop = shops.find(s => s.id === car.assignedShopId);
+          network = shop?.networkName || (shop?.isAitxInternal ? 'AITX' : 'Other');
+        }
+      }
+
+      // Map to known networks
+      if (network !== 'Unplanned' && !NETWORK_COLORS[network]) {
+        network = 'Other';
+      }
+
+      if (monthIndex !== null && monthIndex >= 0 && monthIndex < 12) {
         data[monthIndex][network] = (data[monthIndex][network] || 0) + 1;
       }
     });
@@ -326,17 +356,29 @@ export default function PlanOverviewDashboard() {
 
   const hasActiveFilters = Object.values(filters).some(v => v !== '');
 
-  // Export to CSV
+  // Export to CSV - use activePlan data
   const handleExportCSV = () => {
-    const headers = ['Car Number', 'Customer', 'Car Type', 'Status', 'Network', 'Month', 'Year Due'];
+    const headers = ['Car Number', 'Customer', 'Car Type', 'Status', 'Network', 'Shop', 'Month', 'Year Due'];
     const rows = filteredCars.map(car => {
-      const shop = shops.find(s => s.id === car.assignedShopId);
-      const network = shop?.networkName || (shop?.isAitxInternal ? 'AITX' : 'Other');
-      const dateStr = car.arrivalDate || car.shopEntryDate || (car as any).plannedMonth;
-      const month = dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short' }) : '';
+      let network = 'Unplanned';
+      let shopName = '';
+      let month = '';
+
+      if (car.activePlan) {
+        network = car.activePlan.networkName || (car.activePlan.isAitxInternal ? 'AITX' : 'Other');
+        shopName = car.activePlan.shopName || '';
+        month = car.activePlan.plannedDate || SHORT_MONTHS[car.activePlan.plannedMonth - 1] || '';
+      } else if (car.assignedShopId) {
+        const shop = shops.find(s => s.id === car.assignedShopId);
+        network = shop?.networkName || (shop?.isAitxInternal ? 'AITX' : 'Other');
+        shopName = shop?.name || '';
+        const dateStr = car.arrivalDate || car.shopEntryDate;
+        month = dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short' }) : '';
+      }
+
       const yearDue = (car as any).tankQualification ? new Date((car as any).tankQualification).getFullYear() : '';
 
-      return [car.railcarNumber, car.customer, car.carType, car.status, network, month, yearDue].join(',');
+      return [car.railcarNumber, car.customer, car.carType, car.status, network, shopName, month, yearDue].join(',');
     });
 
     const csv = [headers.join(','), ...rows].join('\n');
@@ -718,10 +760,20 @@ export default function PlanOverviewDashboard() {
               </thead>
               <tbody className="bg-white divide-y divide-steel-100">
                 {filteredCars.slice(0, 100).map((car) => {
-                  const shop = shops.find(s => s.id === car.assignedShopId);
-                  const network = shop?.networkName || (shop?.isAitxInternal ? 'AITX' : '-');
-                  const dateStr = car.arrivalDate || car.shopEntryDate || (car as any).plannedMonth;
-                  const month = dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short' }) : '-';
+                  // Get network from activePlan or fall back to assignedShopId lookup
+                  let network = 'Unplanned';
+                  let month = '-';
+
+                  if (car.activePlan) {
+                    network = car.activePlan.networkName || (car.activePlan.isAitxInternal ? 'AITX' : 'Other');
+                    month = car.activePlan.plannedDate || SHORT_MONTHS[car.activePlan.plannedMonth - 1] || '-';
+                  } else if (car.assignedShopId) {
+                    const shop = shops.find(s => s.id === car.assignedShopId);
+                    network = shop?.networkName || (shop?.isAitxInternal ? 'AITX' : 'Other');
+                    const dateStr = car.arrivalDate || car.shopEntryDate;
+                    month = dateStr ? new Date(dateStr).toLocaleDateString('en-US', { month: 'short' }) : '-';
+                  }
+
                   const yearDue = (car as any).tankQualification
                     ? new Date((car as any).tankQualification).getFullYear()
                     : '-';
@@ -741,12 +793,9 @@ export default function PlanOverviewDashboard() {
                         </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {network !== '-' && (
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${NETWORK_COLORS[network]?.bg || 'bg-steel-100'} text-white`}>
-                            {network}
-                          </span>
-                        )}
-                        {network === '-' && <span className="text-sm text-steel-400">-</span>}
+                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium ${NETWORK_COLORS[network]?.bg || 'bg-steel-100'} ${network === 'Unplanned' ? 'text-steel-700' : 'text-white'}`}>
+                          {network}
+                        </span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-steel-600">{month}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-steel-600">{yearDue}</td>

@@ -99,9 +99,8 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-steel-500">
-            Demo credentials: admin@aitx.com / password123
-          </p>
+          {/* SECURITY FIX: Removed hardcoded demo credentials from UI
+              Demo credentials should be documented in README or internal docs only */}
         </div>
       </div>
     </div>

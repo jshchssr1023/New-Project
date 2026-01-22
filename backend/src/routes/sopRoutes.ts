@@ -563,19 +563,24 @@ router.post('/capacity-check', async (req: AuthRequest, res: Response) => {
 // =============================================================================
 
 /**
- * GET /api/sop/allocations - Get saved S&OP monthly allocations
+ * GET /api/sop/allocations - Get S&OP monthly allocations from UnifiedAssignment (SST)
+ *
+ * SST: Allocations are derived from UnifiedAssignment grouped by shop network and month
+ * This provides actual planned/scheduled work by shop/network/month
  */
 router.get('/allocations', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
 
   try {
-    // Get all SOPAssignments grouped by shop and month
-    const assignments = await prisma.sOPAssignment.findMany({
+    const companyId = req.user!.companyId;
+
+    // ==========================================================================
+    // SST: Get allocations from UnifiedAssignment grouped by shop and month
+    // ==========================================================================
+    const assignments = await prisma.unifiedAssignment.findMany({
       where: {
-        scenario: {
-          companyId: req.user!.companyId,
-          isBaseline: true, // Only get baseline scenario allocations
-        },
+        companyId,
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
       },
       include: {
         shop: {
@@ -584,30 +589,88 @@ router.get('/allocations', async (req: AuthRequest, res: Response) => {
             name: true,
             code: true,
             isAitxInternal: true,
+            network: true,
             qualCapacity: true,
+            capacity: true,
           },
         },
       },
     });
 
     // Build allocation map by shop and month
-    const allocationMap: Record<string, Record<string, number>> = {};
+    const allocationByShop: Record<string, Record<string, number>> = {};
+    // Build allocation map by network and month
+    const allocationByNetwork: Record<string, Record<string, number>> = {};
+    // Track last update time
+    let lastUpdated: number | null = null;
 
-    assignments.forEach((assignment) => {
+    assignments.forEach((assignment: any) => {
       const shopId = assignment.shopId;
-      const monthKey = assignment.monthKey;
+      const network = assignment.shop?.isAitxInternal ? 'aitx' : (assignment.shop?.network || 'third_party');
+      const monthKey = `${assignment.plannedYear}-${String(assignment.plannedMonth).padStart(2, '0')}`;
 
-      if (!allocationMap[shopId]) {
-        allocationMap[shopId] = {};
+      // By shop
+      if (!allocationByShop[shopId]) {
+        allocationByShop[shopId] = {};
       }
-      allocationMap[shopId][monthKey] = (allocationMap[shopId][monthKey] || 0) + 1;
+      allocationByShop[shopId][monthKey] = (allocationByShop[shopId][monthKey] || 0) + 1;
+
+      // By network
+      if (!allocationByNetwork[network]) {
+        allocationByNetwork[network] = {};
+      }
+      allocationByNetwork[network][monthKey] = (allocationByNetwork[network][monthKey] || 0) + 1;
+
+      // Track last update
+      if (assignment.updatedAt) {
+        const updateTime = new Date(assignment.updatedAt).getTime();
+        if (!lastUpdated || updateTime > lastUpdated) {
+          lastUpdated = updateTime;
+        }
+      }
+    });
+
+    // Get shop details for capacity info
+    const shops = await prisma.shop.findMany({
+      where: { companyId, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        isAitxInternal: true,
+        network: true,
+        capacity: true,
+        qualCapacity: true,
+      },
+    });
+
+    const shopDetails: Record<string, any> = {};
+    shops.forEach((shop: any) => {
+      shopDetails[shop.id] = {
+        name: shop.name,
+        code: shop.code,
+        isAitxInternal: shop.isAitxInternal,
+        network: shop.network,
+        monthlyCapacity: shop.capacity,
+        qualCapacity: shop.qualCapacity,
+      };
     });
 
     res.json({
-      allocations: allocationMap,
-      lastUpdated: assignments.length > 0
-        ? Math.max(...assignments.map(a => a.updatedAt.getTime()))
-        : null,
+      // SST: Allocations by shop
+      allocationsByShop: allocationByShop,
+      // SST: Allocations by network
+      allocationsByNetwork: allocationByNetwork,
+      // Shop details for capacity/utilization calculations
+      shopDetails,
+      // Summary totals
+      totals: {
+        aitx: Object.values(allocationByNetwork['aitx'] || {}).reduce((sum: number, count: any) => sum + count, 0),
+        thirdParty: Object.entries(allocationByNetwork)
+          .filter(([key]) => key !== 'aitx')
+          .reduce((sum, [, months]) => sum + Object.values(months).reduce((s: number, c: any) => s + c, 0), 0),
+      },
+      lastUpdated,
     });
   } catch (error: any) {
     console.error('Get allocations error:', error);
@@ -827,6 +890,11 @@ router.put('/allocations/capacity', async (req: AuthRequest, res: Response) => {
 /**
  * GET /api/sop/demand-registry - Get demand registry data
  *
+ * SST: Planning state is derived from UnifiedAssignment (Single Source of Truth)
+ * - Confirmed = UnifiedAssignment.status IN ('COMMITTED', 'IN_PROGRESS')
+ * - Not Confirmed (Planned) = UnifiedAssignment.status IN ('DRAFT', 'PENDING_REVIEW')
+ * - Needs Shopping = No UnifiedAssignment record for car
+ *
  * Returns all cars that are due based on:
  * - tankQualDueDate (qualifications due this year or rolling 3 months)
  * - contractExpiration (returns within 6-month horizon)
@@ -837,6 +905,7 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
   const { year, includeRolling3Months } = req.query;
 
   try {
+    const companyId = req.user!.companyId;
     const filterYear = year ? parseInt(year as string) : new Date().getFullYear();
     const now = new Date();
     const yearEnd = new Date(filterYear, 11, 31, 23, 59, 59);
@@ -845,10 +914,35 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
       ? new Date(now.getFullYear(), now.getMonth() + 3, now.getDate())
       : yearEnd;
 
+    // ==========================================================================
+    // SST: Get all active assignments from UnifiedAssignment to determine planning state
+    // ==========================================================================
+    const activeAssignments = await prisma.unifiedAssignment.findMany({
+      where: {
+        companyId,
+        status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
+      },
+      include: {
+        shop: {
+          select: { id: true, name: true, code: true },
+        },
+      },
+    });
+
+    // Build maps for O(1) lookup of planning state by carId
+    const assignmentByCarId = new Map<string, any>();
+    activeAssignments.forEach((a: any) => {
+      // Keep the most recent/highest priority assignment
+      if (!assignmentByCarId.has(a.carId) ||
+          ['COMMITTED', 'IN_PROGRESS'].includes(a.status)) {
+        assignmentByCarId.set(a.carId, a);
+      }
+    });
+
     // Get cars with qualification due dates, contract expirations, or assignment reason
     const cars = await prisma.car.findMany({
       where: {
-        companyId: req.user!.companyId,
+        companyId,
         OR: [
           // Qualifications due this year or overdue
           {
@@ -874,26 +968,18 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
           notIn: ['retired', 'scrapped'],
         },
       },
-      include: {
-        assignedShop: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-          },
-        },
-      },
       orderBy: [
         { tankQualDueDate: 'asc' },
         { contractExpiration: 'asc' },
       ],
     });
 
-    // Build demand register items
+    // Build demand register items with SST planning state
     const items: {
       carId: string;
       railcarNumber: string;
       workType: string;
+      teamBucket: string;
       dueDate: string | null;
       daysUntilDue: number;
       isOverdue: boolean;
@@ -904,11 +990,45 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
       assignedShopId: string | null;
       assignedShopName: string | null;
       scheduledMonth: string | null;
+      sstStatus: string | null;
     }[] = [];
 
     const addedCarIds = new Set<string>();
 
+    // Helper to determine planning state from SST
+    const getPlanningState = (carId: string) => {
+      const assignment = assignmentByCarId.get(carId);
+      if (!assignment) return 'needs_planning';
+      if (['COMMITTED', 'IN_PROGRESS'].includes(assignment.status)) return 'confirmed';
+      return 'not_confirmed'; // DRAFT or PENDING_REVIEW
+    };
+
+    // Helper to get shop info from SST
+    const getShopInfo = (carId: string) => {
+      const assignment = assignmentByCarId.get(carId);
+      if (!assignment) return { shopId: null, shopName: null, scheduledMonth: null, sstStatus: null };
+      return {
+        shopId: assignment.shopId,
+        shopName: assignment.shop?.name || null,
+        scheduledMonth: `${assignment.plannedYear}-${String(assignment.plannedMonth).padStart(2, '0')}`,
+        sstStatus: assignment.status,
+      };
+    };
+
+    // Helper to determine team bucket from reasonsShopped
+    const getTeamBucket = (reasonsShopped: string | null) => {
+      const reasons = (reasonsShopped || '').toUpperCase();
+      if (reasons.includes('TANK')) return 'Qualification';
+      if (reasons.includes('RELE')) return 'Assignment';
+      if (reasons.includes('BAD')) return 'In-Service Repairs';
+      return 'Other';
+    };
+
     cars.forEach((car: any) => {
+      const planningState = getPlanningState(car.id);
+      const shopInfo = getShopInfo(car.id);
+      const teamBucket = getTeamBucket(car.reasonsShopped);
+
       // Process qualifications
       if (car.tankQualDueDate) {
         const qualDueDate = new Date(car.tankQualDueDate);
@@ -922,16 +1042,18 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
             carId: car.id,
             railcarNumber: car.railcarNumber,
             workType: 'full_qualification',
+            teamBucket,
             dueDate: car.tankQualDueDate?.toISOString() || null,
             daysUntilDue: daysUntil,
             isOverdue,
             customer: car.customer || '',
             commodity: car.commodity || '',
             isTankCar: car.isTankCar || false,
-            planningState: car.status || 'not_planned',
-            assignedShopId: car.assignedShopId,
-            assignedShopName: car.assignedShop?.name || null,
-            scheduledMonth: car.projectedCompletionMonth || null,
+            planningState,
+            assignedShopId: shopInfo.shopId,
+            assignedShopName: shopInfo.shopName,
+            scheduledMonth: shopInfo.scheduledMonth,
+            sstStatus: shopInfo.sstStatus,
           });
           addedCarIds.add(car.id);
         }
@@ -949,16 +1071,18 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
             carId: car.id,
             railcarNumber: car.railcarNumber,
             workType: 'release',
+            teamBucket,
             dueDate: car.contractExpiration?.toISOString() || null,
             daysUntilDue: daysUntil,
             isOverdue,
             customer: car.customer || '',
             commodity: car.commodity || '',
             isTankCar: car.isTankCar || false,
-            planningState: car.status || 'not_planned',
-            assignedShopId: car.assignedShopId,
-            assignedShopName: car.assignedShop?.name || null,
-            scheduledMonth: car.projectedCompletionMonth || null,
+            planningState,
+            assignedShopId: shopInfo.shopId,
+            assignedShopName: shopInfo.shopName,
+            scheduledMonth: shopInfo.scheduledMonth,
+            sstStatus: shopInfo.sstStatus,
           });
           addedCarIds.add(car.id);
         }
@@ -973,16 +1097,18 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
           carId: car.id,
           railcarNumber: car.railcarNumber,
           workType: 'assignment',
+          teamBucket,
           dueDate: car.nextServiceDue?.toISOString() || null,
           daysUntilDue: daysUntil,
           isOverdue: daysUntil < 0,
           customer: car.customer || '',
           commodity: car.commodity || '',
           isTankCar: car.isTankCar || false,
-          planningState: car.status || 'not_planned',
-          assignedShopId: car.assignedShopId,
-          assignedShopName: car.assignedShop?.name || null,
-          scheduledMonth: car.projectedCompletionMonth || null,
+          planningState,
+          assignedShopId: shopInfo.shopId,
+          assignedShopName: shopInfo.shopName,
+          scheduledMonth: shopInfo.scheduledMonth,
+          sstStatus: shopInfo.sstStatus,
         });
       }
     });
@@ -994,17 +1120,17 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
       return a.daysUntilDue - b.daysUntilDue;
     });
 
-    // Calculate summaries
+    // Calculate summaries using SST planning state
     const summaries: Record<string, {
       total: number;
       overdue: number;
-      notPlanned: number;
-      planned: number;
-      scheduled: number;
+      needsPlanning: number;
+      notConfirmed: number;
+      confirmed: number;
     }> = {
-      qualification: { total: 0, overdue: 0, notPlanned: 0, planned: 0, scheduled: 0 },
-      assignment: { total: 0, overdue: 0, notPlanned: 0, planned: 0, scheduled: 0 },
-      return: { total: 0, overdue: 0, notPlanned: 0, planned: 0, scheduled: 0 },
+      full_qualification: { total: 0, overdue: 0, needsPlanning: 0, notConfirmed: 0, confirmed: 0 },
+      assignment: { total: 0, overdue: 0, needsPlanning: 0, notConfirmed: 0, confirmed: 0 },
+      release: { total: 0, overdue: 0, needsPlanning: 0, notConfirmed: 0, confirmed: 0 },
     };
 
     items.forEach((item) => {
@@ -1012,9 +1138,9 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
       if (summary) {
         summary.total++;
         if (item.isOverdue) summary.overdue++;
-        if (!item.assignedShopId) summary.notPlanned++;
-        else if (item.planningState === 'scheduled') summary.scheduled++;
-        else summary.planned++;
+        if (item.planningState === 'needs_planning') summary.needsPlanning++;
+        else if (item.planningState === 'not_confirmed') summary.notConfirmed++;
+        else if (item.planningState === 'confirmed') summary.confirmed++;
       }
     });
 
@@ -1023,10 +1149,18 @@ router.get('/demand-registry', async (req: AuthRequest, res: Response) => {
       summaries: Object.entries(summaries)
         .filter(([, s]) => s.total > 0)
         .map(([workType, stats]) => ({ workType, ...stats })),
-      totalNotPlanned: items.filter((i) => !i.assignedShopId).length,
-      totalPlanned: items.filter((i) => i.assignedShopId && i.planningState !== 'scheduled').length,
-      totalScheduled: items.filter((i) => i.planningState === 'scheduled').length,
+      // SST-based totals
+      totalNeedsPlanning: items.filter((i) => i.planningState === 'needs_planning').length,
+      totalNotConfirmed: items.filter((i) => i.planningState === 'not_confirmed').length,
+      totalConfirmed: items.filter((i) => i.planningState === 'confirmed').length,
       totalOverdue: items.filter((i) => i.isOverdue).length,
+      // Team bucket totals
+      byTeamBucket: {
+        Qualification: items.filter((i) => i.teamBucket === 'Qualification').length,
+        Assignment: items.filter((i) => i.teamBucket === 'Assignment').length,
+        'In-Service Repairs': items.filter((i) => i.teamBucket === 'In-Service Repairs').length,
+        Other: items.filter((i) => i.teamBucket === 'Other').length,
+      },
       filterYear,
     });
   } catch (error: any) {

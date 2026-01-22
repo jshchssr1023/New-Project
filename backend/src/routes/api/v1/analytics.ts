@@ -101,14 +101,31 @@ router.get('/kpis', requireApiPermission('read:analytics'), async (req: ApiAuthR
       ? recentPerformance.reduce((sum, p) => sum + p.reworkRate, 0) / recentPerformance.length
       : 0;
 
-    // Calculate utilization
-    const shops = await prisma.shop.findMany({
-      where: { companyId, isActive: true },
-      select: { capacity: true, currentLoad: true },
-    });
+    // SST: Calculate utilization from CarFlowPlan counts
+    const currentDate = new Date();
+    const currentMonthNum = currentDate.getMonth() + 1;
+    const currentYearNum = currentDate.getFullYear();
 
+    const [shops, planCounts] = await Promise.all([
+      prisma.shop.findMany({
+        where: { companyId, isActive: true },
+        select: { id: true, capacity: true },
+      }),
+      prisma.carFlowPlan.groupBy({
+        by: ['shopId'],
+        where: {
+          companyId,
+          plannedMonth: currentMonthNum,
+          plannedYear: currentYearNum,
+          status: { in: ['Planned', 'InProgress'] },
+        },
+        _count: { id: true },
+      }),
+    ]);
+
+    const planCountMap = new Map(planCounts.map(p => [p.shopId, p._count.id]));
     const totalCapacity = shops.reduce((sum, s) => sum + s.capacity, 0);
-    const totalLoad = shops.reduce((sum, s) => sum + s.currentLoad, 0);
+    const totalLoad = shops.reduce((sum, s) => sum + (planCountMap.get(s.id) || 0), 0);
     const utilization = totalCapacity > 0 ? (totalLoad / totalCapacity) * 100 : 0;
 
     res.json({
@@ -155,7 +172,7 @@ router.get('/kpis', requireApiPermission('read:analytics'), async (req: ApiAuthR
 
 /**
  * GET /api/v1/analytics/capacity
- * Get capacity utilization by shop
+ * SST: Get capacity utilization by shop using SOPCommitment and CarFlowPlan
  */
 router.get('/capacity', requireApiPermission('read:analytics'), async (req: ApiAuthRequest, res: Response) => {
   const companyId = req.companyId!;
@@ -172,36 +189,76 @@ router.get('/capacity', requireApiPermission('read:analytics'), async (req: ApiA
         code: true,
         region: true,
         capacity: true,
-        currentLoad: true,
       },
       orderBy: { name: 'asc' },
     });
 
-    // Get commitments for next N months
-    const startMonth = new Date().toISOString().slice(0, 7);
-    const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + monthCount);
-    const endMonth = endDate.toISOString().slice(0, 7);
+    // Calculate date range for next N months
+    const currentDate = new Date();
+    const startYear = currentDate.getFullYear();
+    const startMonth = currentDate.getMonth() + 1;
 
-    const commitments = await prisma.masterPlanCommitment.groupBy({
-      by: ['shopId', 'scheduledMonth'],
+    // SST: Get SOPCommitment data for capacity allocations
+    const sopCommitments = await prisma.sOPCommitment.findMany({
       where: {
-        masterPlan: { companyId, status: { in: ['active', 'approved'] } },
-        scheduledMonth: { gte: startMonth, lte: endMonth },
+        companyId,
+        OR: Array.from({ length: monthCount }, (_, i) => {
+          const date = new Date(currentDate);
+          date.setMonth(date.getMonth() + i);
+          return { year: date.getFullYear(), month: date.getMonth() + 1 };
+        }),
       },
-      _count: true,
+      select: { shopId: true, year: true, month: true, allocatedCars: true, usedCars: true },
+    });
+
+    // SST: Get CarFlowPlan counts as backup for actual usage
+    const carFlowPlanCounts = await prisma.carFlowPlan.groupBy({
+      by: ['shopId', 'plannedYear', 'plannedMonth'],
+      where: {
+        companyId,
+        status: { in: ['Planned', 'InProgress', 'Confirmed'] },
+        OR: Array.from({ length: monthCount }, (_, i) => {
+          const date = new Date(currentDate);
+          date.setMonth(date.getMonth() + i);
+          return { plannedYear: date.getFullYear(), plannedMonth: date.getMonth() + 1 };
+        }),
+      },
+      _count: { id: true },
     });
 
     // Build capacity data
     const shopCapacity = shops.map((shop) => {
-      const shopCommitments = commitments.filter((c) => c.shopId === shop.id);
-      const monthlyData: Record<string, number> = {};
-      shopCommitments.forEach((c) => {
-        monthlyData[c.scheduledMonth] = c._count;
-      });
+      const monthlyData: Record<string, { allocated: number; used: number }> = {};
+      let totalAllocated = 0;
+      let totalUsed = 0;
 
-      const totalCommitted = Object.values(monthlyData).reduce((sum, v) => sum + v, 0);
-      const avgMonthly = monthCount > 0 ? totalCommitted / monthCount : 0;
+      // Process each month in range
+      for (let i = 0; i < monthCount; i++) {
+        const date = new Date(currentDate);
+        date.setMonth(date.getMonth() + i);
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+
+        // Get SOPCommitment data if available
+        const sopData = sopCommitments.find(
+          (c) => c.shopId === shop.id && c.year === year && c.month === month
+        );
+
+        // Get CarFlowPlan count for actual usage
+        const planCount = carFlowPlanCounts.find(
+          (c) => c.shopId === shop.id && c.plannedYear === year && c.plannedMonth === month
+        );
+
+        const allocated = sopData?.allocatedCars || 0;
+        const used = planCount?._count?.id || sopData?.usedCars || 0;
+
+        monthlyData[monthKey] = { allocated, used };
+        totalAllocated += allocated;
+        totalUsed += used;
+      }
+
+      const avgMonthlyUsed = monthCount > 0 ? totalUsed / monthCount : 0;
 
       return {
         shop: {
@@ -215,21 +272,29 @@ router.get('/capacity', requireApiPermission('read:analytics'), async (req: ApiA
           total: shop.capacity * monthCount,
         },
         committed: {
-          total: totalCommitted,
-          avgMonthly: Math.round(avgMonthly * 10) / 10,
+          total: totalUsed,
+          avgMonthly: Math.round(avgMonthlyUsed * 10) / 10,
+          allocated: totalAllocated,
         },
         utilization: shop.capacity > 0
-          ? Math.round((avgMonthly / shop.capacity) * 1000) / 10
+          ? Math.round((avgMonthlyUsed / shop.capacity) * 1000) / 10
           : 0,
-        byMonth: monthlyData,
+        byMonth: Object.fromEntries(
+          Object.entries(monthlyData).map(([k, v]) => [k, v.used])
+        ),
       };
     });
+
+    const startMonthStr = `${startYear}-${String(startMonth).padStart(2, '0')}`;
+    const endDate = new Date(currentDate);
+    endDate.setMonth(endDate.getMonth() + monthCount - 1);
+    const endMonthStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`;
 
     res.json({
       data: {
         period: {
-          start: startMonth,
-          end: endMonth,
+          start: startMonthStr,
+          end: endMonthStr,
           months: monthCount,
         },
         summary: {

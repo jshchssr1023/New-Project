@@ -3,6 +3,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import logger from '../utils/logger';
 
 const dbPath = path.join(__dirname, '../../prisma/dev.db');
 const db = new Database(dbPath);
@@ -23,6 +24,10 @@ const ALLOWED_TABLES = new Set([
   'ShopHistory', 'MasterPlanVersion', 'IntegrationLog', 'ImportSession',
   'AllocationOverride', 'RateLimitEntry', 'Webhook', 'WebhookDelivery', 'ApiKey',
   'InvalidatedToken', 'CarFlowPlan', 'SOPCommitment', 'WebhookConfig', 'ShopNetwork',
+  // Service Plan Builder tables
+  'ServicePlan', 'ServicePlanCar', 'PlanOption', 'PlanOptionAssignment', 'CapacityReservation',
+  // SST (Single Source of Truth) table
+  'UnifiedAssignment',
 ]);
 
 // Column name validation regex - only allows alphanumeric and underscores
@@ -32,6 +37,8 @@ const VALID_COLUMN_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const TABLES_WITHOUT_UPDATED_AT = new Set([
   'AuditLog',
   'InvalidatedToken',
+  'CapacityReservation',
+  'ServicePlanCar',
 ]);
 
 // Tables that have no timestamp columns at all
@@ -204,17 +211,27 @@ function buildOrderByClause(orderBy: OrderByClause | OrderByClause[] | undefined
   if (!orderBy) return '';
 
   const orders = Array.isArray(orderBy) ? orderBy : [orderBy];
-  const parts = orders.map(o => {
+  const parts: string[] = [];
+
+  for (const o of orders) {
     const [key, dir] = Object.entries(o)[0];
+
+    // Skip nested relation orderBy (e.g., { shop: { name: 'asc' } })
+    // SQLite doesn't support ordering by related table columns without a JOIN
+    if (typeof dir === 'object' && dir !== null) {
+      logger.warn(`[DB] Skipping nested orderBy for relation "${key}" - not supported in SQLite`);
+      continue;
+    }
+
     // SECURITY: Validate column name before using in query
     validateColumnName(key);
     // Validate direction is only 'asc' or 'desc'
-    const direction = dir.toUpperCase();
+    const direction = (dir as string).toUpperCase();
     if (direction !== 'ASC' && direction !== 'DESC') {
       throw new Error(`SECURITY: Invalid ORDER BY direction "${dir}"`);
     }
-    return `"${key}" ${direction}`;
-  });
+    parts.push(`"${key}" ${direction}`);
+  }
 
   return parts.length > 0 ? `ORDER BY ${parts.join(', ')}` : '';
 }
@@ -313,6 +330,48 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
     plans: { table: 'Plan', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
     scenarios: { table: 'Scenario', foreignKey: 'createdBy', localKey: 'id', type: 'hasMany' },
+  },
+  // Service Plan Builder relationships
+  ServicePlan: {
+    company: { table: 'Company', foreignKey: 'id', localKey: 'companyId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
+    creator: { table: 'User', foreignKey: 'id', localKey: 'createdById', type: 'belongsTo' },
+    cars: { table: 'ServicePlanCar', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+    options: { table: 'PlanOption', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+    auditEvents: { table: 'ServicePlanAuditEvent', foreignKey: 'servicePlanId', localKey: 'id', type: 'hasMany' },
+  },
+  ServicePlanCar: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    assignedShop: { table: 'Shop', foreignKey: 'id', localKey: 'assignedShopId', type: 'belongsTo' },
+    optionAssignments: { table: 'PlanOptionAssignment', foreignKey: 'servicePlanCarId', localKey: 'id', type: 'hasMany' },
+  },
+  PlanOption: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+    assignments: { table: 'PlanOptionAssignment', foreignKey: 'planOptionId', localKey: 'id', type: 'hasMany' },
+    capacityReservations: { table: 'CapacityReservation', foreignKey: 'planOptionId', localKey: 'id', type: 'hasMany' },
+  },
+  PlanOptionAssignment: {
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
+    servicePlanCar: { table: 'ServicePlanCar', foreignKey: 'id', localKey: 'servicePlanCarId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  CapacityReservation: {
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  CapacityReservation: {
+    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+  },
+  ServicePlanAuditEvent: {
+    servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
+  },
+  // SST (Single Source of Truth) - UnifiedAssignment relationships
+  UnifiedAssignment: {
+    car: { table: 'Car', foreignKey: 'id', localKey: 'carId', type: 'belongsTo' },
+    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
+    customer: { table: 'Customer', foreignKey: 'id', localKey: 'customerId', type: 'belongsTo' },
   },
 };
 
@@ -510,7 +569,7 @@ function createTableHandler(tableName: string) {
       try {
         db.prepare(query).run(...values);
       } catch (error: any) {
-        console.error(`[DB] Create error in ${tableName}:`, error.message);
+        logger.error(`[DB] Create error in ${tableName}:`, error.message);
         throw error;
       }
 
@@ -566,7 +625,7 @@ function createTableHandler(tableName: string) {
       try {
         db.prepare(query).run(...setValues, ...whereParams);
       } catch (error: any) {
-        console.error(`[DB] Update error in ${tableName}:`, error.message);
+        logger.error(`[DB] Update error in ${tableName}:`, error.message);
         throw error;
       }
 
@@ -626,17 +685,37 @@ function createTableHandler(tableName: string) {
       const now = new Date().toISOString();
       let count = 0;
 
+      // Tables with custom timestamp columns (instead of createdAt/updatedAt)
+      const CUSTOM_TIMESTAMP_TABLES: Record<string, { created?: string; skipUpdated?: boolean }> = {
+        'ServicePlanCar': { created: 'addedAt', skipUpdated: true },
+        'CapacityReservation': { created: 'reservedAt', skipUpdated: true },
+      };
+
       for (const item of options.data) {
         // Generate UUID if no id provided
         if (!item.id) {
           item.id = uuidv4();
         }
-        // Add timestamps
-        if (!item.createdAt) {
-          item.createdAt = now;
-        }
-        if (!item.updatedAt) {
-          item.updatedAt = now;
+        // Add timestamps - use correct column names based on table
+        const customTimestamps = CUSTOM_TIMESTAMP_TABLES[tableName];
+        if (customTimestamps) {
+          // Use custom timestamp column
+          const createdCol = customTimestamps.created || 'createdAt';
+          if (!item[createdCol]) {
+            item[createdCol] = now;
+          }
+          // Only add updatedAt if not skipped
+          if (!customTimestamps.skipUpdated && !item.updatedAt) {
+            item.updatedAt = now;
+          }
+        } else {
+          // Default behavior
+          if (!item.createdAt) {
+            item.createdAt = now;
+          }
+          if (!item.updatedAt) {
+            item.updatedAt = now;
+          }
         }
 
         const keys = Object.keys(item);
@@ -658,7 +737,7 @@ function createTableHandler(tableName: string) {
           db.prepare(query).run(...values);
           count++;
         } catch (error: any) {
-          console.error(`[DB] CreateMany error in ${tableName}:`, error.message);
+          logger.error(`[DB] CreateMany error in ${tableName}:`, error.message);
           // Continue with other records
         }
       }
@@ -689,11 +768,26 @@ function createTableHandler(tableName: string) {
     },
 
     upsert: async (options: { where: WhereClause; create: any; update: any }) => {
-      const existing = await createTableHandler(tableName).findUnique({ where: options.where });
-      if (existing) {
-        return await createTableHandler(tableName).update({ where: options.where, data: options.update });
-      } else {
-        return await createTableHandler(tableName).create({ data: options.create });
+      // SECURITY FIX: Wrap upsert in transaction to prevent race conditions
+      // Without transaction, another request could insert between findUnique and create
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        const existing = await createTableHandler(tableName).findUnique({ where: options.where });
+        let result;
+        if (existing) {
+          result = await createTableHandler(tableName).update({ where: options.where, data: options.update });
+        } else {
+          result = await createTableHandler(tableName).create({ data: options.create });
+        }
+        db.exec('COMMIT');
+        return result;
+      } catch (error: any) {
+        db.exec('ROLLBACK');
+        // Handle unique constraint violation - retry as update
+        if (error.message?.includes('UNIQUE constraint failed')) {
+          return await createTableHandler(tableName).update({ where: options.where, data: options.update });
+        }
+        throw error;
       }
     },
 
@@ -812,6 +906,123 @@ function createTableHandler(tableName: string) {
 
         return result;
       });
+    },
+
+    aggregate: async (options: { where?: WhereClause; _count?: { [key: string]: boolean } | true; _sum?: { [key: string]: boolean }; _avg?: { [key: string]: boolean }; _min?: { [key: string]: boolean }; _max?: { [key: string]: boolean } }) => {
+      const { sql: whereClause, params } = buildWhereClause(options.where);
+
+      // Build SELECT clause with aggregations
+      const selectParts: string[] = [];
+
+      // Handle _count aggregation
+      if (options._count) {
+        if (options._count === true) {
+          selectParts.push(`COUNT(*) as "_count"`);
+        } else {
+          for (const [field, enabled] of Object.entries(options._count)) {
+            if (enabled) {
+              validateColumnName(field);
+              selectParts.push(`COUNT("${field}") as "_count_${field}"`);
+            }
+          }
+        }
+      }
+
+      // Handle _sum aggregation
+      if (options._sum) {
+        for (const [field, enabled] of Object.entries(options._sum)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`COALESCE(SUM("${field}"), 0) as "_sum_${field}"`);
+          }
+        }
+      }
+
+      // Handle _avg aggregation
+      if (options._avg) {
+        for (const [field, enabled] of Object.entries(options._avg)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`AVG("${field}") as "_avg_${field}"`);
+          }
+        }
+      }
+
+      // Handle _min aggregation
+      if (options._min) {
+        for (const [field, enabled] of Object.entries(options._min)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MIN("${field}") as "_min_${field}"`);
+          }
+        }
+      }
+
+      // Handle _max aggregation
+      if (options._max) {
+        for (const [field, enabled] of Object.entries(options._max)) {
+          if (enabled) {
+            validateColumnName(field);
+            selectParts.push(`MAX("${field}") as "_max_${field}"`);
+          }
+        }
+      }
+
+      if (selectParts.length === 0) {
+        selectParts.push('1');
+      }
+
+      const query = `SELECT ${selectParts.join(', ')} FROM "${tableName}" ${whereClause}`;
+      const row = db.prepare(query).get(...params) as any;
+
+      // Transform result to match Prisma's aggregate output format
+      const result: any = {};
+
+      // Add _count result
+      if (options._count) {
+        if (options._count === true) {
+          result._count = row['_count'] || 0;
+        } else {
+          result._count = {};
+          for (const field of Object.keys(options._count)) {
+            result._count[field] = row[`_count_${field}`] || 0;
+          }
+        }
+      }
+
+      // Add _sum result
+      if (options._sum) {
+        result._sum = {};
+        for (const field of Object.keys(options._sum)) {
+          result._sum[field] = row[`_sum_${field}`] || 0;
+        }
+      }
+
+      // Add _avg result
+      if (options._avg) {
+        result._avg = {};
+        for (const field of Object.keys(options._avg)) {
+          result._avg[field] = row[`_avg_${field}`] || null;
+        }
+      }
+
+      // Add _min result
+      if (options._min) {
+        result._min = {};
+        for (const field of Object.keys(options._min)) {
+          result._min[field] = row[`_min_${field}`] || null;
+        }
+      }
+
+      // Add _max result
+      if (options._max) {
+        result._max = {};
+        for (const field of Object.keys(options._max)) {
+          result._max[field] = row[`_max_${field}`] || null;
+        }
+      }
+
+      return result;
     }
   };
 }
@@ -879,17 +1090,27 @@ export const prisma = {
   carFlowPlan: createTableHandler('CarFlowPlan'),
   sOPCommitment: createTableHandler('SOPCommitment'),
 
+  // Service Plan Builder tables
+  servicePlan: createTableHandler('ServicePlan'),
+  servicePlanCar: createTableHandler('ServicePlanCar'),
+  planOption: createTableHandler('PlanOption'),
+  planOptionAssignment: createTableHandler('PlanOptionAssignment'),
+  capacityReservation: createTableHandler('CapacityReservation'),
+
   // Webhook configuration table
   webhookConfig: createTableHandler('WebhookConfig'),
 
   // Shop Network table
   shopNetwork: createTableHandler('ShopNetwork'),
 
+  // SST (Single Source of Truth) table - UnifiedAssignment
+  unifiedAssignment: createTableHandler('UnifiedAssignment'),
+
   // Raw query support - SECURITY: Use parameterized queries only
   // WARNING: These functions should be used sparingly and only with parameterized queries
   $queryRaw: async (query: string, ...params: any[]) => {
     // SECURITY: Log raw query usage for audit
-    console.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', query.substring(0, 100));
+    logger.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', query.substring(0, 100));
     if (query.includes('--') || query.includes(';') && params.length === 0) {
       throw new Error('SECURITY: Potential SQL injection detected in raw query');
     }
@@ -905,26 +1126,33 @@ export const prisma = {
         throw new Error('SECURITY: Dangerous SQL pattern blocked in raw query');
       }
     }
-    console.warn('[DB SECURITY] Unsafe raw query executed:', query.substring(0, 100));
+    logger.warn('[DB SECURITY] Unsafe raw query executed:', query.substring(0, 100));
     return db.prepare(query).all(...params);
   },
 
   // Transaction support - SQLite transaction with proper async handling
-  // Note: better-sqlite3 transactions are synchronous, but we wrap them
-  // to provide a consistent async interface with Prisma
+  // SECURITY FIX: Removed broken array-based transaction pattern
+  // Array of promises execute BEFORE the transaction, breaking atomicity
   $transaction: async <T>(
     fnOrOperations: ((tx: typeof prisma) => Promise<T>) | Promise<any>[]
   ): Promise<T | any[]> => {
     if (Array.isArray(fnOrOperations)) {
-      // Array of promises - resolve them first, then run in transaction
-      // Note: The promises have already started executing, so this is
-      // more of a "batch commit" pattern than a true transaction
-      const results = await Promise.all(fnOrOperations);
-      return results;
+      // SECURITY FIX: Array-based transactions are dangerous
+      // The promises have already started executing before this function is called
+      // This means errors in later promises won't roll back earlier ones
+      // Wrap in proper transaction to ensure atomicity
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        const results = await Promise.all(fnOrOperations);
+        db.exec('COMMIT');
+        return results;
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     } else {
-      // Function-based transaction - execute the async function
-      // The operations inside will each be atomic, but the whole
-      // sequence uses SQLite's implicit transaction handling
+      // Function-based transaction - proper async transaction pattern
+      // All operations inside the function are executed within the transaction
       try {
         db.exec('BEGIN IMMEDIATE');
         const result = await fnOrOperations(prisma);

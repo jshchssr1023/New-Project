@@ -21,15 +21,50 @@ export { authApi } from './auth';
 export { carsApi } from './cars';
 export { shopsApi, shopPerformanceApi } from './shops';
 export { plansApi } from './plans';
-export { scenariosApi } from './scenarios';
 export { analyticsApi } from './analytics';
 export { usersApi, permissionsApi, auditApi } from './users';
 export { reportsApi } from './reports';
-export { masterPlanApi, masterPlanWizardApi } from './masterPlans';
-export { sopApi, leaseQualificationApi, shopRulesApi } from './sop';
+export { sopApi, leaseQualificationApi } from './sop';
 
 // Proposal & Scheduling Queue API
 export { default as proposalsApi } from './proposals';
+
+// Service Plan Builder API
+export { servicePlansApi } from './servicePlans';
+
+// Car Flow Planning API (Single Source of Truth for planning data)
+export {
+  carFlowApi,
+  carFlowPlanApi,
+  capacityApi,
+  sopCommitmentApi,
+  shoppingStatusApi,
+  customersApi,
+} from '../carFlowApi';
+export type {
+  CarFlowPlan,
+  CreateCarFlowPlanRequest,
+  SOPCommitment,
+  CreateSOPCommitmentRequest,
+  CapacityResponse,
+  ShoppingStatusStats,
+  BulkPlanAssignment,
+  BulkPlanConflict,
+  BulkPlanResponse,
+} from '../carFlowApi';
+export type {
+  ServicePlan,
+  ServicePlanCar,
+  PlanOption,
+  PlanOptionAssignment,
+  CapacityReservation,
+  AvailableCapacity,
+  CapacityValidation,
+  OptionComparisonResult,
+  CreateServicePlanInput,
+  CreatePlanOptionInput,
+  AssignmentInput,
+} from './servicePlans';
 
 // Re-export all types
 export type {
@@ -64,11 +99,6 @@ export type {
   ImportSessionData,
   ShopHistoryEntry,
   MasterPlanAuditEntry,
-  ShopRuleCondition,
-  ShopRuleAction,
-  ShopRuleSchema,
-  ShopRule,
-  RuleTestResult,
   // Plan Proposal types
   ProposalStatus,
   PlanProposal,

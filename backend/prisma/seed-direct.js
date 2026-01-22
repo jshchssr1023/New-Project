@@ -7,6 +7,7 @@ const path = require('path');
 
 const DB_PATH = path.join(__dirname, 'dev.db');
 const CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
+const SHOP_CSV_PATH = path.join(__dirname, 'cleaned shop locations.csv');
 
 console.log('Opening database at:', DB_PATH);
 const db = new Database(DB_PATH);
@@ -93,6 +94,144 @@ function parseBoolean(value) {
   if (!value) return 0;
   const v = value.toLowerCase().trim();
   return (v === 'yes' || v === 'y' || v === 'true' || v === '1') ? 1 : 0;
+}
+
+// Helper to get region from state
+function getRegionFromState(state) {
+  const regionMap = {
+    // Northeast
+    ME: 'Northeast', NH: 'Northeast', VT: 'Northeast', MA: 'Northeast',
+    RI: 'Northeast', CT: 'Northeast', NY: 'Northeast', NJ: 'Northeast',
+    PA: 'Northeast', MD: 'Northeast', DE: 'Northeast', DC: 'Northeast',
+    // Southeast
+    VA: 'Southeast', WV: 'Southeast', NC: 'Southeast', SC: 'Southeast',
+    GA: 'Southeast', FL: 'Southeast', AL: 'Southeast', MS: 'Southeast',
+    TN: 'Southeast', KY: 'Southeast',
+    // Midwest
+    OH: 'Midwest', IN: 'Midwest', IL: 'Midwest', MI: 'Midwest',
+    WI: 'Midwest', MN: 'Midwest', IA: 'Midwest', MO: 'Midwest',
+    ND: 'Midwest', SD: 'Midwest', NE: 'Midwest', KS: 'Midwest',
+    // Southwest
+    TX: 'Southwest', OK: 'Southwest', AR: 'Southwest', LA: 'Southwest',
+    NM: 'Southwest', AZ: 'Southwest',
+    // West
+    CO: 'West', WY: 'West', MT: 'West', ID: 'West',
+    WA: 'West', OR: 'West', CA: 'West', NV: 'West', UT: 'West',
+    // Canada
+    ON: 'Canada', QC: 'Canada', BC: 'Canada', AB: 'Canada',
+    SK: 'Canada', MB: 'Canada', NB: 'Canada', NS: 'Canada',
+  };
+  return regionMap[(state || '').toUpperCase()] || 'Other';
+}
+
+// Parse shop CSV (handles the quirky quoting format)
+function parseShopCSV(filePath) {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split(/\r?\n/);
+
+  // Strip outer quotes and BOM from each line
+  const cleanedLines = lines.map(line => {
+    line = line.trim();
+    // Remove BOM
+    if (line.charCodeAt(0) === 0xFEFF) {
+      line = line.substring(1);
+    }
+    // Remove outer quotes
+    if (line.startsWith('"') && line.endsWith('"')) {
+      line = line.slice(1, -1);
+    } else if (line.startsWith('"')) {
+      line = line.slice(1);
+    }
+    return line;
+  }).filter(line => line.trim());
+
+  if (cleanedLines.length === 0) return [];
+
+  // Parse header using the CSV line parser
+  const headers = [];
+  let current = '';
+  let inQuotes = false;
+  const headerLine = cleanedLines[0];
+
+  for (let i = 0; i < headerLine.length; i++) {
+    const char = headerLine[i];
+    const nextChar = headerLine[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      headers.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  headers.push(current.trim());
+
+  // Parse data rows
+  const records = [];
+  for (let i = 1; i < cleanedLines.length; i++) {
+    const values = [];
+    current = '';
+    inQuotes = false;
+    const line = cleanedLines[i];
+
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      const nextChar = line[j + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          j++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+
+    const record = {};
+    headers.forEach((header, idx) => {
+      record[header] = values[idx] || '';
+    });
+    records.push(record);
+  }
+
+  return records;
+}
+
+// Generate a shop code from name and external ID
+function generateShopCode(name, city, externalId) {
+  let code = (name || 'SHOP')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, '')
+    .trim();
+
+  const words = code.split(/\s+/).filter(w =>
+    !['INC', 'LLC', 'CORP', 'THE', 'AND', 'OF', 'CO'].includes(w) && w.length > 0
+  );
+
+  let baseCode = words.slice(0, 3).join('-') || 'SHOP';
+
+  if (city && city !== 'nan' && city.length > 0) {
+    const cleanCity = city.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10);
+    if (cleanCity) {
+      baseCode = `${baseCode}-${cleanCity}`;
+    }
+  }
+
+  return `${baseCode}-${externalId}`;
 }
 
 // Shop data
@@ -204,30 +343,145 @@ async function main() {
     console.log('Created users: admin, planner, viewer');
   }
 
-  // Create shops
+  // Create shops from CSV
   const insertShop = db.prepare(`
-    INSERT INTO Shop (id, name, code, location, city, state, region, network, isAitxInternal, tankQualified, networkTier, shopStatus, capacity, baseCostPerCar, laborRate, costIndex, baseTurnTime, certifications, contactName, contactPhone, notes, isActive, companyId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO Shop (
+      id, externalId, name, displayName, code, shopType, location, address1, address2,
+      city, state, zip, region, network, servingRailroad, splc, scac,
+      latitude, longitude, isAitxInternal, tankQualified, networkTier, shopStatus,
+      capacity, baseCostPerCar, laborRate, costIndex, baseTurnTime, certifications,
+      contactName, contactEmail, contactPhone, contactFax, website, sapVendorId, notes,
+      certificationClass, certificationDate, certificationExp,
+      displayOnMap, displayOnPortal, environmentalReview, lastVerified,
+      isActive, companyId
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?
+    )
   `);
 
   const shopIds = [];
-  for (let i = 0; i < shopData.length; i++) {
-    const shop = shopData[i];
-    const shopId = uuidv4();
-    const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
-    const isAitx = shop.network === 'AITX-Own' ? 1 : 0;
-    const tankQualified = shop.certifications.includes('Qualification') ? 1 : 0;
-    const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(i / 5), 5);
-    const contactName = shop.contact.split(' (')[0];
-    const contactPhone = shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '';
+  const usedCodes = new Set();
 
-    insertShop.run(
-      shopId, shop.name, shop.code, `${shop.city}, ${shop.state}`, shop.city, shop.state, shop.region, shop.network,
-      isAitx, tankQualified, networkTier, 'active', monthlyCapacity, isAitx ? 20685 : 15000,
-      isAitx ? 95 : 75, isAitx ? 1.379 : 1.0, shop.turnTime, JSON.stringify(shop.certifications.split(', ')),
-      contactName, contactPhone, shop.notes, 1, companyId
+  // Try to load shops from CSV
+  if (fs.existsSync(SHOP_CSV_PATH)) {
+    console.log(`Loading shops from CSV: ${SHOP_CSV_PATH}`);
+    const shopRecords = parseShopCSV(SHOP_CSV_PATH);
+    console.log(`   Found ${shopRecords.length} records in shop CSV`);
+
+    // Filter to well-formed active shops (IsAITXShop must be Yes or No)
+    const validShops = shopRecords.filter(r =>
+      ['Yes', 'No'].includes(r.IsAITXShop) &&
+      r.ShopStatus === 'Active' &&
+      r.Action?.toLowerCase() !== 'delete'
     );
-    shopIds.push({ id: shopId, ...shop, tankQualified: tankQualified === 1 });
+    console.log(`   Filtered to ${validShops.length} active shops`);
+
+    for (const record of validShops) {
+      const shopId = uuidv4();
+      const externalId = parseInt(record.Id) || 0;
+
+      // Generate unique code
+      let code = generateShopCode(record.ShopName, record.City, externalId);
+      let codeAttempt = 0;
+      while (usedCodes.has(code)) {
+        codeAttempt++;
+        code = `${code}-${codeAttempt}`;
+      }
+      usedCodes.add(code);
+
+      const isAitx = record.IsAITXShop === 'Yes' ? 1 : 0;
+      const city = record.City === 'nan' ? '' : (record.City || '');
+      const state = record.State === 'nan' ? '' : (record.State || '');
+      const zip = record.Zip === 'nan' ? '' : (record.Zip || '');
+      const lat = parseFloat(record.Latitude) || null;
+      const lng = parseFloat(record.Longitude) || null;
+      const laborRateVal = parseFloat(record.LaborRate) || (isAitx ? 95 : 75);
+      const certDate = parseDate(record.CertificationDate);
+      const certExp = parseDate(record.CertificateExpiration);
+      const lastVerified = parseDate(record['Last Verified']);
+
+      try {
+        insertShop.run(
+          shopId,
+          externalId,
+          record.ShopName || 'Unknown',
+          record.ShopNameDisplay || record.ShopName || 'Unknown',
+          code,
+          record.ShopType || 'Repair',
+          `${city}, ${state}`.replace(/^,\s*/, '').trim(),
+          record.Address1 || '',
+          record.Address2 || '',
+          city,
+          state,
+          zip,
+          getRegionFromState(state),
+          isAitx ? 'AITX-Own' : '3rd Party',
+          record.DeliveryLines || '',
+          record.SPLC || '',
+          record.SCAC || '',
+          lat,
+          lng,
+          isAitx,
+          1, // tankQualified - assume true for repair shops
+          isAitx ? 1 : 3, // networkTier
+          'active',
+          20, // default capacity
+          isAitx ? 20685 : 15000,
+          laborRateVal,
+          isAitx ? 1.379 : 1.0,
+          14, // default turn time
+          '[]', // certifications JSON
+          '', // contactName
+          record.Email || '',
+          record.Phone || '',
+          record.Fax || '',
+          record.Website || '',
+          record.SAP || '',
+          record.Comment || '',
+          record.CertifcationClass || '',
+          certDate,
+          certExp,
+          parseBoolean(record.DisplayOnCustomerMap),
+          parseBoolean(record.DisplayOnWebPortal),
+          parseBoolean(record.EnvironmentalReview),
+          lastVerified,
+          1,
+          companyId
+        );
+        shopIds.push({ id: shopId, code, name: record.ShopName, isAitx: isAitx === 1, tankQualified: true });
+      } catch (err) {
+        console.error(`   Error inserting shop ${record.ShopName}: ${err.message}`);
+      }
+    }
+  } else {
+    // Fallback to hardcoded shops if CSV not found
+    console.log('Shop CSV not found, using hardcoded fallback shops');
+    for (let i = 0; i < shopData.length; i++) {
+      const shop = shopData[i];
+      const shopId = uuidv4();
+      const isAitx = shop.network === 'AITX-Own' ? 1 : 0;
+      const tankQual = shop.certifications.includes('Qualification') ? 1 : 0;
+      const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
+
+      insertShop.run(
+        shopId, null, shop.name, shop.name, shop.code, 'Repair',
+        `${shop.city}, ${shop.state}`, '', '', shop.city, shop.state, '',
+        shop.region, shop.network, '', '', '',
+        null, null, isAitx, tankQual, isAitx ? 1 : 3, 'active',
+        monthlyCapacity, isAitx ? 20685 : 15000, isAitx ? 95 : 75, isAitx ? 1.379 : 1.0,
+        shop.turnTime, JSON.stringify(shop.certifications.split(', ')),
+        shop.contact.split(' (')[0], '', shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
+        '', '', '', shop.notes, '', null, null, 0, 0, 0, null, 1, companyId
+      );
+      shopIds.push({ id: shopId, ...shop, tankQualified: tankQual === 1 });
+    }
   }
   console.log(`Created ${shopIds.length} shops`);
 

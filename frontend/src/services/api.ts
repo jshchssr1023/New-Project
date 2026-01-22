@@ -9,12 +9,11 @@
  * - api/cars.ts - Car management (CRUD, bulk operations, import/export)
  * - api/shops.ts - Shop management (CRUD, capacity, performance)
  * - api/plans.ts - Planning (CRUD, assignments, grid view, reports)
- * - api/scenarios.ts - Scenario management (CRUD, analysis, recommendations)
  * - api/analytics.ts - Dashboard and analytics
  * - api/users.ts - User management (admin CRUD, permissions, audit)
  * - api/reports.ts - Custom reports (templates, scheduled reports)
- * - api/masterPlans.ts - Master plans and wizard operations
- * - api/sop.ts - S&OP (allocations, lease qualification, shop rules)
+ * - api/sop.ts - S&OP (allocations, lease qualification)
+ * - api/servicePlans.ts - Service Plan Builder (customer proposals)
  * - api/types.ts - Shared API types
  */
 
@@ -36,17 +35,21 @@ export {
   shopsApi,
   shopPerformanceApi,
   plansApi,
-  scenariosApi,
   analyticsApi,
   usersApi,
   permissionsApi,
   auditApi,
   reportsApi,
-  masterPlanApi,
-  masterPlanWizardApi,
   sopApi,
   leaseQualificationApi,
-  shopRulesApi,
+  servicePlansApi,
+  // Car Flow Planning (SST for planning data)
+  carFlowApi,
+  carFlowPlanApi,
+  capacityApi,
+  sopCommitmentApi,
+  shoppingStatusApi,
+  customersApi,
 } from './api/index';
 
 // Re-export all types
@@ -82,9 +85,14 @@ export type {
   ImportSessionData,
   ShopHistoryEntry,
   MasterPlanAuditEntry,
-  ShopRuleCondition,
-  ShopRuleAction,
-  ShopRuleSchema,
-  ShopRule,
-  RuleTestResult,
+  // Car Flow Planning types
+  CarFlowPlan,
+  CreateCarFlowPlanRequest,
+  SOPCommitment,
+  CreateSOPCommitmentRequest,
+  CapacityResponse,
+  ShoppingStatusStats,
+  BulkPlanAssignment,
+  BulkPlanConflict,
+  BulkPlanResponse,
 } from './api/index';

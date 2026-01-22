@@ -9,7 +9,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { ProposalStatus, CarFlowPlanStatus } from '../types/prismaTypes';
+import { ProposalStatus } from '../types/prismaTypes';
 
 const prisma = new PrismaClient();
 
@@ -501,58 +501,60 @@ export async function scheduleProposal(input: ScheduleProposalInput) {
     throw new Error('No cars in the proposal to schedule');
   }
 
-  // Create CarFlowPlans for each car in the scenario
-  const carFlowPlans = await prisma.$transaction(async (tx) => {
-    const plans = [];
+  // SST: Create UnifiedAssignment records for each car in the scenario
+  // UnifiedAssignment is the single source of truth for all assignments
+  const unifiedAssignments = await prisma.$transaction(async (tx) => {
+    const assignments = [];
 
     for (const scenarioCar of scenarioCars) {
       if (!scenarioCar.shopId) {
         continue; // Skip cars without shop assignment
       }
 
-      // Check if car already has an active plan
-      const existingPlan = await tx.carFlowPlan.findFirst({
+      // Check if car already has an active assignment in UnifiedAssignment
+      const existingAssignment = await tx.unifiedAssignment.findFirst({
         where: {
           carId: scenarioCar.carId,
           status: {
-            in: ['Planned', 'InProgress'],
+            in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'],
           },
         },
       });
 
-      if (existingPlan) {
-        // Cancel the existing plan
-        await tx.carFlowPlan.update({
-          where: { id: existingPlan.id },
+      if (existingAssignment) {
+        // Mark the existing assignment as superseded
+        await tx.unifiedAssignment.update({
+          where: { id: existingAssignment.id },
           data: {
-            status: 'Cancelled',
-            cancelledAt: new Date(),
+            status: 'SUPERSEDED',
             notes: `Superseded by proposal ${proposal.proposalNumber}`,
           },
         });
       }
 
-      // Create new CarFlowPlan
-      const plan = await tx.carFlowPlan.create({
+      // SST: Create UnifiedAssignment (single source of truth)
+      const assignment = await tx.unifiedAssignment.create({
         data: {
           carId: scenarioCar.carId,
           shopId: scenarioCar.shopId,
           customerId: proposal.customerId,
           plannedMonth: scenarioCar.plannedMonth,
           plannedYear: scenarioCar.plannedYear,
-          status: CarFlowPlanStatus.Planned,
-          source: 'proposal',
-          sourceScenarioId: proposal.sourceScenarioId,
+          scheduledMonth: `${scenarioCar.plannedYear}-${String(scenarioCar.plannedMonth).padStart(2, '0')}`,
+          status: 'COMMITTED', // Customer approved proposals are committed
+          sourceType: 'proposal',
+          workType: 'full_qualification',
           shopReason: scenarioCar.shopReason || '',
           estimatedCost: scenarioCar.estimatedCost,
           priority: 3,
           committedById: scheduledById,
+          committedAt: new Date(),
           companyId: proposal.companyId,
           notes: `Created from proposal ${proposal.proposalNumber}`,
         },
       });
 
-      plans.push(plan);
+      assignments.push(assignment);
 
       // Update car's shopping status to Planned
       await tx.car.update({
@@ -582,7 +584,7 @@ export async function scheduleProposal(input: ScheduleProposalInput) {
       },
     });
 
-    return plans;
+    return assignments;
   });
 
   return {
@@ -599,7 +601,9 @@ export async function scheduleProposal(input: ScheduleProposalInput) {
         },
       },
     }),
-    carFlowPlansCreated: carFlowPlans.length,
+    assignmentsCreated: unifiedAssignments.length,
+    // Legacy field for backward compatibility
+    carFlowPlansCreated: unifiedAssignments.length,
   };
 }
 

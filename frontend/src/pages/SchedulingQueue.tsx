@@ -24,7 +24,31 @@ import proposalsApi, {
   getStatusLabel,
   getStatusColor,
 } from '../services/api/proposals';
+import { servicePlansApi } from '../services/api/servicePlans';
 import type { PlanProposal, ProposalStats } from '../services/api/types';
+
+// Type for service plan queue items
+interface ServicePlanQueueItem {
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  version: number;
+  customer: { id: string; name: string; code: string; contactEmail?: string } | null;
+  confirmedCarCount: number;
+  pendingCarCount: number;
+  totalCarCount: number;
+  shopCount: number;
+  totalEstimatedCost: number;
+  planningHorizonStart: string | null;
+  planningHorizonEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: { id: string; firstName: string; lastName: string } | null;
+  canFinalConfirm: boolean;
+  hasPendingCars: boolean;
+  source: 'service_plan';
+}
 
 // =============================================================================
 // Helper Functions
@@ -422,26 +446,34 @@ function ProposalDetailsModal({ proposal, onClose }: ProposalDetailsModalProps) 
 // =============================================================================
 
 export default function SchedulingQueue() {
-  const [queue, setQueue] = useState<PlanProposal[]>([]);
+  const [proposalQueue, setProposalQueue] = useState<PlanProposal[]>([]);
+  const [servicePlanQueue, setServicePlanQueue] = useState<ServicePlanQueueItem[]>([]);
   const [stats, setStats] = useState<ProposalStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [schedulingId, setSchedulingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<PlanProposal | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'proposals' | 'service_plans'>('all');
 
-  // Fetch data
+  // Combined queue for display
+  const queue = proposalQueue;
+
+  // Fetch data from both sources
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [queueData, statsData] = await Promise.all([
+      const [proposalQueueData, servicePlanQueueData, statsData] = await Promise.all([
         proposalsApi.getSchedulingQueue(),
+        servicePlansApi.getSchedulingQueue(),
         proposalsApi.getProposalStats(),
       ]);
 
-      setQueue(queueData);
+      setProposalQueue(proposalQueueData);
+      setServicePlanQueue(servicePlanQueueData);
       setStats(statsData);
     } catch (err) {
       console.error('Error fetching scheduling queue:', err);
@@ -455,7 +487,7 @@ export default function SchedulingQueue() {
     fetchData();
   }, [fetchData]);
 
-  // Handle scheduling
+  // Handle scheduling (for old proposals)
   const handleSchedule = async (proposalId: string) => {
     try {
       setSchedulingId(proposalId);
@@ -477,6 +509,31 @@ export default function SchedulingQueue() {
       setError('Failed to schedule proposal. Please try again.');
     } finally {
       setSchedulingId(null);
+    }
+  };
+
+  // Handle final confirmation (for new service plans)
+  const handleFinalConfirm = async (servicePlanId: string, planName: string) => {
+    try {
+      setConfirmingId(servicePlanId);
+      setError(null);
+
+      const result = await servicePlansApi.finalConfirm(servicePlanId);
+
+      setSuccessMessage(
+        `Successfully scheduled ${result.scheduledCars} cars from "${planName}" to Master Schedule`
+      );
+
+      // Refresh data
+      await fetchData();
+
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err: any) {
+      console.error('Error final confirming service plan:', err);
+      setError(err?.response?.data?.message || 'Failed to final confirm service plan. Please try again.');
+    } finally {
+      setConfirmingId(null);
     }
   };
 
@@ -533,13 +590,20 @@ export default function SchedulingQueue() {
 
       {/* Stats Cards */}
       {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <StatsCard
             title="Ready to Schedule"
-            value={stats.awaitingScheduling}
+            value={stats.awaitingScheduling + servicePlanQueue.length}
             icon={CalendarDaysIcon}
             color="bg-rail-600"
-            description="Approved proposals"
+            description="All queued items"
+          />
+          <StatsCard
+            title="Service Plans"
+            value={servicePlanQueue.length}
+            icon={DocumentTextIcon}
+            color="bg-indigo-500"
+            description="With confirmed cars"
           />
           <StatsCard
             title="Awaiting Response"
@@ -563,13 +627,35 @@ export default function SchedulingQueue() {
         </div>
       )}
 
+      {/* Tab Navigation for Queue Types */}
+      <div className="flex border-b border-steel-200">
+        <button
+          onClick={() => setActiveTab('all')}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === 'all' ? 'border-b-2 border-rail-600 text-rail-600' : 'text-steel-500 hover:text-steel-700'}`}
+        >
+          All ({proposalQueue.length + servicePlanQueue.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('service_plans')}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === 'service_plans' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-steel-500 hover:text-steel-700'}`}
+        >
+          Service Plans ({servicePlanQueue.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('proposals')}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === 'proposals' ? 'border-b-2 border-rail-600 text-rail-600' : 'text-steel-500 hover:text-steel-700'}`}
+        >
+          Proposals ({proposalQueue.length})
+        </button>
+      </div>
+
       {/* Queue List */}
-      {queue.length === 0 ? (
+      {proposalQueue.length === 0 && servicePlanQueue.length === 0 ? (
         <div className="bg-white rounded-lg border border-steel-200 p-12 text-center">
           <CalendarDaysIcon className="h-12 w-12 text-steel-300 mx-auto" />
-          <h3 className="mt-4 text-lg font-medium text-steel-900">No proposals to schedule</h3>
+          <h3 className="mt-4 text-lg font-medium text-steel-900">No items to schedule</h3>
           <p className="mt-2 text-sm text-steel-500">
-            When customers approve plan proposals, they will appear here for scheduling.
+            When customers approve plan proposals or service plans have confirmed cars, they will appear here for scheduling.
           </p>
           <div className="mt-6 flex items-center justify-center text-sm text-steel-500">
             <span className="flex items-center">
@@ -579,23 +665,127 @@ export default function SchedulingQueue() {
             <ChevronRightIcon className="h-4 w-4 mx-2" />
             <span className="flex items-center">
               <span className="w-2 h-2 rounded-full bg-blue-500 mr-2" />
-              Send to Customer
-            </span>
-            <ChevronRightIcon className="h-4 w-4 mx-2" />
-            <span className="flex items-center">
-              <span className="w-2 h-2 rounded-full bg-green-500 mr-2" />
-              Customer Approves
+              Confirm Cars
             </span>
             <ChevronRightIcon className="h-4 w-4 mx-2" />
             <span className="flex items-center font-medium text-rail-600">
               <span className="w-2 h-2 rounded-full bg-rail-500 mr-2" />
-              Schedule Here
+              Final Confirm Here
             </span>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {queue.map((proposal) => (
+          {/* Service Plan Cards */}
+          {(activeTab === 'all' || activeTab === 'service_plans') && servicePlanQueue.map((plan) => (
+            <div
+              key={plan.id}
+              className={`bg-white rounded-lg border ${plan.hasPendingCars ? 'border-amber-300 ring-1 ring-amber-200' : 'border-indigo-200'} p-5 hover:shadow-md transition-shadow`}
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-steel-900">{plan.name}</h3>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                      Service Plan
+                    </span>
+                    {plan.hasPendingCars && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                        <ExclamationTriangleIcon className="h-3 w-3 mr-1" />
+                        {plan.pendingCarCount} pending
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-steel-500 mt-1">
+                    v{plan.version} • {plan.status}
+                  </p>
+                </div>
+              </div>
+
+              {/* Customer Info */}
+              <div className="mt-4 flex items-center text-sm text-steel-600">
+                <BuildingOffice2Icon className="h-4 w-4 mr-2 text-steel-400" />
+                <span className="font-medium">{plan.customer?.name || 'Unknown Customer'}</span>
+                {plan.customer?.code && (
+                  <>
+                    <span className="mx-2">•</span>
+                    <span>{plan.customer.code}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="mt-4 grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="flex items-center justify-center">
+                    <TruckIcon className="h-4 w-4 text-steel-400 mr-1" />
+                    <span className="text-lg font-semibold text-steel-900">{plan.confirmedCarCount}</span>
+                  </div>
+                  <p className="text-xs text-steel-500">Confirmed Cars</p>
+                </div>
+                <div className="text-center">
+                  <div className="flex items-center justify-center">
+                    <BuildingOffice2Icon className="h-4 w-4 text-steel-400 mr-1" />
+                    <span className="text-lg font-semibold text-steel-900">{plan.shopCount}</span>
+                  </div>
+                  <p className="text-xs text-steel-500">Shops</p>
+                </div>
+                <div className="text-center">
+                  <span className="text-lg font-semibold text-steel-900">
+                    {formatCurrency(plan.totalEstimatedCost)}
+                  </span>
+                  <p className="text-xs text-steel-500">Est. Cost</p>
+                </div>
+              </div>
+
+              {/* Planning Horizon */}
+              {plan.planningHorizonStart && (
+                <div className="mt-4 flex items-center text-sm text-steel-600">
+                  <CalendarDaysIcon className="h-4 w-4 mr-2 text-steel-400" />
+                  <span>{formatPlanningHorizon(plan.planningHorizonStart, plan.planningHorizonEnd)}</span>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="mt-5 flex items-center gap-3">
+                <button
+                  onClick={() => handleFinalConfirm(plan.id, plan.name)}
+                  disabled={confirmingId === plan.id || !plan.canFinalConfirm}
+                  className="flex-1 inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {confirmingId === plan.id ? (
+                    <>
+                      <ArrowPathIcon className="h-4 w-4 mr-2 animate-spin" />
+                      Confirming...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircleIcon className="h-4 w-4 mr-2" />
+                      Final Confirm
+                    </>
+                  )}
+                </button>
+                <a
+                  href={`/service-plans/${plan.id}`}
+                  className="inline-flex items-center px-4 py-2 border border-steel-300 text-sm font-medium rounded-md text-steel-700 bg-white hover:bg-steel-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rail-500"
+                >
+                  <DocumentTextIcon className="h-4 w-4 mr-2" />
+                  View Plan
+                </a>
+              </div>
+
+              {/* Warning for pending cars */}
+              {plan.hasPendingCars && (
+                <p className="mt-3 text-xs text-amber-600">
+                  {plan.pendingCarCount} pending car{plan.pendingCarCount !== 1 ? 's' : ''} must be confirmed or removed before final confirmation.
+                </p>
+              )}
+            </div>
+          ))}
+
+          {/* Proposal Cards */}
+          {(activeTab === 'all' || activeTab === 'proposals') && proposalQueue.map((proposal) => (
             <ProposalCard
               key={proposal.id}
               proposal={proposal}

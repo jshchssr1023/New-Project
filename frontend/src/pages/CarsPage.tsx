@@ -12,7 +12,6 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { useCars } from '../hooks/useCars';
-import { useCarSelection } from '../contexts/CarSelectionContext';
 import { useToast } from '../contexts/ToastContext';
 import BulkActionsBar from '../components/cars/BulkActionsBar';
 import HierarchicalFilter from '../components/cars/HierarchicalFilter';
@@ -23,18 +22,17 @@ import ErrorMessage from '../components/ui/ErrorMessage';
 import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal, EmptyState } from '../components/ui';
 import { TruckIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../types';
-import { carsApi } from '../services/api';
+import { carsApi, servicePlansApi } from '../services/api';
+import type { ServicePlan } from '../services/api/servicePlans';
 import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS, CAR_STATUS_OPTIONS, PLANNING_STATUS_OPTIONS } from '../constants/carOptions';
 
 // Lazy load modals
 const ImportModal = lazy(() => import('../components/cars/ImportModal'));
 const CarFormModal = lazy(() => import('../components/cars/CarFormModal'));
-const PlanCarsModal = lazy(() => import('../components/carflow/PlanCarsModal'));
 
 export default function CarsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { selectMultiple } = useCarSelection();
   const { showToast } = useToast();
 
   // View mode: 'cards' or 'table'
@@ -56,7 +54,6 @@ export default function CarsPage() {
   // Modal states
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [isPlanCarsModalOpen, setIsPlanCarsModalOpen] = useState(false);
   const [editingCar, setEditingCar] = useState<Car | null>(null);
   const [viewingCar, setViewingCar] = useState<Car | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; carId: string | null; isBulk: boolean }>({
@@ -64,6 +61,10 @@ export default function CarsPage() {
     carId: null,
     isBulk: false,
   });
+
+  // Service plans for bulk action dropdown
+  const [servicePlans, setServicePlans] = useState<ServicePlan[]>([]);
+  const [isAddingToServicePlan, setIsAddingToServicePlan] = useState(false);
 
   // Use custom hook for car data management
   const {
@@ -116,6 +117,21 @@ export default function CarsPage() {
       });
     }
   }, [searchParams, updateFilters]);
+
+  // Load service plans for the bulk action dropdown
+  useEffect(() => {
+    const loadServicePlans = async () => {
+      try {
+        // Load only draft and proposed plans (active ones that can have cars added)
+        const plans = await servicePlansApi.getAll({ status: 'draft' });
+        const proposedPlans = await servicePlansApi.getAll({ status: 'proposed' });
+        setServicePlans([...plans, ...proposedPlans]);
+      } catch (err) {
+        console.error('Failed to load service plans:', err);
+      }
+    };
+    loadServicePlans();
+  }, []);
 
   // Filtered cars based on hierarchical filter
   const displayedCars = useMemo(() => {
@@ -174,14 +190,22 @@ export default function CarsPage() {
     setDeleteConfirm({ isOpen: false, carId: null, isBulk: false });
   };
 
-  // Navigation handlers
-  const handleUseInScenario = () => {
-    selectMultiple(selectedCars);
-    navigate('/scenarios');
-  };
-
-  const handleUseInCarFlow = () => {
-    setIsPlanCarsModalOpen(true);
+  // Add selected cars to an existing service plan
+  const handleAddToServicePlan = async (servicePlanId: string) => {
+    setIsAddingToServicePlan(true);
+    try {
+      const carIds = Array.from(selectedCarIds);
+      await servicePlansApi.addCars(servicePlanId, carIds);
+      showToast(`Added ${carIds.length} car(s) to service plan`, 'success');
+      clearSelection();
+      // Navigate to the service plan builder with this plan
+      navigate(`/service-plans/${servicePlanId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to add cars to service plan';
+      showToast(message, 'error');
+    } finally {
+      setIsAddingToServicePlan(false);
+    }
   };
 
   // Hierarchical filter handler
@@ -337,7 +361,7 @@ export default function CarsPage() {
                 label="Planning"
                 options={PLANNING_STATUS_OPTIONS.map(p => ({ value: p.value, label: p.label }))}
                 value={filters.planningStatus || ''}
-                onChange={(v) => updateFilters({ planningStatus: v as string })}
+                onChange={(v) => updateFilters({ planningStatus: (v || undefined) as 'needs_planning' | 'already_planned' | 'all' | undefined })}
                 placeholder="All"
                 size="sm"
               />
@@ -399,8 +423,13 @@ export default function CarsPage() {
                 onBulkStatusUpdate={(status) => bulkUpdate(Array.from(selectedCarIds), { status })}
                 onBulkDelete={handleBulkDeleteClick}
                 onClearSelection={clearSelection}
-                onUseInScenario={handleUseInScenario}
-                onUseInCarFlow={handleUseInCarFlow}
+                servicePlans={servicePlans.map(plan => ({
+                  id: plan.id,
+                  name: plan.name,
+                  customerName: plan.customer?.name,
+                }))}
+                onAddToServicePlan={handleAddToServicePlan}
+                isExporting={isAddingToServicePlan}
               />
             </div>
           )}
@@ -505,19 +534,6 @@ export default function CarsPage() {
           editingCar={editingCar}
           carTypeOptions={CAR_TYPE_OPTIONS}
           reasonOptions={REASON_OPTIONS}
-        />
-        <PlanCarsModal
-          isOpen={isPlanCarsModalOpen}
-          onClose={() => {
-            setIsPlanCarsModalOpen(false);
-            clearSelection();
-          }}
-          selectedCars={selectedCars}
-          onSuccess={(planCount) => {
-            clearSelection();
-            // Navigate to car flow plans page to see the saved plans
-            navigate('/car-flow?tab=plans');
-          }}
         />
       </Suspense>
 

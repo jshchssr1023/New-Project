@@ -17,7 +17,7 @@ import {
   LockClosedIcon,
   CursorArrowRaysIcon,
 } from '@heroicons/react/24/outline';
-import { plansApi, shopsApi, carsApi, scenariosApi } from '../services/api';
+import { plansApi, shopsApi, carsApi } from '../services/api';
 import { carFlowPlanApi, type BulkPlanAssignment } from '../services/carFlowApi';
 import type { Plan, Shop, PlanAssignment, Car, ReportGenerationConfig, ReportData, RecipientType } from '../types';
 import { getCellColorClasses, getBorderColorClass, getUtilizationLevel } from '../utils/utilizationColors';
@@ -380,14 +380,13 @@ export default function PlanningGrid() {
   }, [assignments, cars, shops, selectedYear]);
 
   // Fetch alternative shop suggestions when capacity is exceeded
-  const fetchAlternativeShops = async (carIds: string[], excludeShopId: string) => {
+  // TODO: Implement with new Service Plans API
+  const fetchAlternativeShops = async (_carIds: string[], _excludeShopId: string) => {
     setLoadingAlternatives(true);
     try {
-      const suggestions = await scenariosApi.getAlternativeShops(carIds, excludeShopId);
-      setAlternativeShops(suggestions as any);
-      setShowAlternatives(true);
-    } catch (error) {
-      console.error('Failed to fetch alternative shops:', error);
+      // Alternative shops feature not yet available in new architecture
+      setAlternativeShops([]);
+      setShowAlternatives(false);
     } finally {
       setLoadingAlternatives(false);
     }

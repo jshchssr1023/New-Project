@@ -7,15 +7,12 @@ import {
   TruckIcon,
   BuildingStorefrontIcon,
   BuildingOffice2Icon,
-  ArrowsRightLeftIcon,
-  BeakerIcon,
   ChartBarIcon,
   ChartPieIcon,
   UsersIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon,
-  AdjustmentsHorizontalIcon,
   ArrowUpTrayIcon,
   BellAlertIcon,
   KeyIcon,
@@ -34,11 +31,12 @@ import NotificationBell from './NotificationBell';
 
 // Core Workflow - Primary planning sequence
 const workflowNavigation = [
-  { name: 'Dashboard', href: '/', icon: HomeIcon },
+  { name: 'Home', href: '/', icon: HomeIcon },
+  { name: 'Dashboard', href: '/dashboard', icon: ChartBarIcon },
   { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
-  { name: 'Plan Editor', href: '/scenarios', icon: BeakerIcon, description: 'Create Plans' },
-  { name: 'Scheduling Status', href: '/scheduling-dashboard', icon: ClipboardDocumentListIcon, description: 'See What\'s Scheduled' },
-  { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentCheckIcon, description: 'Approved Plans' },
+  { name: 'Service Plans', href: '/service-plans-management', icon: ClipboardDocumentCheckIcon, description: 'View/Confirm Plans' },
+  { name: 'Plan Builder', href: '/service-plans', icon: DocumentTextIcon, description: 'Create Proposals' },
+  { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentListIcon, description: 'Approved Plans' },
 ];
 
 // Shops & Capacity - Shop management
@@ -50,15 +48,13 @@ const shopsNavigation = [
 // Planning Tools - Additional planning views
 const planningNavigation = [
   { name: 'Plan Overview', href: '/plan-overview', icon: ChartPieIcon, description: 'Visual Reports' },
-  { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
   { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
   { name: 'S&OP Review', href: '/sop-review', icon: DocumentTextIcon },
 ];
 
-// Reporting & Rules - Data review and configuration
+// Reporting - Data review and analytics
 const reportingNavigation = [
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
-  { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
 ];
 
 // System Administration - System and user management (admin only)
@@ -348,18 +344,11 @@ export default function Layout() {
               </div>
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => navigate('/scenarios')}
+                  onClick={() => navigate('/service-plans')}
                   className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
                 >
-                  <BeakerIcon className="h-4 w-4 mr-1" />
-                  Scenario Builder
-                </button>
-                <button
-                  onClick={() => navigate('/car-flow')}
-                  className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
-                >
-                  <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
-                  Car Flow
+                  <DocumentTextIcon className="h-4 w-4 mr-1" />
+                  Service Plans
                 </button>
                 <button
                   onClick={clearSelection}

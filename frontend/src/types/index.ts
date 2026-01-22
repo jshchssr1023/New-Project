@@ -24,6 +24,7 @@ export interface Car {
   isTankCar: boolean;
   commodity: string;
   customer: string;
+  customerId: string | null; // FK to Customer table (preferred for filtering)
   projectNumber: string;
   reasonsShopped: string;
   status: string; // Current Status: Arrived, Complete, To Be Routed, Release, etc.
@@ -104,6 +105,16 @@ export interface Car {
   // =============================================================================
   activePlan?: CarActivePlan | null; // Current active plan for this car
   hasActivePlan?: boolean; // Convenience flag: true if car has Planned/InProgress plan
+
+  // =============================================================================
+  // PENDING SERVICE PLAN (for cars in draft/proposed service plans)
+  // =============================================================================
+  pendingServicePlan?: {
+    id: string;
+    name: string;
+    status: string;
+  } | null;
+  hasPendingServicePlan?: boolean; // True if car is in a pending (draft/proposed) service plan
 
   // Legacy aliases for backwards compatibility
   scheduled: string | null; // Alias for performScheduled
@@ -269,6 +280,7 @@ export interface Shop {
   // Shop Network Reference (for 3rd party networks)
   networkId?: string | null;
   shopNetwork?: ShopNetwork;
+  networkName?: string | null; // Populated from shopNetwork.name or network field
   // Parent/Child Shop Hierarchy
   parentShopId: string | null;  // Reference to parent shop (for network/group hierarchy)
   parentShop?: Shop;            // Parent shop object (when populated)
@@ -300,6 +312,22 @@ export interface Shop {
   monthlyCapacity?: MonthlyCapacity[];
   createdAt: string;
   updatedAt: string;
+}
+
+// =============================================================================
+// CUSTOMER
+// =============================================================================
+
+export interface Customer {
+  id: string;
+  name: string;
+  code: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
+  notes?: string;
+  isActive?: boolean;
 }
 
 export interface ShopFilters {

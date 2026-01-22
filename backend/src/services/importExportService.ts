@@ -494,30 +494,33 @@ export async function importCars(
                   estimatedCost: Number(carData.projectedCost) || null,
                 });
               } else {
-                // LEGACY: Create CarFlowPlan directly (bypasses approval workflow)
-                // Check for existing ACTIVE CarFlowPlan for this car
-                const existingActivePlan = await prisma.carFlowPlan.findFirst({
+                // SST: Create UnifiedAssignment directly (single source of truth)
+                // Check for existing ACTIVE assignment for this car
+                const existingActiveAssignment = await prisma.unifiedAssignment.findFirst({
                   where: {
                     carId,
-                    status: { in: ['Planned', 'In Progress'] },
+                    status: { in: ['DRAFT', 'PENDING_REVIEW', 'COMMITTED', 'IN_PROGRESS'] },
                   },
                 });
 
-                if (!existingActivePlan) {
-                  await prisma.carFlowPlan.create({
+                if (!existingActiveAssignment) {
+                  await prisma.unifiedAssignment.create({
                     data: {
                       carId,
                       shopId,
                       plannedMonth,
                       plannedYear,
-                      status: statusLower === 'arrived' ? 'In Progress' : 'Planned',
+                      scheduledMonth: `${plannedYear}-${String(plannedMonth).padStart(2, '0')}`,
+                      status: statusLower === 'arrived' ? 'IN_PROGRESS' : 'COMMITTED',
+                      sourceType: 'csv_import',
+                      workType: 'full_qualification',
                       shopReason: String(carData.reasonsShopped || carData.qualificationType || ''),
                       estimatedCost: Number(carData.projectedCost) || null,
                       priority: carData.shoppingStatus === 'Urgent' ? 1 :
                                 carData.shoppingStatus === 'Must Shop' ? 2 : 3,
                       notes: `Imported from Qual Planner Master CSV`,
-                      source: 'csv_import',
                       committedById: userId,
+                      committedAt: new Date(),
                       companyId,
                     },
                   });

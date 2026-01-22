@@ -9,24 +9,12 @@ import type { ShopNetwork, ShopNetworkCapacitySummary } from '../types';
 
 const API_BASE_URL = '/api';
 
-// Get auth token from localStorage
-function getAuthHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    Authorization: token ? `Bearer ${token}` : '',
-  };
-}
-
-// Create axios instance with defaults
+// SECURITY FIX: Use httpOnly cookies instead of localStorage tokens
+// localStorage is vulnerable to XSS attacks; httpOnly cookies are not accessible via JavaScript
+// Create axios instance with credentials (cookies) enabled
 const api = axios.create({
   baseURL: API_BASE_URL,
-});
-
-// Add auth interceptor
-api.interceptors.request.use((config) => {
-  const headers = getAuthHeaders();
-  config.headers.Authorization = headers.Authorization;
-  return config;
+  withCredentials: true, // Send httpOnly cookies for authentication
 });
 
 // =============================================================================

@@ -1,164 +1,103 @@
 /**
- * Car Flow Planning API Service
+ * Shared API Services
  *
- * Frontend API client for the Car Flow Planning module
- * Uses the shared axios instance from api.ts for consistent auth, retry, and error handling
+ * Contains APIs that support various parts of the application:
+ * - Car Flow Plans (master schedule)
+ * - Capacity management
+ * - S&OP Commitments
+ * - Shopping status
+ * - Customer data
  */
 
 import apiClient from './api';
-import {
-  Scenario,
-  CreateScenarioRequest,
-  ScenarioCarAssignment,
-  CarFlowPlan,
-  CreateCarFlowPlanRequest,
-  SOPCommitment,
-  CreateSOPCommitmentRequest,
-  CapacityResponse,
-  ConfirmScenarioResponse,
-  ShoppingStatusStats,
-  ScenarioStatus,
-} from '../types/carFlow';
+import type { Customer } from '../types';
 
 // =============================================================================
-// SCENARIOS
+// TYPES
 // =============================================================================
 
-export const scenarioApi = {
-  /**
-   * List all scenarios
-   */
-  list: async (params?: {
-    status?: ScenarioStatus;
-    createdBy?: string;
-  }): Promise<Scenario[]> => {
-    const response = await apiClient.get<Scenario[]>('/car-flow/scenarios', { params });
-    return response.data;
-  },
+export interface CarFlowPlan {
+  id: string;
+  carId: string;
+  shopId: string;
+  plannedMonth: number;
+  plannedYear: number;
+  status: 'Planned' | 'InProgress' | 'Complete' | 'Cancelled';
+  shopReason?: string;
+  notes?: string;
+  car?: {
+    id: string;
+    railcarNumber: string;
+    carType?: string;
+    customer?: string;
+  };
+  shop?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
 
-  /**
-   * Get scenario by ID with cars
-   */
-  getById: async (id: string): Promise<Scenario> => {
-    const response = await apiClient.get<Scenario>(`/car-flow/scenarios/${id}`);
-    return response.data;
-  },
+export interface CreateCarFlowPlanRequest {
+  carId: string;
+  shopId: string;
+  plannedMonth: number;
+  plannedYear: number;
+  shopReason?: string;
+  notes?: string;
+}
 
-  /**
-   * Create a new scenario
-   */
-  create: async (data: CreateScenarioRequest): Promise<Scenario> => {
-    const response = await apiClient.post<Scenario>('/car-flow/scenarios', data);
-    return response.data;
-  },
+export interface SOPCommitment {
+  id: string;
+  shopId: string;
+  year: number;
+  month: number;
+  committedVolume: number;
+  shop?: {
+    id: string;
+    name: string;
+    code: string;
+  };
+}
 
-  /**
-   * Update a scenario
-   */
-  update: async (
-    id: string,
-    data: Partial<Pick<Scenario, 'name' | 'notes' | 'status'>> & { updatedAt?: string }
-  ): Promise<Scenario> => {
-    const response = await apiClient.patch<Scenario>(`/car-flow/scenarios/${id}`, data);
-    return response.data;
-  },
+export interface CreateSOPCommitmentRequest {
+  shopId: string;
+  year: number;
+  month: number;
+  committedVolume: number;
+}
 
-  /**
-   * Add cars to a scenario
-   */
-  addCars: async (
-    scenarioId: string,
-    carAssignments: ScenarioCarAssignment[]
-  ): Promise<{ created: number }> => {
-    const response = await apiClient.post<{ created: number }>(
-      `/car-flow/scenarios/${scenarioId}/cars`,
-      { carAssignments }
-    );
-    return response.data;
-  },
+export interface CapacityResponse {
+  shops: {
+    id: string;
+    name: string;
+    code: string;
+    capacity: number;
+    months: {
+      month: number;
+      year: number;
+      scheduled: number;
+      available: number;
+      utilization: number;
+    }[];
+  }[];
+  summary: {
+    totalCapacity: number;
+    totalScheduled: number;
+    averageUtilization: number;
+  };
+}
 
-  /**
-   * Remove a car from a scenario
-   */
-  removeCar: async (scenarioId: string, carId: string): Promise<void> => {
-    await apiClient.delete(`/car-flow/scenarios/${scenarioId}/cars/${carId}`);
-  },
-
-  /**
-   * Confirm a scenario and create Car Flow Plan entries
-   */
-  confirm: async (
-    scenarioId: string,
-    overrideConflicts: boolean = false
-  ): Promise<ConfirmScenarioResponse> => {
-    const response = await apiClient.post<ConfirmScenarioResponse>(
-      `/car-flow/scenarios/${scenarioId}/confirm`,
-      { overrideConflicts }
-    );
-    return response.data;
-  },
-
-  /**
-   * Duplicate a scenario
-   */
-  duplicate: async (scenarioId: string, name?: string): Promise<Scenario> => {
-    const response = await apiClient.post<Scenario>(
-      `/car-flow/scenarios/${scenarioId}/duplicate`,
-      { name }
-    );
-    return response.data;
-  },
-
-  /**
-   * Delete a scenario
-   */
-  delete: async (scenarioId: string): Promise<void> => {
-    await apiClient.delete(`/car-flow/scenarios/${scenarioId}`);
-  },
-
-  /**
-   * Export a scenario to PDF
-   */
-  exportPDF: async (scenarioId: string, branding: 'aitx' | 'customer' = 'aitx'): Promise<void> => {
-    const response = await apiClient.get(`/car-flow/scenarios/${scenarioId}/export`, {
-      params: { format: 'pdf', branding },
-      responseType: 'blob',
-    });
-
-    // Create download link
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `scenario-export-${new Date().toISOString().split('T')[0]}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  },
-
-  /**
-   * Export a scenario to CSV (Excel-compatible)
-   */
-  exportCSV: async (scenarioId: string): Promise<void> => {
-    const response = await apiClient.get(`/car-flow/scenarios/${scenarioId}/export`, {
-      params: { format: 'csv' },
-      responseType: 'blob',
-    });
-
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `scenario-export-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  },
-};
-
-// =============================================================================
-// CAR FLOW PLANS
-// =============================================================================
+export interface ShoppingStatusStats {
+  total: number;
+  urgent: number;
+  mustShop: number;
+  upcoming: number;
+  compliant: number;
+  unknown: number;
+}
 
 // Types for bulk plan creation
 export interface BulkPlanAssignment {
@@ -207,6 +146,10 @@ export interface BulkPlanResponse {
   }[];
 }
 
+// =============================================================================
+// CAR FLOW PLANS
+// =============================================================================
+
 export const carFlowPlanApi = {
   /**
    * List Car Flow Plan entries
@@ -223,7 +166,7 @@ export const carFlowPlanApi = {
   },
 
   /**
-   * Create a direct Car Flow Plan entry (skip scenario)
+   * Create a direct Car Flow Plan entry
    */
   create: async (data: CreateCarFlowPlanRequest): Promise<CarFlowPlan> => {
     const response = await apiClient.post<CarFlowPlan>('/car-flow/plans', data);
@@ -231,8 +174,7 @@ export const carFlowPlanApi = {
   },
 
   /**
-   * Bulk create Car Flow Plan entries (main "Plan Selected Cars" endpoint)
-   * Saves directly to the master schedule - no scenario intermediate step
+   * Bulk create Car Flow Plan entries
    */
   bulkCreate: async (
     assignments: BulkPlanAssignment[],
@@ -251,55 +193,6 @@ export const carFlowPlanApi = {
   cancel: async (id: string): Promise<CarFlowPlan> => {
     const response = await apiClient.patch<CarFlowPlan>(`/car-flow/plans/${id}/cancel`);
     return response.data;
-  },
-
-  /**
-   * Export Car Flow Plans to PDF
-   */
-  exportPDF: async (params?: {
-    year?: number;
-    month?: number;
-    shopId?: string;
-    customerId?: string;
-    branding?: 'aitx' | 'customer';
-  }): Promise<void> => {
-    const response = await apiClient.get('/car-flow/plans/export', {
-      params: { ...params, format: 'pdf' },
-      responseType: 'blob',
-    });
-
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `car-flow-plan-${new Date().toISOString().split('T')[0]}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  },
-
-  /**
-   * Export Car Flow Plans to CSV
-   */
-  exportCSV: async (params?: {
-    year?: number;
-    month?: number;
-    shopId?: string;
-    customerId?: string;
-  }): Promise<void> => {
-    const response = await apiClient.get('/car-flow/plans/export', {
-      params: { ...params, format: 'csv' },
-      responseType: 'blob',
-    });
-
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `car-flow-plan-${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
   },
 };
 
@@ -392,18 +285,15 @@ export const shoppingStatusApi = {
 // CUSTOMERS
 // =============================================================================
 
-export interface Customer {
-  id: string;
-  name: string;
-  code: string;
-}
-
 export const customersApi = {
   /**
-   * Get all active customers
+   * Get customers
+   * @param includeInactive - If true, includes inactive customers (default: false)
    */
-  getAll: async (): Promise<Customer[]> => {
-    const response = await apiClient.get<Customer[]>('/car-flow/customers');
+  getAll: async (includeInactive = false): Promise<Customer[]> => {
+    const response = await apiClient.get<Customer[]>('/service-plans/customers', {
+      params: includeInactive ? { includeInactive: 'true' } : undefined,
+    });
     return response.data;
   },
 };
@@ -413,7 +303,6 @@ export const customersApi = {
 // =============================================================================
 
 export const carFlowApi = {
-  scenarios: scenarioApi,
   plans: carFlowPlanApi,
   capacity: capacityApi,
   sopCommitments: sopCommitmentApi,

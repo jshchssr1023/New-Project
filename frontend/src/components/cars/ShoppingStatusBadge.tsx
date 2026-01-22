@@ -1,10 +1,7 @@
 import { ExclamationTriangleIcon, ClockIcon, CheckCircleIcon, CalendarIcon, WrenchScrewdriverIcon, ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
 
-// Import the canonical ShoppingStatus type from carFlow
-import type { ShoppingStatus } from '../../types/carFlow';
-
-// Re-export for backwards compatibility
-export type { ShoppingStatus };
+// Shopping status type - defines the urgency levels for car servicing
+export type ShoppingStatus = 'Urgent' | 'Must Shop' | 'Upcoming' | 'Compliant' | 'Unknown' | 'In Shop' | 'Planned';
 
 interface ShoppingStatusBadgeProps {
   status: ShoppingStatus;

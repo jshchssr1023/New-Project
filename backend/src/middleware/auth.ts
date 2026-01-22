@@ -196,6 +196,9 @@ export function requireRole(...roles: string[]) {
 }
 
 export function generateToken(user: AuthUser): string {
+  // SECURITY FIX: Reduced token expiration from 24h to 1h
+  // Short-lived tokens reduce the window of opportunity for token theft
+  // Use /auth/refresh endpoint to get new tokens before expiration
   return jwt.sign(
     {
       id: user.id,
@@ -204,7 +207,7 @@ export function generateToken(user: AuthUser): string {
       companyId: user.companyId,
     },
     JWT_SECRET,
-    { expiresIn: '24h' }
+    { expiresIn: '1h' }
   );
 }
 

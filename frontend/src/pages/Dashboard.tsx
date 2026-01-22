@@ -35,10 +35,9 @@ import {
 import { analyticsApi, carsApi, shopsApi } from '../services/api';
 import type { AnalyticsData, Car, Shop } from '../types';
 import { useCarUpdates, useDashboardUpdates } from '../contexts/WebSocketContext';
-import { useActiveMasterPlan, useMasterPlanSummary } from '../hooks/useQueryWithCompany';
 import { sopApi } from '../services/sopApi';
 import type { DemandRegister } from '../types/sop';
-import { ALL_NETWORKS, getSystemTotalCapacity } from '../constants/shopNetworks';
+import { useShopNetworks } from '../hooks/useShopNetworks';
 
 const DAYS_IN_SHOP_THRESHOLD = 10;
 
@@ -99,6 +98,13 @@ export default function Dashboard() {
   const [myQueueFilter, setMyQueueFilter] = useState('');
   const navigate = useNavigate();
 
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
+
   // S&OP Dashboard state - now uses API data
   const [sopSummary, setSopSummary] = useState<SOPSummary | null>(null);
   const [demandRegister, setDemandRegister] = useState<DemandRegister | null>(null);
@@ -113,10 +119,6 @@ export default function Dashboard() {
     region: null,
     customer: null,
   });
-
-  // MasterPlan data using TanStack Query
-  const { data: activeMasterPlan, isLoading: isMasterPlanLoading } = useActiveMasterPlan();
-  const { data: masterPlanSummary } = useMasterPlanSummary(activeMasterPlan?.id);
 
   // Count active filters
   const activeFilterCount = useMemo(() => {
@@ -652,92 +654,6 @@ export default function Dashboard() {
               className="flex-shrink-0 text-sm font-medium text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1 rounded transition-colors"
             >
               Allocate Now
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Active Master Plan Summary */}
-      {activeMasterPlan && (
-        <div className="card p-4 border-l-4 border-l-rail-500">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="bg-rail-100 rounded-lg p-2">
-                <CalendarDaysIcon className="h-5 w-5 text-rail-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-steel-900">Active Master Plan</h3>
-                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">
-                    Active
-                  </span>
-                </div>
-                <p className="text-sm text-steel-600 mt-0.5">{activeMasterPlan.planName}</p>
-                <p className="text-xs text-steel-500 mt-1">
-                  FY{activeMasterPlan.fiscalYear} v{activeMasterPlan.version} |{' '}
-                  {activeMasterPlan.commitments?.length || masterPlanSummary?.totalCommitments || 0} commitments
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate('/masterplan')}
-              className="flex items-center gap-1 text-sm font-medium text-rail-600 hover:text-rail-800"
-            >
-              View Plan
-              <ChevronRightIcon className="h-4 w-4" />
-            </button>
-          </div>
-
-          {masterPlanSummary && (
-            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-steel-100">
-              <div className="flex items-center gap-2">
-                <DocumentChartBarIcon className="h-4 w-4 text-steel-400" />
-                <span className="text-sm text-steel-600">
-                  <strong className="text-steel-900">{Object.keys(masterPlanSummary.commitmentsByShop || {}).length}</strong> shops
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CalendarDaysIcon className="h-4 w-4 text-steel-400" />
-                <span className="text-sm text-steel-600">
-                  <strong className="text-steel-900">{Object.keys(masterPlanSummary.commitmentsByMonth || {}).length}</strong> months
-                </span>
-              </div>
-              {masterPlanSummary.commitmentsByStatus?.released !== undefined && (
-                <div className="flex items-center gap-2">
-                  <CheckCircleIcon className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-steel-600">
-                    <strong className="text-green-600">{masterPlanSummary.commitmentsByStatus.released || 0}</strong> released
-                  </span>
-                </div>
-              )}
-              {masterPlanSummary.totalEstimatedCost > 0 && (
-                <div className="flex items-center gap-2 ml-auto">
-                  <span className="text-sm text-steel-500">
-                    Est. Cost: <strong className="text-steel-900">${(masterPlanSummary.totalEstimatedCost / 1000).toFixed(0)}K</strong>
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* No Active Plan Banner */}
-      {!isMasterPlanLoading && !activeMasterPlan && (
-        <div className="card p-4 bg-steel-50 border-dashed border-2 border-steel-300">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CalendarDaysIcon className="h-5 w-5 text-steel-400" />
-              <div>
-                <p className="text-sm font-medium text-steel-700">No Active Master Plan</p>
-                <p className="text-xs text-steel-500">Create one by approving a scenario in Car Flow Planning</p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate('/car-flow')}
-              className="btn-secondary text-sm"
-            >
-              Go to Car Flow
             </button>
           </div>
         </div>

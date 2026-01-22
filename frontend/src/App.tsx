@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
 
 // Eager load - frequently accessed, small pages
 import Login from './pages/Login';
+import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 
 // Lazy load - heavy pages with code splitting
@@ -13,26 +14,22 @@ const ShopManagement = lazy(() => import('./pages/ShopManagement'));
 const ShopNetworks = lazy(() => import('./pages/ShopNetworks'));
 const CarsPage = lazy(() => import('./pages/CarsPage'));
 const PlanningGrid = lazy(() => import('./pages/PlanningGrid'));
-const CarFlowPlanning = lazy(() => import('./pages/CarFlowPlanning'));
-const ScenarioManager = lazy(() => import('./pages/ScenarioManager'));
+const ServicePlanBuilder = lazy(() => import('./pages/ServicePlanBuilder'));
+const ServicePlanConfirmation = lazy(() => import('./pages/ServicePlanConfirmation'));
+const ServicePlanReports = lazy(() => import('./pages/ServicePlanReports'));
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const Settings = lazy(() => import('./pages/Settings'));
-const RuleBuilder = lazy(() => import('./pages/RuleBuilder'));
 const ImportExport = lazy(() => import('./pages/ImportExport'));
 const Webhooks = lazy(() => import('./pages/Webhooks'));
 const ApiKeys = lazy(() => import('./pages/ApiKeys'));
-const CustomerSchedule = lazy(() => import('./pages/CustomerSchedule'));
-const ShopSchedule = lazy(() => import('./pages/ShopSchedule'));
 const SOPSupplySettings = lazy(() => import('./pages/SOPSupplySettings'));
 
 // S&OP Planning Module - Sales & Operations Planning for car flow
 const SOPCapacityPage = lazy(() => import('./pages/SOPCapacityPage'));
 const SOPPlanningPage = lazy(() => import('./pages/SOPPlanningPage'));
 const DemandRegistryPage = lazy(() => import('./pages/DemandRegistryPage'));
-const MasterPlannerDashboard = lazy(() => import('./pages/MasterPlannerDashboard'));
 const SOPReviewDashboard = lazy(() => import('./pages/SOPReviewDashboard'));
-const ImportWorkflow = lazy(() => import('./components/ImportWorkflow'));
 
 // New Workflow - Proposal & Scheduling Queue
 const SchedulingQueue = lazy(() => import('./pages/SchedulingQueue'));
@@ -40,6 +37,9 @@ const SchedulingQueue = lazy(() => import('./pages/SchedulingQueue'));
 // Scheduling Visibility - New UX Components
 const SchedulingDashboard = lazy(() => import('./pages/SchedulingDashboard'));
 const PlanOverviewDashboard = lazy(() => import('./pages/PlanOverviewDashboard'));
+
+// Service Plans Management - SST based plans view
+const ServicePlansManagement = lazy(() => import('./pages/ServicePlansManagement'));
 
 // Page loading fallback with accessibility support
 function PageLoader({ message = 'Loading...' }: { message?: string }) {
@@ -50,18 +50,6 @@ function PageLoader({ message = 'Loading...' }: { message?: string }) {
         <p className="mt-3 text-sm text-steel-500">{message}</p>
       </div>
     </div>
-  );
-}
-
-// Wrapper component for ImportWorkflow as a standalone page
-function ImportWorkflowPage() {
-  const navigate = useNavigate();
-  return (
-    <ImportWorkflow
-      sessionType="cars"
-      onComplete={() => navigate('/cars')}
-      onCancel={() => navigate(-1)}
-    />
   );
 }
 
@@ -87,7 +75,20 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  // SECURITY FIX: Add isLoading check to prevent race condition
+  // where user role might not be loaded yet
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-steel-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rail-600 mx-auto"></div>
+          <p className="mt-4 text-steel-600">Verifying permissions...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;
@@ -110,25 +111,24 @@ export default function App() {
               </PrivateRoute>
             }
           >
-            <Route index element={<Dashboard />} />
+            <Route index element={<LandingPage />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="shops" element={<ShopManagement />} />
             <Route path="shop-networks" element={<ShopNetworks />} />
             <Route path="cars" element={<CarsPage />} />
             <Route path="planning" element={<PlanningGrid />} />
-            <Route path="car-flow" element={<CarFlowPlanning />} />
-            <Route path="scenarios" element={<ScenarioManager />} />
-            <Route path="import-workflow" element={<ImportWorkflowPage />} />
-            <Route path="customer-schedule/:customerId" element={<CustomerSchedule />} />
-            <Route path="shop-schedule/:shopId" element={<ShopSchedule />} />
+            <Route path="service-plans" element={<ServicePlanBuilder />} />
+            <Route path="service-plans/:id" element={<ServicePlanBuilder />} />
+            <Route path="service-plan-confirmation/:id" element={<ServicePlanConfirmation />} />
+            <Route path="service-plan-reports" element={<ServicePlanReports />} />
+            <Route path="service-plans-management" element={<ServicePlansManagement />} />
             <Route path="analytics" element={<AnalyticsDashboard />} />
-            <Route path="rules" element={<RuleBuilder />} />
 
             {/* S&OP Planning Module Routes */}
             <Route path="sop-review" element={<SOPReviewDashboard />} />
             <Route path="sop-capacity" element={<SOPCapacityPage />} />
             <Route path="sop-plan" element={<SOPPlanningPage />} />
             <Route path="demand-registry" element={<DemandRegistryPage />} />
-            <Route path="master-planner" element={<MasterPlannerDashboard />} />
 
             {/* New Workflow Routes */}
             <Route path="scheduling-queue" element={<SchedulingQueue />} />
