@@ -31,14 +31,12 @@ import {
   FunnelIcon,
   DocumentChartBarIcon,
   ArrowDownTrayIcon,
+  DocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 import { sopApi } from '../services/sopApi';
-import {
-  ALL_NETWORKS,
-  AITX_NETWORK,
-  THIRD_PARTY_NETWORKS,
-  getSystemTotalCapacity,
-} from '../constants/shopNetworks';
+import { analyticsApi } from '../services/api/analytics';
+import type { SSTStatusResponse } from '../services/api/analytics';
+import { useShopNetworks } from '../hooks/useShopNetworks';
 import { generate18MonthLabels } from '../utils/sopCalculations';
 import type { DemandRegister, WorkType, PlanningState } from '../types/sop';
 
@@ -65,11 +63,15 @@ function getUtilizationStatus(percent: number): 'good' | 'warning' | 'danger' | 
 
 // Work type labels
 const WORK_TYPE_LABELS: Record<WorkType, string> = {
+  qualification: 'Qualifications',
   full_qualification: 'Full Qualifications',
   partial_qualification: 'Partial Qualifications',
   assignment: 'Assignments',
+  return: 'Returns',
   release: 'Releases',
   repair: 'Repairs',
+  maintenance: 'Maintenance',
+  project: 'Projects',
 };
 
 export default function SOPReviewDashboard() {
@@ -78,6 +80,15 @@ export default function SOPReviewDashboard() {
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set(['aitx']));
   const [showFilters, setShowFilters] = useState(false);
+
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    AITX_NETWORK,
+    THIRD_PARTY_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
 
   // Generate month labels
   const monthLabels = useMemo(() => {
@@ -115,13 +126,48 @@ export default function SOPReviewDashboard() {
     queryFn: () => sopApi.supplyCapacity.getNetworkHierarchy(),
   });
 
-  const isLoading = demandLoading || planLoading || networkLoading;
+  // SST: Fetch actual planning status from UnifiedAssignment (THE SST)
+  const {
+    data: sstStatus,
+    isLoading: sstLoading,
+    refetch: refetchSST,
+  } = useQuery({
+    queryKey: ['sst-status-sop'],
+    queryFn: () => analyticsApi.getSSTStatus(),
+  });
+
+  const isLoading = demandLoading || planLoading || networkLoading || sstLoading;
   const error = demandError || planError;
 
   const systemCapacity = getSystemTotalCapacity();
 
-  // Calculate summary metrics
+  // Calculate summary metrics - SST data takes priority for accurate planning status
   const summaryMetrics = useMemo(() => {
+    // Use SST data if available (most accurate)
+    if (sstStatus) {
+      const total = sstStatus.fleetCoverage.totalCars;
+      // SST statuses: needsPlanning (no record), notConfirmed (DRAFT/PENDING_REVIEW), confirmed (COMMITTED/IN_PROGRESS)
+      const notPlanned = sstStatus.planningStates.needsPlanning;
+      const planned = sstStatus.planningStates.notConfirmed; // DRAFT + PENDING_REVIEW = "Planned but not confirmed"
+      const scheduled = sstStatus.planningStates.confirmed;  // COMMITTED + IN_PROGRESS = "Scheduled/Confirmed"
+
+      // Calculate overdue from urgency breakdown
+      const overdueData = sstStatus.byUrgency?.['Overdue'];
+      const overdue = overdueData ? overdueData.needsPlanning + overdueData.notConfirmed : 0;
+
+      return {
+        totalDemand: total,
+        notPlanned,
+        planned,
+        scheduled,
+        overdue,
+        notPlannedPercent: total > 0 ? Math.round((notPlanned / total) * 100) : 0,
+        plannedPercent: total > 0 ? Math.round((planned / total) * 100) : 0,
+        scheduledPercent: total > 0 ? Math.round((scheduled / total) * 100) : 0,
+      };
+    }
+
+    // Fallback to demand register if SST not available
     if (!demandRegister) {
       return {
         totalDemand: 0,
@@ -146,7 +192,7 @@ export default function SOPReviewDashboard() {
       plannedPercent: total > 0 ? Math.round((demandRegister.totalPlanned / total) * 100) : 0,
       scheduledPercent: total > 0 ? Math.round((demandRegister.totalScheduled / total) * 100) : 0,
     };
-  }, [demandRegister]);
+  }, [sstStatus, demandRegister]);
 
   // Calculate volumes by month by network
   const volumesByMonthNetwork = useMemo(() => {
@@ -188,6 +234,7 @@ export default function SOPReviewDashboard() {
   const handleRefresh = () => {
     refetchDemand();
     refetchPlan();
+    refetchSST();
   };
 
   if (isLoading) {
@@ -572,7 +619,7 @@ export default function SOPReviewDashboard() {
               </tr>
 
               {/* AITX Locations (when expanded) */}
-              {expandedNetworks.has('aitx') &&
+              {expandedNetworks.has('aitx') && AITX_NETWORK &&
                 AITX_NETWORK.locations.map((location) => (
                   <tr key={location.code} className="border-b border-steel-50 bg-steel-50">
                     <td className="py-1.5 px-2 pl-10 text-xs text-steel-600">

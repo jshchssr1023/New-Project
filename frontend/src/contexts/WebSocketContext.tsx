@@ -74,14 +74,13 @@ export function WebSocketProvider({ children }: WebSocketProviderProps) {
       return;
     }
 
-    // Connect to WebSocket server with JWT authentication
-    const authToken = localStorage.getItem('authToken');
+    // SECURITY FIX: Connect with credentials (httpOnly cookies) instead of localStorage token
+    // localStorage tokens are vulnerable to XSS attacks
+    // The server will authenticate via the httpOnly cookie automatically
     const socket = io(window.location.origin, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
-      auth: {
-        token: authToken,
-      },
+      withCredentials: true, // Send httpOnly cookies for authentication
     });
 
     socketRef.current = socket;

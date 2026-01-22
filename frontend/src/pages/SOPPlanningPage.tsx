@@ -26,12 +26,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { sopApi } from '../services/sopApi';
 import { generate18MonthLabels } from '../utils/sopCalculations';
-import {
-  ALL_NETWORKS,
-  AITX_NETWORK,
-  THIRD_PARTY_NETWORKS,
-  getSystemTotalCapacity,
-} from '../constants/shopNetworks';
+import { useShopNetworks } from '../hooks/useShopNetworks';
 
 type ViewMode = 'summary' | 'detailed';
 
@@ -67,6 +62,15 @@ export default function SOPPlanningPage() {
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set(['aitx']));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [visibleMonthStart, setVisibleMonthStart] = useState(0);
+
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    AITX_NETWORK,
+    THIRD_PARTY_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
 
   // Generate 18-month labels starting from selected year
   const allMonths = useMemo(() => {

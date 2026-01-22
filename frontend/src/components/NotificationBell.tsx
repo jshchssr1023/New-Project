@@ -10,7 +10,6 @@ import {
   CheckIcon,
 } from '@heroicons/react/24/outline';
 import { BellAlertIcon } from '@heroicons/react/24/solid';
-import { useAuth } from '../contexts/AuthContext';
 import { useWebSocket } from '../contexts/WebSocketContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -42,7 +41,6 @@ const TYPE_COLORS = {
 };
 
 export default function NotificationBell() {
-  const { token } = useAuth();
   const { subscribe } = useWebSocket();
   const navigate = useNavigate();
 
@@ -54,10 +52,10 @@ export default function NotificationBell() {
     try {
       const [notifRes, countRes] = await Promise.all([
         fetch('/api/notifications?limit=10', {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         }),
         fetch('/api/notifications/unread-count', {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         }),
       ]);
 
@@ -75,7 +73,7 @@ export default function NotificationBell() {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     fetchNotifications();
@@ -96,7 +94,7 @@ export default function NotificationBell() {
     try {
       await fetch(`/api/notifications/${id}/read`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       setNotifications(prev =>
@@ -112,7 +110,7 @@ export default function NotificationBell() {
     try {
       await fetch('/api/notifications/read-all', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
 
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));

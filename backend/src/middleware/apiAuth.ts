@@ -82,11 +82,11 @@ export function requireApiPermission(...permissions: string[]) {
     );
 
     if (!hasPermission) {
+      // SECURITY FIX: Don't expose the API key's permissions in error response
+      // This prevents attackers from probing available permissions
       res.status(403).json({
         error: 'forbidden',
-        message: `Missing required permission: ${permissions.join(' or ')}`,
-        requiredPermissions: permissions,
-        yourPermissions: req.apiKey.permissions,
+        message: 'Insufficient permissions for this operation',
       });
       return;
     }

@@ -1,0 +1,112 @@
+// Re-export all APIs for backwards compatibility
+// This allows imports from '@/services/api' to continue working
+
+// Default export - the axios client instance
+export { default } from './client';
+
+// Client utilities
+export {
+  cancelRequest,
+  cancelAllRequests,
+  createAbortController,
+  getRequestKey,
+  delay,
+  getRetryDelay,
+  isRetryableError,
+  RETRY_CONFIG,
+} from './client';
+
+// Domain APIs
+export { authApi } from './auth';
+export { carsApi } from './cars';
+export { shopsApi, shopPerformanceApi } from './shops';
+export { plansApi } from './plans';
+export { analyticsApi } from './analytics';
+export { usersApi, permissionsApi, auditApi } from './users';
+export { reportsApi } from './reports';
+export { sopApi, leaseQualificationApi } from './sop';
+
+// Proposal & Scheduling Queue API
+export { default as proposalsApi } from './proposals';
+
+// Service Plan Builder API
+export { servicePlansApi } from './servicePlans';
+
+// Car Flow Planning API (Single Source of Truth for planning data)
+export {
+  carFlowApi,
+  carFlowPlanApi,
+  capacityApi,
+  sopCommitmentApi,
+  shoppingStatusApi,
+  customersApi,
+} from '../carFlowApi';
+export type {
+  CarFlowPlan,
+  CreateCarFlowPlanRequest,
+  SOPCommitment,
+  CreateSOPCommitmentRequest,
+  CapacityResponse,
+  ShoppingStatusStats,
+  BulkPlanAssignment,
+  BulkPlanConflict,
+  BulkPlanResponse,
+} from '../carFlowApi';
+export type {
+  ServicePlan,
+  ServicePlanCar,
+  PlanOption,
+  PlanOptionAssignment,
+  CapacityReservation,
+  AvailableCapacity,
+  CapacityValidation,
+  OptionComparisonResult,
+  CreateServicePlanInput,
+  CreatePlanOptionInput,
+  AssignmentInput,
+} from './servicePlans';
+
+// Re-export all types
+export type {
+  CarImportStatus,
+  CarImportResult,
+  HeaderAnalysisResult,
+  ReportColumn,
+  FilterCriteria,
+  ReportTemplate,
+  ScheduledReport,
+  ShopPerformanceMetrics,
+  ShopScorecard,
+  NetworkScorecard,
+  AuditLogEntry,
+  LeaseRelease,
+  QualificationScenario,
+  ScenarioMetrics,
+  ScenarioComparison,
+  AvailableCar,
+  AvailableShop,
+  AvailableCustomer,
+  AvailableMonth,
+  DocumentSelectionCriteria,
+  GeneratedDocument,
+  ShopCapacitySnapshot,
+  SOPAllocationData,
+  SOPAllocationResponse,
+  SOPLoadedAllocations,
+  WeeklyCapacityData,
+  MasterPlanVersionData,
+  IntegrationLogData,
+  ImportSessionData,
+  ShopHistoryEntry,
+  MasterPlanAuditEntry,
+  // Plan Proposal types
+  ProposalStatus,
+  PlanProposal,
+  CreateProposalInput,
+  SendProposalInput,
+  RecordApprovalInput,
+  RecordRejectionInput,
+  RequestRevisionInput,
+  ProposalStats,
+  ScheduleProposalResult,
+} from './types';

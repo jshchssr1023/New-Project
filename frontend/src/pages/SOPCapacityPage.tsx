@@ -22,14 +22,10 @@ import {
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 import {
-  ALL_NETWORKS,
-  AITX_NETWORK,
-  THIRD_PARTY_NETWORKS,
-  getSystemTotalCapacity,
-  getAitxTotalCapacity,
-  getThirdPartyTotalCapacity,
-} from '../constants/shopNetworks';
-import type { ShopNetwork, ShopLocation } from '../constants/shopNetworks';
+  useShopNetworks,
+  type ShopNetworkData as ShopNetwork,
+  type ShopLocation,
+} from '../hooks/useShopNetworks';
 
 type ViewFilter = 'all' | 'aitx' | 'thirdParty';
 
@@ -221,6 +217,17 @@ export default function SOPCapacityPage() {
   );
   const [viewFilter, setViewFilter] = useState<ViewFilter>('all');
 
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    AITX_NETWORK,
+    THIRD_PARTY_NETWORKS,
+    getSystemTotalCapacity,
+    getAitxTotalCapacity,
+    getThirdPartyTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
+
   // Get system capacity stats
   const systemCapacity = getSystemTotalCapacity();
   const aitxCapacity = getAitxTotalCapacity();
@@ -228,14 +235,14 @@ export default function SOPCapacityPage() {
 
   // Filter networks based on view filter
   const filteredNetworks = useMemo(() => {
-    if (viewFilter === 'aitx') {
+    if (viewFilter === 'aitx' && AITX_NETWORK) {
       return [AITX_NETWORK];
     }
     if (viewFilter === 'thirdParty') {
       return THIRD_PARTY_NETWORKS;
     }
     return ALL_NETWORKS;
-  }, [viewFilter]);
+  }, [viewFilter, ALL_NETWORKS, AITX_NETWORK, THIRD_PARTY_NETWORKS]);
 
   // Count statistics
   const totalLocations = ALL_NETWORKS.reduce(
@@ -442,7 +449,7 @@ export default function SOPCapacityPage() {
             <div className="flex justify-between">
               <span className="text-blue-600">Locations:</span>
               <span className="font-semibold text-blue-900">
-                {AITX_NETWORK.locations.length}
+                {AITX_NETWORK?.locations?.length || 0}
               </span>
             </div>
             <div className="flex justify-between">
@@ -460,7 +467,7 @@ export default function SOPCapacityPage() {
             <div className="flex justify-between">
               <span className="text-blue-600">Annual Target:</span>
               <span className="font-semibold text-blue-900">
-                {AITX_NETWORK.annualTargetVolume.toLocaleString()}
+                {(AITX_NETWORK?.annualTargetVolume || 0).toLocaleString()}
               </span>
             </div>
           </div>

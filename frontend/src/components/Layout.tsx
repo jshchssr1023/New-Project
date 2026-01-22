@@ -1,4 +1,4 @@
-import { Fragment, useState, useCallback } from 'react';
+import { Fragment, useState, useCallback, useRef } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { Dialog, Menu, Transition } from '@headlessui/react';
 import {
@@ -7,19 +7,20 @@ import {
   TruckIcon,
   BuildingStorefrontIcon,
   BuildingOffice2Icon,
-  ArrowsRightLeftIcon,
-  BeakerIcon,
   ChartBarIcon,
+  ChartPieIcon,
   UsersIcon,
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   MagnifyingGlassIcon,
-  AdjustmentsHorizontalIcon,
   ArrowUpTrayIcon,
   BellAlertIcon,
   KeyIcon,
   XMarkIcon,
   CalendarDaysIcon,
+  ClipboardDocumentCheckIcon,
+  ClipboardDocumentListIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -28,21 +29,32 @@ import { useCarSelection } from '../contexts/CarSelectionContext';
 import NotificationBell from './NotificationBell';
 
 
-// Operations & Planning - Core scheduling/logistics functions
-const operationsNavigation = [
-  { name: 'Dashboard', href: '/', icon: HomeIcon },
-  { name: 'Railcars', href: '/cars', icon: TruckIcon },
-  { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
-  { name: '3P Networks', href: '/shop-networks', icon: BuildingOffice2Icon },
-  { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
-  { name: 'Car Flow Planning', href: '/car-flow', icon: ArrowsRightLeftIcon },
-  { name: 'Scenarios', href: '/scenarios', icon: BeakerIcon },
+// Core Workflow - Primary planning sequence
+const workflowNavigation = [
+  { name: 'Home', href: '/', icon: HomeIcon },
+  { name: 'Dashboard', href: '/dashboard', icon: ChartBarIcon },
+  { name: 'Railcars', href: '/cars', icon: TruckIcon, description: 'Work Queue' },
+  { name: 'Service Plans', href: '/service-plans-management', icon: ClipboardDocumentCheckIcon, description: 'View/Confirm Plans' },
+  { name: 'Plan Builder', href: '/service-plans', icon: DocumentTextIcon, description: 'Create Proposals' },
+  { name: 'Scheduling Queue', href: '/scheduling-queue', icon: ClipboardDocumentListIcon, description: 'Approved Plans' },
 ];
 
-// Reporting & Rules - Data review and configuration
+// Shops & Capacity - Shop management
+const shopsNavigation = [
+  { name: 'Shop Network', href: '/shops', icon: BuildingStorefrontIcon },
+  { name: '3P Networks', href: '/shop-networks', icon: BuildingOffice2Icon },
+];
+
+// Planning Tools - Additional planning views
+const planningNavigation = [
+  { name: 'Plan Overview', href: '/plan-overview', icon: ChartPieIcon, description: 'Visual Reports' },
+  { name: 'Planning Grid', href: '/planning', icon: CalendarDaysIcon },
+  { name: 'S&OP Review', href: '/sop-review', icon: DocumentTextIcon },
+];
+
+// Reporting - Data review and analytics
 const reportingNavigation = [
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
-  { name: 'Shop Rules', href: '/rules', icon: AdjustmentsHorizontalIcon },
 ];
 
 // System Administration - System and user management (admin only)
@@ -72,24 +84,42 @@ export default function Layout() {
     navigate('/login');
   };
 
+  // Use ref to avoid recreating callback on every keystroke
+  const globalSearchRef = useRef(globalSearch);
+  globalSearchRef.current = globalSearch;
+
   // Global search handler - searches across Railcar Number, Customer, Project Number
   const handleGlobalSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (globalSearch.trim()) {
-      navigate(`/cars?search=${encodeURIComponent(globalSearch.trim())}`);
+    const searchValue = globalSearchRef.current.trim();
+    if (searchValue) {
+      navigate(`/cars?search=${encodeURIComponent(searchValue)}`);
       setGlobalSearch('');
     }
-  }, [globalSearch, navigate]);
+  }, [navigate]);
 
   // Build navigation sections based on user role
   const navSections = [
-    { title: 'Operations & Planning', items: operationsNavigation },
-    { title: 'Reporting & Rules', items: reportingNavigation },
+    { title: 'Workflow', items: workflowNavigation },
+    { title: 'Shops', items: shopsNavigation },
+    { title: 'Planning Tools', items: planningNavigation },
+    { title: 'Reports', items: reportingNavigation },
     ...(user?.role === 'admin' ? [{ title: 'Administration', items: adminNavigation }] : []),
   ];
 
   return (
     <div className="min-h-screen bg-steel-50">
+      {/* Skip to main content link for keyboard/screen reader users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-rail-600 focus:text-white focus:rounded"
+      >
+        Skip to main content
+      </a>
+
+      {/* Announcer for screen readers */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only" id="announcer" />
+
       {/* Mobile sidebar */}
       <Transition.Root show={sidebarOpen} as={Fragment}>
         <Dialog as="div" className="relative z-50 lg:hidden" onClose={setSidebarOpen}>
@@ -314,18 +344,11 @@ export default function Layout() {
               </div>
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={() => navigate('/scenarios')}
+                  onClick={() => navigate('/service-plans')}
                   className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
                 >
-                  <BeakerIcon className="h-4 w-4 mr-1" />
-                  Scenario Builder
-                </button>
-                <button
-                  onClick={() => navigate('/car-flow')}
-                  className="text-sm bg-rail-500 hover:bg-rail-400 px-3 py-1 rounded transition-colors flex items-center"
-                >
-                  <ArrowsRightLeftIcon className="h-4 w-4 mr-1" />
-                  Car Flow
+                  <DocumentTextIcon className="h-4 w-4 mr-1" />
+                  Service Plans
                 </button>
                 <button
                   onClick={clearSelection}
@@ -340,7 +363,7 @@ export default function Layout() {
         )}
 
         {/* Page content - reduced padding for more real estate */}
-        <main className="py-4">
+        <main id="main-content" className="py-4">
           <div className="px-4 sm:px-5 lg:px-6">
             <Outlet />
           </div>

@@ -9,7 +9,9 @@ import { CarSelectionProvider } from './contexts/CarSelectionContext';
 import { CollaborationProvider } from './contexts/CollaborationContext';
 import { LoadingProvider } from './contexts/LoadingContext';
 import { UndoRedoProvider } from './contexts/UndoRedoContext';
+import { ToastProvider } from './contexts/ToastContext';
 import GlobalLoadingIndicator from './components/GlobalLoadingIndicator';
+import ToastContainer from './components/ui/ToastContainer';
 import './index.css';
 
 // Create a QueryClient with default options
@@ -27,20 +29,23 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <LoadingProvider>
-          <UndoRedoProvider>
-            <AuthProvider>
-              <WebSocketProvider>
-                <CollaborationProvider>
-                  <CarSelectionProvider>
-                    <GlobalLoadingIndicator />
-                    <App />
-                  </CarSelectionProvider>
-                </CollaborationProvider>
-              </WebSocketProvider>
-            </AuthProvider>
-          </UndoRedoProvider>
-        </LoadingProvider>
+        <ToastProvider>
+          <LoadingProvider>
+            <UndoRedoProvider>
+              <AuthProvider>
+                <WebSocketProvider>
+                  <CollaborationProvider>
+                    <CarSelectionProvider>
+                      <GlobalLoadingIndicator />
+                      <ToastContainer />
+                      <App />
+                    </CarSelectionProvider>
+                  </CollaborationProvider>
+                </WebSocketProvider>
+              </AuthProvider>
+            </UndoRedoProvider>
+          </LoadingProvider>
+        </ToastProvider>
       </BrowserRouter>
     </QueryClientProvider>
   </React.StrictMode>

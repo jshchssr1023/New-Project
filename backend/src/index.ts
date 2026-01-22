@@ -14,7 +14,6 @@ import authRoutes from './routes/auth';
 import carsRoutes from './routes/cars';
 import shopsRoutes from './routes/shops';
 import plansRoutes from './routes/plans';
-import scenariosRoutes from './routes/scenarios';
 import analyticsRoutes from './routes/analytics';
 import usersRoutes from './routes/users';
 import reportsRoutes from './routes/reports';
@@ -22,19 +21,19 @@ import auditRoutes from './routes/audit';
 import permissionsRoutes from './routes/permissions';
 import sopRoutes from './routes/sopRoutes';
 import leaseQualificationRoutes from './routes/leaseQualificationRoutes';
-// REMOVED: masterPlansRoutes - replaced by Car Flow Planning module
-import shopRulesRoutes from './routes/shopRules';
 import importExportRoutes from './routes/importExport';
 import notificationsRoutes from './routes/notifications';
 import webhooksRoutes from './routes/webhooks';
 import multiYearPlanningRoutes from './routes/multiYearPlanning';
 import apiKeysRoutes from './routes/apiKeys';
-// REMOVED: masterPlanWizardRoutes - replaced by Car Flow Planning module
-import carFlowRoutes from './routes/carFlow';
 import allocationRoutes from './routes/allocation';
 import shopNetworksRoutes from './routes/shopNetworks';
 import adminRoutes from './routes/admin';
 import publicApiV1 from './routes/api/v1';
+import planProposalsRoutes from './routes/planProposals';
+import servicePlansRoutes from './routes/servicePlans';
+import servicePlanConfirmationRoutes from './routes/servicePlanConfirmation';
+import carFlowRoutes from './routes/carFlow';
 import schedulerService from './services/schedulerService';
 import websocketService from './services/websocketService';
 import { initializeShoppingStatusJob, getShoppingStatusJob } from './jobs/shoppingStatusJob';
@@ -54,16 +53,17 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors({
   origin: (origin, callback) => {
-    // In production, reject requests without valid Origin header
-    // (except for same-origin requests which don't have Origin)
+    // SECURITY FIX: In production, ALWAYS require valid Origin header
+    // Requests without Origin header could be from malicious sources
     if (!origin) {
       if (isProduction) {
-        // Allow same-origin requests (no Origin header) but be stricter
-        // Only server-to-server or same-origin browser requests lack Origin
-        callback(null, true);
+        // SECURITY: Reject requests without Origin in production
+        // This prevents CSRF and other attacks that bypass CORS
+        logger.warn('CORS blocked request without Origin header in production');
+        callback(new Error('Origin header required'));
         return;
       }
-      // In development, allow requests without origin (curl, mobile apps, etc.)
+      // In development only, allow requests without origin (curl, Postman, etc.)
       callback(null, true);
       return;
     }
@@ -139,7 +139,6 @@ app.use('/api/auth/login', loginRateLimit);
 app.use('/api/cars', apiRateLimit);
 app.use('/api/shops', apiRateLimit);
 app.use('/api/plans', apiRateLimit);
-app.use('/api/scenarios', apiRateLimit);
 app.use('/api/analytics', apiRateLimit);
 app.use('/api/users', apiRateLimit);
 app.use('/api/reports', apiRateLimit);
@@ -147,18 +146,18 @@ app.use('/api/audit', apiRateLimit);
 app.use('/api/permissions', apiRateLimit);
 app.use('/api/sop', apiRateLimit);
 app.use('/api/lease-qualification', apiRateLimit);
-// REMOVED: app.use('/api/masterplans', apiRateLimit);
-app.use('/api/shop-rules', apiRateLimit);
 app.use('/api/import-export', apiRateLimit);
 app.use('/api/notifications', apiRateLimit);
 app.use('/api/webhooks', apiRateLimit);
 app.use('/api/multi-year-planning', apiRateLimit);
 app.use('/api/api-keys', apiRateLimit);
-// REMOVED: app.use('/api/master-plan-wizard', apiRateLimit);
-app.use('/api/car-flow', apiRateLimit);
 app.use('/api/allocation', apiRateLimit);
 app.use('/api/shop-networks', apiRateLimit);
 app.use('/api/admin', apiRateLimit);
+app.use('/api/proposals', apiRateLimit);
+app.use('/api/service-plans', apiRateLimit);
+app.use('/api/service-plan-confirmation', apiRateLimit);
+app.use('/api/car-flow', apiRateLimit);
 app.use('/api/v1', apiRateLimit);
 
 // Routes
@@ -166,7 +165,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/cars', carsRoutes);
 app.use('/api/shops', shopsRoutes);
 app.use('/api/plans', plansRoutes);
-app.use('/api/scenarios', scenariosRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/reports', reportsRoutes);
@@ -174,18 +172,18 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api/sop', sopRoutes);
 app.use('/api/lease-qualification', leaseQualificationRoutes);
-// REMOVED: app.use('/api/masterplans', masterPlansRoutes);
-app.use('/api/shop-rules', shopRulesRoutes);
 app.use('/api/import-export', importExportRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/webhooks', webhooksRoutes);
 app.use('/api/multi-year-planning', multiYearPlanningRoutes);
 app.use('/api/api-keys', apiKeysRoutes);
-// REMOVED: app.use('/api/master-plan-wizard', masterPlanWizardRoutes);
-app.use('/api/car-flow', carFlowRoutes);
 app.use('/api/allocation', allocationRoutes);
 app.use('/api/shop-networks', shopNetworksRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/proposals', planProposalsRoutes);
+app.use('/api/service-plans', servicePlansRoutes);
+app.use('/api/service-plan-confirmation', servicePlanConfirmationRoutes);
+app.use('/api/car-flow', carFlowRoutes);
 
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);

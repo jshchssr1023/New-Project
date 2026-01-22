@@ -28,12 +28,17 @@ export default function CompactCarCard({
 }: CompactCarCardProps) {
   const [isHovered, setIsHovered] = useState(false);
 
-  // Get status color
+  // Get status color - blue for pending service plan, otherwise based on shopping status
   const getStatusColor = () => {
+    // Cars in pending service plans get blue styling
+    if (car.hasPendingServicePlan) {
+      return 'border-l-blue-600 bg-blue-100';
+    }
+
     const status = car.shoppingStatus?.toLowerCase() || '';
     if (status.includes('urgent') || status.includes('prior')) return 'border-l-red-500 bg-red-50';
     if (status.includes('must') || status.includes('this year')) return 'border-l-amber-500 bg-amber-50';
-    if (status.includes('upcoming') || status.includes('next')) return 'border-l-blue-500 bg-blue-50';
+    if (status.includes('upcoming') || status.includes('next')) return 'border-l-sky-500 bg-sky-50';
     if (status.includes('compliant') || status.includes('ok')) return 'border-l-green-500 bg-green-50';
     return 'border-l-steel-300 bg-white';
   };
@@ -121,23 +126,33 @@ export default function CompactCarCard({
           </button>
         </div>
 
-        {/* Middle row: Type and Customer */}
-        <div className="flex items-center gap-2 text-sm mb-2">
+        {/* Middle row: Type and Customer - stacked for better visibility */}
+        <div className="space-y-1 text-sm mb-2">
           <div className="flex items-center gap-1 text-steel-600">
-            <TruckIcon className="h-3.5 w-3.5" />
-            <span>{car.carType || 'Unknown'}</span>
+            <TruckIcon className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="truncate">{car.carType || 'Unknown'}</span>
           </div>
-          <span className="text-steel-300">|</span>
-          <span className="text-steel-600 truncate flex-1">
+          <div className="text-steel-700 font-medium truncate" title={car.customer || 'No customer'}>
             {car.customer || 'No customer'}
-          </span>
+          </div>
         </div>
 
-        {/* Bottom row: Status badge */}
-        <div className="flex items-center justify-between">
-          {getStatusBadge()}
-          {car.onRent && (
-            <span className="text-xs text-steel-500">On Rent</span>
+        {/* Bottom row: Status badge, service plan indicator, and On Rent indicator */}
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
+            {getStatusBadge()}
+            {/* Show pending service plan indicator */}
+            {car.hasPendingServicePlan && car.pendingServicePlan && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded font-medium bg-blue-200 text-blue-800"
+                title={`In Service Plan: ${car.pendingServicePlan.name}`}
+              >
+                In Plan
+              </span>
+            )}
+          </div>
+          {car.portfolio && (
+            <span className="text-xs text-green-600 font-medium">On Lease</span>
           )}
         </div>
       </div>

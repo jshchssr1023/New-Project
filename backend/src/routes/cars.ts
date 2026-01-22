@@ -364,9 +364,26 @@ router.post('/bulk-import', async (req: AuthRequest, res: Response) => {
 // STANDARD CRUD OPERATIONS
 // =============================================================================
 
-// Get all cars with pagination
+// Helper to format month/year as display string
+function formatPlannedDate(month: number, year: number): string {
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${monthNames[month - 1]} ${year}`;
+}
+
+// Get all cars with pagination and active plan information
 router.get('/', async (req: AuthRequest, res: Response) => {
-  const { page = '1', pageSize = '20', status, customer, reasonShopped, carType } = req.query;
+  const {
+    page = '1',
+    pageSize = '20',
+    status,
+    customer,
+    customerId, // Filter by customer ID (FK) - more reliable than customer name
+    reasonShopped,
+    carType,
+    shoppingStatus,
+    planningStatus, // 'needs_planning' | 'already_planned' | 'all'
+    search,
+  } = req.query;
   const pageNum = parseInt(page as string);
   const pageSizeNum = parseInt(pageSize as string);
 
@@ -381,33 +398,280 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    const where = {
+    // Build base where clause
+    const where: Record<string, unknown> = {
       companyId: req.user!.companyId,
       ...(statusFilter && { status: statusFilter }),
-      ...(customer && { customer: customer as string }),
+      ...(customerId && { customerId: customerId as string }), // Filter by FK (more reliable)
+      ...(customer && !customerId && { customer: { equals: customer as string, mode: 'insensitive' } }), // Fallback to name
       ...(reasonShopped && { reasonsShopped: reasonShopped as string }),
       ...(carType && { carType: carType as string }),
+      ...(shoppingStatus && { shoppingStatus: shoppingStatus as string }),
     };
 
+    // Search filter
+    if (search) {
+      const searchStr = search as string;
+      where.OR = [
+        { railcarNumber: { contains: searchStr, mode: 'insensitive' } },
+        { customer: { contains: searchStr, mode: 'insensitive' } },
+        { projectNumber: { contains: searchStr, mode: 'insensitive' } },
+      ];
+    }
+
+    // Planning status filter - handled after initial query
+    // We need to get cars with their plans first, then filter
+
+    // Get cars with active CarFlowPlans and pending Service Plans
     const [cars, total] = await Promise.all([
       prisma.car.findMany({
         where,
         skip: (pageNum - 1) * pageSizeNum,
         take: pageSizeNum,
         orderBy: { railcarNumber: 'asc' },
+        include: {
+          carFlowPlans: {
+            where: {
+              status: { in: ['Planned', 'In Progress'] },
+            },
+            take: 1,
+            include: {
+              shop: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  location: true,
+                  networkId: true,
+                  network: true,
+                  isParent: true,
+                  parentShopId: true,
+                  shopNetwork: {
+                    select: {
+                      id: true,
+                      name: true,
+                      code: true,
+                      isAitxInternal: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+          // Include pending service plans for blue card styling
+          servicePlanCars: {
+            where: {
+              servicePlan: {
+                status: { in: ['draft', 'proposed'] }, // Pending service plans
+              },
+            },
+            take: 1,
+            include: {
+              servicePlan: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                },
+              },
+            },
+          },
+        },
       }),
       prisma.car.count({ where }),
     ]);
 
+    // Get S&OP commitments for validation
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+
+    // Get all shop IDs from active plans
+    const shopIds = cars
+      .filter(car => car.carFlowPlans && car.carFlowPlans.length > 0)
+      .map(car => car.carFlowPlans[0].shopId);
+
+    // Get S&OP commitments for these shops
+    const sopCommitments = shopIds.length > 0 ? await prisma.sOPCommitment.findMany({
+      where: {
+        shopId: { in: shopIds },
+        year: { gte: currentYear },
+      },
+      select: {
+        shopId: true,
+        year: true,
+        month: true,
+        committedVolume: true,
+      },
+    }) : [];
+
+    // Create a lookup map for S&OP commitments
+    const sopCommitmentMap = new Map<string, boolean>();
+    for (const commitment of sopCommitments) {
+      const key = `${commitment.shopId}-${commitment.year}-${commitment.month}`;
+      sopCommitmentMap.set(key, commitment.committedVolume > 0);
+    }
+
+    // Transform cars to include active plan info
+    const transformedCars = cars.map(car => {
+      const activePlan = car.carFlowPlans?.[0];
+      let activePlanInfo = null;
+      let hasActivePlan = false;
+
+      if (activePlan) {
+        hasActivePlan = true;
+        const shop = activePlan.shop;
+
+        // Check S&OP commitment for this shop/month
+        const sopKey = `${shop.id}-${activePlan.plannedYear}-${activePlan.plannedMonth}`;
+        const hasSOPCommitment = sopCommitmentMap.has(sopKey);
+
+        // Determine network info
+        let networkId = shop.networkId;
+        let networkName = shop.shopNetwork?.name || shop.network || null;
+        let isAitxInternal = shop.shopNetwork?.isAitxInternal ?? false;
+
+        // If shop is AITX internal (check by network name or code)
+        if (!networkId && shop.network) {
+          isAitxInternal = shop.network.toLowerCase().includes('aitx');
+          networkName = shop.network;
+        }
+
+        activePlanInfo = {
+          id: activePlan.id,
+          shopId: shop.id,
+          shopName: shop.name,
+          shopCode: shop.code,
+          shopLocation: shop.location,
+          networkId,
+          networkName,
+          isAitxInternal,
+          plannedMonth: activePlan.plannedMonth,
+          plannedYear: activePlan.plannedYear,
+          plannedDate: formatPlannedDate(activePlan.plannedMonth, activePlan.plannedYear),
+          status: activePlan.status,
+          source: activePlan.source,
+          hasSOPCommitment,
+          sopValidationError: hasSOPCommitment
+            ? null
+            : `Shop "${shop.name}" does not have S&OP capacity set up for ${formatPlannedDate(activePlan.plannedMonth, activePlan.plannedYear)}. Please configure in S&OP Settings.`,
+        };
+      }
+
+      // Check for pending service plan
+      const pendingServicePlan = car.servicePlanCars?.[0];
+      let pendingServicePlanInfo = null;
+      let hasPendingServicePlan = false;
+
+      if (pendingServicePlan) {
+        hasPendingServicePlan = true;
+        pendingServicePlanInfo = {
+          id: pendingServicePlan.servicePlan.id,
+          name: pendingServicePlan.servicePlan.name,
+          status: pendingServicePlan.servicePlan.status,
+        };
+      }
+
+      // Remove the raw carFlowPlans and servicePlanCars from response and add processed info
+      const { carFlowPlans, servicePlanCars, ...carWithoutRelations } = car;
+      return {
+        ...carWithoutRelations,
+        activePlan: activePlanInfo,
+        hasActivePlan,
+        pendingServicePlan: pendingServicePlanInfo,
+        hasPendingServicePlan,
+      };
+    });
+
+    // Apply planning status filter after transformation
+    // Planning is determined by:
+    // - Column AK (status): Complete = no longer needs shopping
+    // - hasActivePlan: car has an active CarFlowPlan entry
+    // - Needs Planning = car needs shopping AND no active plan AND status != Complete
+    let filteredCars = transformedCars;
+    if (planningStatus === 'needs_planning') {
+      // Cars that need planning:
+      // - Have shopping status indicating they need work (Urgent, Must Shop, Upcoming)
+      // - AND no active CarFlowPlan
+      // - AND status is NOT 'Complete'
+      filteredCars = transformedCars.filter(car => {
+        const statusLower = (car.status || '').toLowerCase();
+        const isComplete = statusLower === 'complete' || statusLower === 'completed';
+        return (
+          !car.hasActivePlan &&
+          !isComplete &&
+          ['Urgent', 'Must Shop', 'Upcoming'].includes(car.shoppingStatus)
+        );
+      });
+    } else if (planningStatus === 'already_planned') {
+      // Cars that are already planned: have active CarFlowPlan
+      filteredCars = transformedCars.filter(car => car.hasActivePlan);
+    }
+
     res.json({
-      data: cars,
-      total,
+      data: filteredCars,
+      total: planningStatus ? filteredCars.length : total,
       page: pageNum,
       pageSize: pageSizeNum,
-      totalPages: Math.ceil(total / pageSizeNum),
+      totalPages: Math.ceil((planningStatus ? filteredCars.length : total) / pageSizeNum),
     });
   } catch (error) {
     logger.error('Get cars error', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Get all unique filter options for slicers
+router.get('/filter-options', async (req: AuthRequest, res: Response) => {
+  try {
+    const companyId = req.user!.companyId;
+
+    // Get all unique values for each filter field
+    // For customers, get from both Customer table (source of truth) AND Car.customer field
+    const [carTypes, customersFromTable, customersFromCars, reasons, statuses] = await Promise.all([
+      prisma.car.findMany({
+        where: { companyId, carType: { not: '' } },
+        select: { carType: true },
+        distinct: ['carType'],
+      }),
+      // Get all active customers from Customer table (the proper source of truth)
+      prisma.customer.findMany({
+        where: { companyId, isActive: true },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+      }),
+      // Also get customer names from cars (for legacy/unmapped customers)
+      prisma.car.findMany({
+        where: { companyId, customer: { not: '' } },
+        select: { customer: true },
+        distinct: ['customer'],
+      }),
+      prisma.car.findMany({
+        where: { companyId, reasonsShopped: { not: '' } },
+        select: { reasonsShopped: true },
+        distinct: ['reasonsShopped'],
+      }),
+      prisma.car.findMany({
+        where: { companyId, status: { not: '' } },
+        select: { status: true },
+        distinct: ['status'],
+      }),
+    ]);
+
+    // Merge customers from both sources and deduplicate
+    const customerSet = new Set<string>();
+    customersFromTable.forEach(c => c.name && customerSet.add(c.name));
+    customersFromCars.forEach(c => c.customer && customerSet.add(c.customer));
+    const allCustomers = Array.from(customerSet).sort();
+
+    res.json({
+      carTypes: carTypes.map(c => c.carType).filter(Boolean).sort(),
+      customers: allCustomers,
+      reasons: reasons.map(c => c.reasonsShopped).filter(Boolean).sort(),
+      statuses: statuses.map(c => c.status).filter(Boolean).sort(),
+    });
+  } catch (error) {
+    logger.error('Get filter options error', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });

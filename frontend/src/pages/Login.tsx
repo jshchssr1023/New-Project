@@ -15,14 +15,19 @@ export default function Login() {
     setError('');
     setIsLoading(true);
 
-    try {
-      await login(email, password);
-      navigate('/');
-    } catch {
-      setError('Invalid email or password');
-    } finally {
-      setIsLoading(false);
+    const result = await login(email, password);
+
+    if (result.success) {
+      // Check for redirect after login
+      const redirect = sessionStorage.getItem('redirectAfterLogin');
+      const safePath = redirect && redirect.startsWith('/') && !redirect.includes('//') ? redirect : '/';
+      sessionStorage.removeItem('redirectAfterLogin');
+      navigate(safePath);
+    } else {
+      setError(result.error || 'Invalid email or password');
     }
+
+    setIsLoading(false);
   };
 
   return (
@@ -94,9 +99,8 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-steel-500">
-            Demo credentials: admin@aitx.com / password123
-          </p>
+          {/* SECURITY FIX: Removed hardcoded demo credentials from UI
+              Demo credentials should be documented in README or internal docs only */}
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ const path = require('path');
 
 const DB_PATH = path.join(__dirname, 'dev.db');
 const CSV_FILE_PATH = path.join(__dirname, 'Qual Planner Master.csv');
+const SHOP_CSV_PATH = path.join(__dirname, 'cleaned shop locations.csv');
 
 console.log('Opening database at:', DB_PATH);
 const db = new Database(DB_PATH);
@@ -95,6 +96,144 @@ function parseBoolean(value) {
   return (v === 'yes' || v === 'y' || v === 'true' || v === '1') ? 1 : 0;
 }
 
+// Helper to get region from state
+function getRegionFromState(state) {
+  const regionMap = {
+    // Northeast
+    ME: 'Northeast', NH: 'Northeast', VT: 'Northeast', MA: 'Northeast',
+    RI: 'Northeast', CT: 'Northeast', NY: 'Northeast', NJ: 'Northeast',
+    PA: 'Northeast', MD: 'Northeast', DE: 'Northeast', DC: 'Northeast',
+    // Southeast
+    VA: 'Southeast', WV: 'Southeast', NC: 'Southeast', SC: 'Southeast',
+    GA: 'Southeast', FL: 'Southeast', AL: 'Southeast', MS: 'Southeast',
+    TN: 'Southeast', KY: 'Southeast',
+    // Midwest
+    OH: 'Midwest', IN: 'Midwest', IL: 'Midwest', MI: 'Midwest',
+    WI: 'Midwest', MN: 'Midwest', IA: 'Midwest', MO: 'Midwest',
+    ND: 'Midwest', SD: 'Midwest', NE: 'Midwest', KS: 'Midwest',
+    // Southwest
+    TX: 'Southwest', OK: 'Southwest', AR: 'Southwest', LA: 'Southwest',
+    NM: 'Southwest', AZ: 'Southwest',
+    // West
+    CO: 'West', WY: 'West', MT: 'West', ID: 'West',
+    WA: 'West', OR: 'West', CA: 'West', NV: 'West', UT: 'West',
+    // Canada
+    ON: 'Canada', QC: 'Canada', BC: 'Canada', AB: 'Canada',
+    SK: 'Canada', MB: 'Canada', NB: 'Canada', NS: 'Canada',
+  };
+  return regionMap[(state || '').toUpperCase()] || 'Other';
+}
+
+// Parse shop CSV (handles the quirky quoting format)
+function parseShopCSV(filePath) {
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split(/\r?\n/);
+
+  // Strip outer quotes and BOM from each line
+  const cleanedLines = lines.map(line => {
+    line = line.trim();
+    // Remove BOM
+    if (line.charCodeAt(0) === 0xFEFF) {
+      line = line.substring(1);
+    }
+    // Remove outer quotes
+    if (line.startsWith('"') && line.endsWith('"')) {
+      line = line.slice(1, -1);
+    } else if (line.startsWith('"')) {
+      line = line.slice(1);
+    }
+    return line;
+  }).filter(line => line.trim());
+
+  if (cleanedLines.length === 0) return [];
+
+  // Parse header using the CSV line parser
+  const headers = [];
+  let current = '';
+  let inQuotes = false;
+  const headerLine = cleanedLines[0];
+
+  for (let i = 0; i < headerLine.length; i++) {
+    const char = headerLine[i];
+    const nextChar = headerLine[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      headers.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  headers.push(current.trim());
+
+  // Parse data rows
+  const records = [];
+  for (let i = 1; i < cleanedLines.length; i++) {
+    const values = [];
+    current = '';
+    inQuotes = false;
+    const line = cleanedLines[i];
+
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      const nextChar = line[j + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          j++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+
+    const record = {};
+    headers.forEach((header, idx) => {
+      record[header] = values[idx] || '';
+    });
+    records.push(record);
+  }
+
+  return records;
+}
+
+// Generate a shop code from name and external ID
+function generateShopCode(name, city, externalId) {
+  let code = (name || 'SHOP')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, '')
+    .trim();
+
+  const words = code.split(/\s+/).filter(w =>
+    !['INC', 'LLC', 'CORP', 'THE', 'AND', 'OF', 'CO'].includes(w) && w.length > 0
+  );
+
+  let baseCode = words.slice(0, 3).join('-') || 'SHOP';
+
+  if (city && city !== 'nan' && city.length > 0) {
+    const cleanCity = city.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10);
+    if (cleanCity) {
+      baseCode = `${baseCode}-${cleanCity}`;
+    }
+  }
+
+  return `${baseCode}-${externalId}`;
+}
+
 // Shop data
 const shopData = [
   { name: 'AITX Maumee', code: 'MAUM', city: 'Maumee', state: 'OH', region: 'Midwest', network: 'AITX-Own', certifications: 'Qualification, Heavy Repair', annualCapacity: 1200, turnTime: 85, contact: 'Mike Thompson (419) 555-1234', notes: 'Primary Midwest hub' },
@@ -133,13 +272,14 @@ const locations = ['Chicago, IL', 'Houston, TX', 'Los Angeles, CA', 'Atlanta, GA
 async function main() {
   console.log('Starting seed...');
 
-  // Clear existing data
+  // Clear existing data (preserve User and Company for auth)
   const tablesToClear = [
     'QualificationPlanDocument', 'QualificationPlanAssignment', 'QualificationScenario',
     'QualificationPlanEvent', 'LeaseQualificationEntry', 'LeaseContract',
     'SOPAssignment', 'ShopCapacitySlot', 'CarShopEligibility',
-    'ScenarioModification', 'ScenarioCar', 'Scenario',
-    'PlanAssignment', 'Plan', 'Car', 'Shop', 'ShopRule', 'Customer', 'User', 'Company'
+    'ScenarioModification', 'ScenarioCar', 'Scenario', 'CarFlowPlan',
+    'PlanAssignment', 'Plan', 'Car', 'Shop', 'ShopRule', 'Customer'
+    // Note: User and Company NOT cleared to preserve auth from init-db.js
   ];
 
   for (const table of tablesToClear) {
@@ -149,58 +289,206 @@ async function main() {
       // Table might not exist
     }
   }
-  console.log('Cleared existing data');
+  console.log('Cleared existing data (preserved User/Company)');
 
-  // Create company
-  const companyId = uuidv4();
-  db.prepare(`INSERT INTO Company (id, name, code) VALUES (?, ?, ?)`).run(companyId, 'AITX Rail Services', 'AITX');
-  console.log('Created company: AITX Rail Services');
+  // Get existing company ID from init-db.js, or create if not exists
+  let companyId;
+  let plannerId;
+  let adminId;
+  const existingCompany = db.prepare('SELECT id FROM Company LIMIT 1').get();
+  if (existingCompany) {
+    companyId = existingCompany.id;
+    console.log('Using existing company');
 
-  // Create users
-  const adminPassword = bcrypt.hashSync('password123', 10);
-  const adminId = uuidv4();
-  const plannerId = uuidv4();
-  const viewerId = uuidv4();
+    // Get existing planner user or create users
+    const existingPlanner = db.prepare('SELECT id FROM User WHERE role = ? AND companyId = ?').get('planner', companyId);
+    const existingAdmin = db.prepare('SELECT id FROM User WHERE role = ? AND companyId = ?').get('admin', companyId);
 
-  db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
-  db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
-  db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
-  console.log('Created users: admin, planner, viewer');
+    if (existingPlanner) {
+      plannerId = existingPlanner.id;
+      adminId = existingAdmin?.id || existingPlanner.id;
+      console.log('Using existing users');
+    } else {
+      // Create users for existing company
+      const adminPassword = bcrypt.hashSync('password123', 10);
+      adminId = uuidv4();
+      plannerId = uuidv4();
+      const viewerId = uuidv4();
 
-  // Create shops
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
+      db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
+      console.log('Created users: admin, planner, viewer');
+    }
+  } else {
+    companyId = uuidv4();
+    db.prepare(`INSERT INTO Company (id, name, code) VALUES (?, ?, ?)`).run(companyId, 'AITX Rail Services', 'AITX');
+    console.log('Created company: AITX Rail Services');
+
+    // Create users only if company was created
+    const adminPassword = bcrypt.hashSync('password123', 10);
+    adminId = uuidv4();
+    plannerId = uuidv4();
+    const viewerId = uuidv4();
+
+    db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(adminId, 'admin@aitx.com', adminPassword, 'Admin', 'User', 'admin', companyId);
+    db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(plannerId, 'planner@aitx.com', adminPassword, 'Sarah', 'Johnson', 'planner', companyId);
+    db.prepare(`INSERT INTO User (id, email, password, firstName, lastName, role, companyId) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(viewerId, 'viewer@aitx.com', adminPassword, 'Mike', 'Williams', 'viewer', companyId);
+    console.log('Created users: admin, planner, viewer');
+  }
+
+  // Create shops from CSV
   const insertShop = db.prepare(`
-    INSERT INTO Shop (id, name, code, location, city, state, region, network, isAitxInternal, tankQualified, networkTier, shopStatus, capacity, baseCostPerCar, laborRate, costIndex, baseTurnTime, certifications, contactName, contactPhone, notes, isActive, companyId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO Shop (
+      id, externalId, name, displayName, code, shopType, location, address1, address2,
+      city, state, zip, region, network, servingRailroad, splc, scac,
+      latitude, longitude, isAitxInternal, tankQualified, networkTier, shopStatus,
+      capacity, baseCostPerCar, laborRate, costIndex, baseTurnTime, certifications,
+      contactName, contactEmail, contactPhone, contactFax, website, sapVendorId, notes,
+      certificationClass, certificationDate, certificationExp,
+      displayOnMap, displayOnPortal, environmentalReview, lastVerified,
+      isActive, companyId
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?
+    )
   `);
 
   const shopIds = [];
-  for (let i = 0; i < shopData.length; i++) {
-    const shop = shopData[i];
-    const shopId = uuidv4();
-    const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
-    const isAitx = shop.network === 'AITX-Own' ? 1 : 0;
-    const tankQualified = shop.certifications.includes('Qualification') ? 1 : 0;
-    const networkTier = isAitx ? 1 : Math.min(2 + Math.floor(i / 5), 5);
-    const contactName = shop.contact.split(' (')[0];
-    const contactPhone = shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '';
+  const usedCodes = new Set();
 
-    insertShop.run(
-      shopId, shop.name, shop.code, `${shop.city}, ${shop.state}`, shop.city, shop.state, shop.region, shop.network,
-      isAitx, tankQualified, networkTier, 'active', monthlyCapacity, isAitx ? 20685 : 15000,
-      isAitx ? 95 : 75, isAitx ? 1.379 : 1.0, shop.turnTime, JSON.stringify(shop.certifications.split(', ')),
-      contactName, contactPhone, shop.notes, 1, companyId
+  // Try to load shops from CSV
+  if (fs.existsSync(SHOP_CSV_PATH)) {
+    console.log(`Loading shops from CSV: ${SHOP_CSV_PATH}`);
+    const shopRecords = parseShopCSV(SHOP_CSV_PATH);
+    console.log(`   Found ${shopRecords.length} records in shop CSV`);
+
+    // Filter to well-formed active shops (IsAITXShop must be Yes or No)
+    const validShops = shopRecords.filter(r =>
+      ['Yes', 'No'].includes(r.IsAITXShop) &&
+      r.ShopStatus === 'Active' &&
+      r.Action?.toLowerCase() !== 'delete'
     );
-    shopIds.push({ id: shopId, ...shop, tankQualified: tankQualified === 1 });
+    console.log(`   Filtered to ${validShops.length} active shops`);
+
+    for (const record of validShops) {
+      const shopId = uuidv4();
+      const externalId = parseInt(record.Id) || 0;
+
+      // Generate unique code
+      let code = generateShopCode(record.ShopName, record.City, externalId);
+      let codeAttempt = 0;
+      while (usedCodes.has(code)) {
+        codeAttempt++;
+        code = `${code}-${codeAttempt}`;
+      }
+      usedCodes.add(code);
+
+      const isAitx = record.IsAITXShop === 'Yes' ? 1 : 0;
+      const city = record.City === 'nan' ? '' : (record.City || '');
+      const state = record.State === 'nan' ? '' : (record.State || '');
+      const zip = record.Zip === 'nan' ? '' : (record.Zip || '');
+      const lat = parseFloat(record.Latitude) || null;
+      const lng = parseFloat(record.Longitude) || null;
+      const laborRateVal = parseFloat(record.LaborRate) || (isAitx ? 95 : 75);
+      const certDate = parseDate(record.CertificationDate);
+      const certExp = parseDate(record.CertificateExpiration);
+      const lastVerified = parseDate(record['Last Verified']);
+
+      try {
+        insertShop.run(
+          shopId,
+          externalId,
+          record.ShopName || 'Unknown',
+          record.ShopNameDisplay || record.ShopName || 'Unknown',
+          code,
+          record.ShopType || 'Repair',
+          `${city}, ${state}`.replace(/^,\s*/, '').trim(),
+          record.Address1 || '',
+          record.Address2 || '',
+          city,
+          state,
+          zip,
+          getRegionFromState(state),
+          isAitx ? 'AITX-Own' : '3rd Party',
+          record.DeliveryLines || '',
+          record.SPLC || '',
+          record.SCAC || '',
+          lat,
+          lng,
+          isAitx,
+          1, // tankQualified - assume true for repair shops
+          isAitx ? 1 : 3, // networkTier
+          'active',
+          20, // default capacity
+          isAitx ? 20685 : 15000,
+          laborRateVal,
+          isAitx ? 1.379 : 1.0,
+          14, // default turn time
+          '[]', // certifications JSON
+          '', // contactName
+          record.Email || '',
+          record.Phone || '',
+          record.Fax || '',
+          record.Website || '',
+          record.SAP || '',
+          record.Comment || '',
+          record.CertifcationClass || '',
+          certDate,
+          certExp,
+          parseBoolean(record.DisplayOnCustomerMap),
+          parseBoolean(record.DisplayOnWebPortal),
+          parseBoolean(record.EnvironmentalReview),
+          lastVerified,
+          1,
+          companyId
+        );
+        shopIds.push({ id: shopId, code, name: record.ShopName, isAitx: isAitx === 1, tankQualified: true });
+      } catch (err) {
+        console.error(`   Error inserting shop ${record.ShopName}: ${err.message}`);
+      }
+    }
+  } else {
+    // Fallback to hardcoded shops if CSV not found
+    console.log('Shop CSV not found, using hardcoded fallback shops');
+    for (let i = 0; i < shopData.length; i++) {
+      const shop = shopData[i];
+      const shopId = uuidv4();
+      const isAitx = shop.network === 'AITX-Own' ? 1 : 0;
+      const tankQual = shop.certifications.includes('Qualification') ? 1 : 0;
+      const monthlyCapacity = Math.ceil(shop.annualCapacity / 12);
+
+      insertShop.run(
+        shopId, null, shop.name, shop.name, shop.code, 'Repair',
+        `${shop.city}, ${shop.state}`, '', '', shop.city, shop.state, '',
+        shop.region, shop.network, '', '', '',
+        null, null, isAitx, tankQual, isAitx ? 1 : 3, 'active',
+        monthlyCapacity, isAitx ? 20685 : 15000, isAitx ? 95 : 75, isAitx ? 1.379 : 1.0,
+        shop.turnTime, JSON.stringify(shop.certifications.split(', ')),
+        shop.contact.split(' (')[0], '', shop.contact.includes('(') ? shop.contact.match(/\([\d\)\s-]+/)?.[0]?.replace(/[()]/g, '') || '' : '',
+        '', '', '', shop.notes, '', null, null, 0, 0, 0, null, 1, companyId
+      );
+      shopIds.push({ id: shopId, ...shop, tankQualified: tankQual === 1 });
+    }
   }
   console.log(`Created ${shopIds.length} shops`);
 
   // Create railcars
   const insertCar = db.prepare(`
-    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, companyId)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO Car (id, railcarNumber, carType, isTankCar, commodity, customer, projectNumber, reasonsShopped, status, currentLocation, homeRegion, originRegion, projectedCost, daysInShop, notes, contractNumber, contractExpiration, isJacketed, isLined, buildYear, qualificationType, tankQualified, tankQualDueDate, performScheduled, planStatus, portfolio, csr, csl, commercial, liningType, carMark, carNumber, fmsLesseeNumber, pastRegion, region2026, minNoLining, minWLining, interiorLining, rule88B, safetyRelief, serviceEquipment, stubSill, tankThickness, tankQualification, companyId)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const cars = [];
@@ -247,20 +535,58 @@ async function main() {
       const qualificationType = record['qualtype'] || record['Qual Type'] || record['fullpartialqual'] || record['Full/Partial Qual'] || '';
       const tankQualified = parseBoolean(record['tankqual'] || record['Tank Qual'] || record['tankqualified'] || record['Tank Qualified'] || '');
       const tankQualDueDate = parseDate(record['tankqualdue'] || record['Tank Qual Due'] || record['tankqualduedate'] || record['Tank Qual Due Date'] || '');
-      const performScheduled = parseBoolean(record['perfsched'] || record['Perf Sched'] || record['performscheduled'] || record['Perform Scheduled'] || '');
+
+      // Scheduled/performScheduled - Column AJ: "Planned Shopping" means already planned
+      const scheduledValue = record['scheduled'] || record['Scheduled'] || record['performscheduled'] || record['Perform Scheduled'] || '';
+      const performScheduled = scheduledValue.toLowerCase().includes('planned') ? 1 : parseBoolean(scheduledValue);
+
       const planStatus = record['planstatus'] || record['Plan Status'] || '';
 
-      const region = regions[Math.floor(Math.random() * regions.length)];
-      const status = 'available';
+      // Current Status - Column AK: Complete, Arrived, To Be Routed, Enroute, Release, etc.
+      const currentStatus = record['currentstatus'] || record['Current Status'] || record['status'] || record['Status'] || 'To Be Routed';
+
+      // Reason Shopped - Column AH
+      const reasonsShopped = record['reasonshopped'] || record['Reason Shopped'] || record['reasonsshopped'] || record['Reasons Shopped'] || '';
+
+      // Portfolio - Column AC: "On Lease" or "Active" = true
+      const portfolioValue = record['portfolio'] || record['Portfolio'] || '';
+      const portfolio = portfolioValue.toLowerCase() === 'on lease' || portfolioValue.toLowerCase() === 'active' ? 1 : 0;
+
+      // Reference fields
+      const csr = record['csr'] || record['CSR'] || '';
+      const csl = record['csl'] || record['CSL'] || '';
+      const commercial = record['commercial'] || record['Commercial'] || '';
+      const liningType = record['liningtype'] || record['Lining Type'] || '';
+      const carMark = record['carmark'] || record['Car Mark'] || railcarNumber.replace(/[0-9]/g, '');
+      const carNumber = record['carnumber'] || record['Car Number'] || record['carno'] || record['Car No'] || railcarNumber.replace(/[^0-9]/g, '');
+      const fmsLesseeNumber = record['fmslesseenumber'] || record['FMS Lessee Number'] || record['fmslessee'] || '';
+      const pastRegion = record['pastregion'] || record['Past Region'] || '';
+      const region2026 = record['region2026'] || record['2026 Region'] || record['26region'] || '';
+
+      // Qualification date fields - these drive shopping urgency
+      const minNoLining = parseDate(record['minnolining'] || record['Min (no lining)'] || record['min(nolining)'] || '');
+      const minWLining = parseDate(record['minwlining'] || record['Min w/ lining'] || record['minw/lining'] || '');
+      const interiorLining = parseDate(record['interiorlining'] || record['Interior Lining'] || '');
+      const rule88B = parseDate(record['rule88b'] || record['Rule 88B'] || '');
+      const safetyRelief = parseDate(record['safetyrelief'] || record['Safety Relief'] || '');
+      const serviceEquipment = parseDate(record['serviceequipment'] || record['Service Equipment'] || '');
+      const stubSill = parseDate(record['stubsill'] || record['Stub Sill'] || '');
+      const tankThickness = parseDate(record['tankthickness'] || record['Tank Thickness'] || '');
+      const tankQualification = parseDate(record['tankqualification'] || record['Tank Qualification'] || '');
+
+      const region = record['region'] || record['Region'] || record['homeregion'] || record['Home Region'] || regions[Math.floor(Math.random() * regions.length)];
       const carId = uuidv4();
 
       insertCar.run(
         carId, railcarNumber, carType, isTankCar, commodity, customer, '',
-        isTankCar && tankQualDueDate ? 'qualification' : '', status,
+        reasonsShopped, currentStatus,
         locations[Math.floor(Math.random() * locations.length)], region, region,
         0, 0, '', contractNumber, contractExpiration, isJacketed ? 1 : 0, isLined ? 1 : 0,
         buildYear, qualificationType, tankQualified ? 1 : 0, tankQualDueDate,
-        performScheduled ? 1 : 0, planStatus, companyId
+        performScheduled, planStatus, portfolio,
+        csr, csl, commercial, liningType, carMark, carNumber, fmsLesseeNumber, pastRegion, region2026,
+        minNoLining, minWLining, interiorLining, rule88B, safetyRelief, serviceEquipment, stubSill, tankThickness, tankQualification,
+        companyId
       );
       cars.push({ id: carId, railcarNumber, isTankCar: isTankCar === 1, homeRegion: region });
 
@@ -297,19 +623,35 @@ async function main() {
 
       const contractExpiration = new Date(Date.now() + Math.random() * 730 * 24 * 60 * 60 * 1000).toISOString();
       const carId = uuidv4();
+      const railcarNumber = `AITX${String(100000 + i).slice(1)}`;
+
+      // Generate random qualification dates for demo
+      const generateQualDate = () => {
+        if (Math.random() > 0.5) return null;
+        const daysOffset = Math.floor(Math.random() * 730) - 60; // -60 to +670 days
+        return new Date(Date.now() + daysOffset * 24 * 60 * 60 * 1000).toISOString();
+      };
 
       insertCar.run(
-        carId, `AITX${String(100000 + i).slice(1)}`, carType, isTankCar, commodity, customer,
+        carId, railcarNumber, carType, isTankCar, commodity, customer,
         `PRJ-${2024}-${String(1000 + Math.floor(Math.random() * 9000))}`,
-        ['release', 'assignment', 'qualification', 'project', 'repair', 'maintenance'][Math.floor(Math.random() * 6)],
-        'available', locations[Math.floor(Math.random() * locations.length)], region, region,
+        ['TANK QUALIFICATION', 'Annual Inspection', 'Wheel Repair', 'Tank Cleaning'][Math.floor(Math.random() * 4)],
+        ['To Be Routed', 'Arrived', 'Enroute', 'Complete'][Math.floor(Math.random() * 4)],
+        locations[Math.floor(Math.random() * locations.length)], region, region,
         12000 + Math.floor(Math.random() * 10000), 0, Math.random() > 0.7 ? 'Priority service required' : '',
         `CTR-${2024}-${String(10000 + i)}`, contractExpiration, isJacketed, isLined, buildYear,
         ['full', 'partial', ''][Math.floor(Math.random() * 3)], tankQualified, tankQualDueDate,
         Math.random() > 0.7 ? 1 : 0, ['planned', 'in_progress', 'completed', 'pending', ''][Math.floor(Math.random() * 5)],
+        Math.random() > 0.5 ? 1 : 0,
+        // Reference fields (empty for random data)
+        '', '', '', isLined ? 'Epoxy' : '', 'AITX', String(100000 + i).slice(1), '', region, region,
+        // Qualification dates (random for demo)
+        isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null,
+        isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null,
+        generateQualDate(), isTankCar ? generateQualDate() : null, isTankCar ? generateQualDate() : null,
         companyId
       );
-      cars.push({ id: carId, railcarNumber: `AITX${String(100000 + i).slice(1)}`, isTankCar: isTankCar === 1, homeRegion: region });
+      cars.push({ id: carId, railcarNumber, isTankCar: isTankCar === 1, homeRegion: region });
 
       if ((i + 1) % 50 === 0) {
         console.log(`  ... created ${i + 1}/200 railcars`);

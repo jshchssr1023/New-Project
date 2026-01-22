@@ -12,43 +12,28 @@ import {
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { useCars } from '../hooks/useCars';
-import { useCarSelection } from '../contexts/CarSelectionContext';
+import { useToast } from '../contexts/ToastContext';
 import BulkActionsBar from '../components/cars/BulkActionsBar';
 import HierarchicalFilter from '../components/cars/HierarchicalFilter';
 import ShoppingStatusBadge, { getShoppingStatus } from '../components/cars/ShoppingStatusBadge';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { CarCardGridSkeleton, TableSkeleton } from '../components/ui/LoadingSkeleton';
 import ErrorMessage from '../components/ui/ErrorMessage';
-import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal } from '../components/ui';
+import { Slicer, SlicerBar, CompactCarCard, CompactCarCardGrid, CarDetailModal, EmptyState } from '../components/ui';
+import { TruckIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../types';
-import { carsApi } from '../services/api';
+import { carsApi, servicePlansApi } from '../services/api';
+import type { ServicePlan } from '../services/api/servicePlans';
+import { CAR_TYPE_OPTIONS, REASON_OPTIONS, STATUS_COLORS, CAR_STATUS_OPTIONS, PLANNING_STATUS_OPTIONS } from '../constants/carOptions';
 
 // Lazy load modals
 const ImportModal = lazy(() => import('../components/cars/ImportModal'));
 const CarFormModal = lazy(() => import('../components/cars/CarFormModal'));
-const PlanCarsModal = lazy(() => import('../components/carflow/PlanCarsModal'));
-
-// Constants
-const CAR_TYPE_OPTIONS = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
-const REASON_OPTIONS = ['Annual Inspection', 'Wheel Repair', 'Tank Cleaning', 'Valve Replacement', 'Frame Repair', 'Safety Retrofit', 'DOT Compliance', 'Corrosion Repair', 'Coupler Replacement', 'Brake System'];
-
-// Status colors for table view
-const statusColors: Record<string, string> = {
-  available: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  in_service: 'bg-amber-50 text-amber-700 border-amber-200',
-  in_shop: 'bg-violet-50 text-violet-700 border-violet-200',
-  scheduled: 'bg-blue-50 text-blue-700 border-blue-200',
-  planned: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-  release: 'bg-orange-50 text-orange-700 border-orange-200',
-  assignment: 'bg-cyan-50 text-cyan-700 border-cyan-200',
-  arrived: 'bg-green-50 text-green-700 border-green-200',
-  retired: 'bg-steel-100 text-steel-600 border-steel-200',
-};
 
 export default function CarsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { selectMultiple } = useCarSelection();
+  const { showToast } = useToast();
 
   // View mode: 'cards' or 'table'
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -69,7 +54,6 @@ export default function CarsPage() {
   // Modal states
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [isPlanCarsModalOpen, setIsPlanCarsModalOpen] = useState(false);
   const [editingCar, setEditingCar] = useState<Car | null>(null);
   const [viewingCar, setViewingCar] = useState<Car | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; carId: string | null; isBulk: boolean }>({
@@ -77,6 +61,10 @@ export default function CarsPage() {
     carId: null,
     isBulk: false,
   });
+
+  // Service plans for bulk action dropdown
+  const [servicePlans, setServicePlans] = useState<ServicePlan[]>([]);
+  const [isAddingToServicePlan, setIsAddingToServicePlan] = useState(false);
 
   // Use custom hook for car data management
   const {
@@ -115,9 +103,35 @@ export default function CarsPage() {
 
     const urlStatus = searchParams.get('status');
     const urlSearch = searchParams.get('search');
+    const urlCarId = searchParams.get('carId');
     if (urlStatus) updateFilters({ status: urlStatus });
     if (urlSearch) updateFilters({ search: urlSearch });
+
+    // Auto-open car detail modal if carId is provided
+    if (urlCarId) {
+      // Fetch the car and open the detail modal
+      carsApi.getById(urlCarId).then((car) => {
+        setViewingCar(car);
+      }).catch((err) => {
+        console.error('Failed to load car for detail view:', err);
+      });
+    }
   }, [searchParams, updateFilters]);
+
+  // Load service plans for the bulk action dropdown
+  useEffect(() => {
+    const loadServicePlans = async () => {
+      try {
+        // Load only draft and proposed plans (active ones that can have cars added)
+        const plans = await servicePlansApi.getAll({ status: 'draft' });
+        const proposedPlans = await servicePlansApi.getAll({ status: 'proposed' });
+        setServicePlans([...plans, ...proposedPlans]);
+      } catch (err) {
+        console.error('Failed to load service plans:', err);
+      }
+    };
+    loadServicePlans();
+  }, []);
 
   // Filtered cars based on hierarchical filter
   const displayedCars = useMemo(() => {
@@ -137,8 +151,10 @@ export default function CarsPage() {
         customer: filters.customer,
         carType: filters.carType,
       });
+      showToast('Export started successfully', 'success');
     } catch (error) {
-      console.error('Export failed:', error);
+      const message = error instanceof Error ? error.message : 'Export failed';
+      showToast(`Export failed: ${message}`, 'error');
     }
   };
 
@@ -174,14 +190,22 @@ export default function CarsPage() {
     setDeleteConfirm({ isOpen: false, carId: null, isBulk: false });
   };
 
-  // Navigation handlers
-  const handleUseInScenario = () => {
-    selectMultiple(selectedCars);
-    navigate('/scenarios');
-  };
-
-  const handleUseInCarFlow = () => {
-    setIsPlanCarsModalOpen(true);
+  // Add selected cars to an existing service plan
+  const handleAddToServicePlan = async (servicePlanId: string) => {
+    setIsAddingToServicePlan(true);
+    try {
+      const carIds = Array.from(selectedCarIds);
+      await servicePlansApi.addCars(servicePlanId, carIds);
+      showToast(`Added ${carIds.length} car(s) to service plan`, 'success');
+      clearSelection();
+      // Navigate to the service plan builder with this plan
+      navigate(`/service-plans/${servicePlanId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to add cars to service plan';
+      showToast(message, 'error');
+    } finally {
+      setIsAddingToServicePlan(false);
+    }
   };
 
   // Hierarchical filter handler
@@ -334,8 +358,18 @@ export default function CarsPage() {
             {/* Slicer Filters */}
             <SlicerBar>
               <Slicer
+                label="Planning"
+                options={PLANNING_STATUS_OPTIONS.map(p => ({ value: p.value, label: p.label }))}
+                value={filters.planningStatus || ''}
+                onChange={(v) => updateFilters({ planningStatus: (v || undefined) as 'needs_planning' | 'already_planned' | 'all' | undefined })}
+                placeholder="All"
+                size="sm"
+              />
+              <Slicer
                 label="Car Type"
-                options={CAR_TYPE_OPTIONS.map(t => ({ value: t, label: t }))}
+                options={filterOptions.carTypes.length > 0
+                  ? filterOptions.carTypes.map(t => ({ value: t, label: t }))
+                  : CAR_TYPE_OPTIONS.map(t => ({ value: t, label: t }))}
                 value={filters.carType || ''}
                 onChange={(v) => updateFilters({ carType: v as string })}
                 placeholder="All"
@@ -343,13 +377,7 @@ export default function CarsPage() {
               />
               <Slicer
                 label="Status"
-                options={[
-                  { value: 'available', label: 'Available' },
-                  { value: 'in_service', label: 'In Service' },
-                  { value: 'in_shop', label: 'In Shop' },
-                  { value: 'scheduled', label: 'Scheduled' },
-                  { value: 'retired', label: 'Retired' },
-                ]}
+                options={CAR_STATUS_OPTIONS.map(s => ({ value: s.value, label: s.label }))}
                 value={filters.status || ''}
                 onChange={(v) => updateFilters({ status: v as string })}
                 placeholder="All"
@@ -365,7 +393,9 @@ export default function CarsPage() {
               />
               <Slicer
                 label="Reason"
-                options={REASON_OPTIONS.map(r => ({ value: r, label: r }))}
+                options={filterOptions.reasons.length > 0
+                  ? filterOptions.reasons.map(r => ({ value: r, label: r }))
+                  : REASON_OPTIONS.map(r => ({ value: r, label: r }))}
                 value={filters.reasonsShopped || ''}
                 onChange={(v) => updateFilters({ reasonsShopped: v as string })}
                 placeholder="All"
@@ -374,7 +404,7 @@ export default function CarsPage() {
             </SlicerBar>
 
             {/* Clear Filters */}
-            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonsShopped) && (
+            {(filters.search || filters.carType || filters.status || filters.customer || filters.reasonsShopped || filters.planningStatus || filters.shoppingStatus) && (
               <button
                 onClick={handleClearAllFilters}
                 className="text-sm text-crimson-600 hover:text-crimson-700 font-medium"
@@ -393,8 +423,13 @@ export default function CarsPage() {
                 onBulkStatusUpdate={(status) => bulkUpdate(Array.from(selectedCarIds), { status })}
                 onBulkDelete={handleBulkDeleteClick}
                 onClearSelection={clearSelection}
-                onUseInScenario={handleUseInScenario}
-                onUseInCarFlow={handleUseInCarFlow}
+                servicePlans={servicePlans.map(plan => ({
+                  id: plan.id,
+                  name: plan.name,
+                  customerName: plan.customer?.name,
+                }))}
+                onAddToServicePlan={handleAddToServicePlan}
+                isExporting={isAddingToServicePlan}
               />
             </div>
           )}
@@ -409,15 +444,15 @@ export default function CarsPage() {
               <TableSkeleton rows={10} columns={10} />
             )
           ) : displayedCars.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-steel-500">No cars found matching your filters.</p>
-              <button
-                onClick={handleClearAllFilters}
-                className="mt-2 text-rail-600 hover:text-rail-800 font-medium"
-              >
-                Clear all filters
-              </button>
-            </div>
+            <EmptyState
+              icon={TruckIcon}
+              title="No cars found"
+              description="No railcars match your current filters. Try adjusting your search or filters."
+              action={{
+                label: 'Clear all filters',
+                onClick: handleClearAllFilters,
+              }}
+            />
           ) : viewMode === 'cards' ? (
             <CompactCarCardGrid columns={5}>
               {displayedCars.map((car) => (
@@ -500,19 +535,6 @@ export default function CarsPage() {
           carTypeOptions={CAR_TYPE_OPTIONS}
           reasonOptions={REASON_OPTIONS}
         />
-        <PlanCarsModal
-          isOpen={isPlanCarsModalOpen}
-          onClose={() => {
-            setIsPlanCarsModalOpen(false);
-            clearSelection();
-          }}
-          selectedCars={selectedCars}
-          onSuccess={(planCount) => {
-            clearSelection();
-            // Navigate to car flow plans page to see the saved plans
-            navigate('/car-flow?tab=plans');
-          }}
-        />
       </Suspense>
 
       {/* Delete Confirmation */}
@@ -534,7 +556,15 @@ export default function CarsPage() {
       {/* Car Detail Modal */}
       <CarDetailModal
         isOpen={viewingCar !== null}
-        onClose={() => setViewingCar(null)}
+        onClose={() => {
+          setViewingCar(null);
+          // Clear carId from URL if present
+          if (searchParams.get('carId')) {
+            const newParams = new URLSearchParams(searchParams);
+            newParams.delete('carId');
+            navigate(`/cars${newParams.toString() ? '?' + newParams.toString() : ''}`, { replace: true });
+          }
+        }}
         car={viewingCar}
       />
     </div>
@@ -666,7 +696,11 @@ function TableView({
                   {car.projectNumber || '-'}
                 </td>
                 <td className="px-3 py-2.5 whitespace-nowrap">
-                  <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium border ${statusColors[car.status] || statusColors.available}`}>
+                  <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium border ${
+                    STATUS_COLORS[car.status as keyof typeof STATUS_COLORS] ||
+                    STATUS_COLORS[car.status.replace('_', ' ') as keyof typeof STATUS_COLORS] ||
+                    STATUS_COLORS.available
+                  }`}>
                     {car.status.replace('_', ' ')}
                   </span>
                 </td>

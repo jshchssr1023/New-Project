@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 
 interface ApiKey {
   id: string;
@@ -24,7 +23,6 @@ interface PermissionGroup {
 }
 
 export default function ApiKeys() {
-  const { token } = useAuth();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [permissions, setPermissions] = useState<PermissionGroup | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +48,7 @@ export default function ApiKeys() {
   async function fetchKeys() {
     try {
       const res = await fetch(`${API_URL}/api/api-keys`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       const data = await res.json();
       setKeys(data.data || []);
@@ -64,7 +62,7 @@ export default function ApiKeys() {
   async function fetchPermissions() {
     try {
       const res = await fetch(`${API_URL}/api/api-keys/permissions`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       const data = await res.json();
       setPermissions(data.data);
@@ -80,8 +78,8 @@ export default function ApiKeys() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify({
           ...formData,
           expiresAt: formData.expiresAt || undefined,
@@ -109,7 +107,7 @@ export default function ApiKeys() {
     try {
       await fetch(`${API_URL}/api/api-keys/${id}/revoke`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       fetchKeys();
     } catch (error) {
@@ -122,7 +120,7 @@ export default function ApiKeys() {
     try {
       await fetch(`${API_URL}/api/api-keys/${id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
       });
       fetchKeys();
     } catch (error) {

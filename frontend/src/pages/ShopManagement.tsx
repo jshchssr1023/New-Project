@@ -5,7 +5,7 @@ import { capacityApi, carFlowPlanApi } from '../services/carFlowApi';
 import { Slicer, SlicerBar, ShopCard, ShopCardGrid } from '../components/ui';
 import { useAuth } from '../contexts/AuthContext';
 import type { Shop } from '../types';
-import type { CarFlowPlan } from '../types/carFlow';
+import type { CarFlowPlan } from '../services/carFlowApi';
 
 type ViewMode = 'cards' | 'list' | 'network';
 const carTypes = ['Tank Car', 'Covered Hopper', 'Open Hopper', 'Boxcar', 'Gondola', 'Flatcar', 'Intermodal'];
@@ -296,6 +296,9 @@ export default function ShopManagement() {
     parentShopId: '' as string | null,
     annualTargetVolume: 0,
     isAitxInternal: false,
+    networkTier: 3,
+    laborRate: 75.0,
+    costIndex: 1.0,
   });
 
   // Filter shops for card view
@@ -359,15 +362,15 @@ export default function ShopManagement() {
     try {
       const currentYear = new Date().getFullYear();
       const data = await capacityApi.get({ year: currentYear });
-      if (data?.capacity) {
+      if (data?.shops) {
         const capacityMap: Record<string, any[]> = {};
-        data.capacity.forEach((shopCapacity: any) => {
-          capacityMap[shopCapacity.shopId] = Object.entries(shopCapacity.months || {}).map(([month, values]: [string, any]) => ({
-            month: parseInt(month),
-            year: currentYear,
-            committed: values.committed || 0,
-            planned: values.planned || 0,
-            available: values.available || 0,
+        data.shops.forEach((shopCapacity) => {
+          capacityMap[shopCapacity.id] = (shopCapacity.months || []).map((m) => ({
+            month: m.month,
+            year: m.year,
+            committed: m.scheduled || 0,
+            planned: m.scheduled || 0,
+            available: m.available || 0,
           }));
         });
         setCapacityData(capacityMap);
@@ -404,6 +407,9 @@ export default function ShopManagement() {
         parentShopId: shop.parentShopId || '',
         annualTargetVolume: shop.annualTargetVolume || 0,
         isAitxInternal: shop.isAitxInternal || false,
+        networkTier: shop.networkTier || 3,
+        laborRate: shop.laborRate || 75.0,
+        costIndex: shop.costIndex || 1.0,
       });
     } else {
       setEditingShop(null);
@@ -429,6 +435,9 @@ export default function ShopManagement() {
         parentShopId: '',
         annualTargetVolume: 0,
         isAitxInternal: false,
+        networkTier: 3,
+        laborRate: 75.0,
+        costIndex: 1.0,
       });
     }
     setIsModalOpen(true);
@@ -454,8 +463,9 @@ export default function ShopManagement() {
       }
       setIsModalOpen(false);
       loadShops();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save shop:', error);
+      alert(error.response?.data?.message || 'Failed to save shop. Please try again.');
     }
   };
 
@@ -1304,6 +1314,101 @@ export default function ShopManagement() {
                     className="input"
                     rows={2}
                   />
+                </div>
+
+                {/* Shop Hierarchy & Classification */}
+                <div className="border-t border-steel-200 pt-4 mt-4">
+                  <h4 className="text-sm font-medium text-steel-700 mb-3">Shop Hierarchy & Classification</h4>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <label className="label">Parent Shop (Network)</label>
+                      <select
+                        value={formData.parentShopId || ''}
+                        onChange={(e) => setFormData({ ...formData, parentShopId: e.target.value || null })}
+                        className="input"
+                      >
+                        <option value="">No Parent (Top-level)</option>
+                        {shops.filter(s => s.isParent && s.id !== editingShop?.id).map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Network Tier</label>
+                      <select
+                        value={formData.networkTier || 3}
+                        onChange={(e) => setFormData({ ...formData, networkTier: parseInt(e.target.value) })}
+                        className="input"
+                      >
+                        <option value={1}>Tier 1 - Heavy Repair/Qualification</option>
+                        <option value={2}>Tier 2 - Intermediate Repair</option>
+                        <option value={3}>Tier 3 - Field/Quick Service</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <label className="label">Annual Target Volume</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={formData.annualTargetVolume}
+                        onChange={(e) => setFormData({ ...formData, annualTargetVolume: parseInt(e.target.value) || 0 })}
+                        className="input"
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Labor Rate ($/hr)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.laborRate || 75}
+                        onChange={(e) => setFormData({ ...formData, laborRate: parseFloat(e.target.value) || 75 })}
+                        className="input"
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Cost Index</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={formData.costIndex || 1.0}
+                        onChange={(e) => setFormData({ ...formData, costIndex: parseFloat(e.target.value) || 1.0 })}
+                        className="input"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-6">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="isParent"
+                        checked={formData.isParent}
+                        onChange={(e) => setFormData({ ...formData, isParent: e.target.checked })}
+                        className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
+                      />
+                      <label htmlFor="isParent" className="ml-2 text-sm text-steel-700">
+                        Parent/Network Shop
+                      </label>
+                    </div>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="isAitxInternal"
+                        checked={formData.isAitxInternal}
+                        onChange={(e) => setFormData({ ...formData, isAitxInternal: e.target.checked })}
+                        className="h-4 w-4 text-rail-600 focus:ring-rail-500 border-steel-300 rounded"
+                      />
+                      <label htmlFor="isAitxInternal" className="ml-2 text-sm text-steel-700">
+                        AITX Internal Shop
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex items-center">

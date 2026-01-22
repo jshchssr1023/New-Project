@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { carsApi } from '../services/api';
 import type { Car, PaginatedResponse, ShoppingStatus } from '../types';
 
+type PlanningStatus = 'needs_planning' | 'already_planned' | 'all';
+
 interface CarsFilters {
   page: number;
   pageSize: number;
@@ -11,6 +13,7 @@ interface CarsFilters {
   customer?: string;
   reasonsShopped?: string;
   shoppingStatus?: ShoppingStatus;
+  planningStatus?: PlanningStatus;
   search?: string;
 }
 
@@ -46,8 +49,18 @@ export function useCars(options: UseCarsOptions = {}) {
       carType: filters.carType,
       customer: filters.customer,
       reasonsShopped: filters.reasonsShopped,
+      shoppingStatus: filters.shoppingStatus,
+      planningStatus: filters.planningStatus,
+      search: filters.search,
     }),
     staleTime: 30000, // 30 seconds
+  });
+
+  // Fetch filter options from the entire database (not just current page)
+  const { data: filterOptionsData } = useQuery({
+    queryKey: ['cars', 'filter-options'],
+    queryFn: () => carsApi.getFilterOptions(),
+    staleTime: 60000, // 1 minute
   });
 
   // Mutations with optimistic updates
@@ -279,15 +292,15 @@ export function useCars(options: UseCarsOptions = {}) {
     return result;
   }, [carsResponse?.data, filters.search, filters.shoppingStatus]);
 
-  // Unique values for filter dropdowns
+  // Unique values for filter dropdowns (from API - entire database)
   const filterOptions = useMemo(() => {
-    const allCars = carsResponse?.data || [];
     return {
-      customers: [...new Set(allCars.map(c => c.customer).filter(Boolean))].sort(),
-      carTypes: [...new Set(allCars.map(c => c.carType).filter(Boolean))].sort(),
-      reasons: [...new Set(allCars.map(c => c.reasonsShopped).filter(Boolean))].sort(),
+      customers: filterOptionsData?.customers || [],
+      carTypes: filterOptionsData?.carTypes || [],
+      reasons: filterOptionsData?.reasons || [],
+      statuses: filterOptionsData?.statuses || [],
     };
-  }, [carsResponse?.data]);
+  }, [filterOptionsData]);
 
   return {
     // Data

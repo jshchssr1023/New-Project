@@ -11,7 +11,6 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
-import { useAuth } from '../contexts/AuthContext';
 
 interface KPI {
   value: number;
@@ -89,7 +88,6 @@ const KPI_LABELS: Record<string, string> = {
 };
 
 export default function AnalyticsDashboard() {
-  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'forecast' | 'fleet' | 'shops'>('overview');
   const [kpis, setKpis] = useState<KPIsData | null>(null);
   const [forecast, setForecast] = useState<ForecastMonth[]>([]);
@@ -106,14 +104,14 @@ export default function AnalyticsDashboard() {
     try {
       if (activeTab === 'overview') {
         const res = await fetch('/api/analytics/kpis', {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
         if (res.ok) {
           setKpis(await res.json());
         }
       } else if (activeTab === 'forecast') {
         const res = await fetch(`/api/analytics/forecast?months=${forecastMonths}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
         if (res.ok) {
           const data = await res.json();
@@ -121,7 +119,7 @@ export default function AnalyticsDashboard() {
         }
       } else if (activeTab === 'fleet') {
         const res = await fetch('/api/analytics/fleet', {
-          headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
         if (res.ok) {
           setFleet(await res.json());

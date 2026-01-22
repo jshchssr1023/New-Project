@@ -118,11 +118,14 @@ export function correlationId(options: CorrelationIdOptions = {}): RequestHandle
       req.app.locals.logContext = { correlationId };
     }
 
+    // Capture original URL before routing modifies req.path
+    const originalPath = req.originalUrl || req.path;
+
     // Log request start with correlation ID
     logger.info('Request started', {
       correlationId,
       method: req.method,
-      path: req.path,
+      path: originalPath,
       userAgent: req.get('user-agent')?.substring(0, 100),
     });
 
@@ -137,7 +140,7 @@ export function correlationId(options: CorrelationIdOptions = {}): RequestHandle
       logger[level]('Request completed', {
         correlationId,
         method: req.method,
-        path: req.path,
+        path: originalPath,
         statusCode: res.statusCode,
         durationMs: duration,
       });
@@ -177,7 +180,7 @@ export function getRequestContext(req: Request): Record<string, unknown> {
   return {
     correlationId: req.correlationId,
     method: req.method,
-    path: req.path,
+    path: req.originalUrl || req.path,
     userId: (req as any).user?.id,
     companyId: (req as any).user?.companyId,
     ip: req.ip,

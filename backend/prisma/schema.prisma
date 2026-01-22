@@ -42,6 +42,9 @@ model User {
   committedUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCommitter")
   cancelledUnifiedAssignments     UnifiedAssignment[] @relation("UnifiedAssignmentCanceller")
 
+  // Service Plan relations
+  servicePlans                    ServicePlan[] @relation("ServicePlanCreator")
+
   // Performance indexes
   @@index([email])
   @@index([companyId])
@@ -79,6 +82,12 @@ model Company {
 
   // Shop Network relations
   shopNetworks            ShopNetwork[]
+
+  // Plan Proposal relations
+  planProposals           PlanProposal[]
+
+  // Service Plan relations
+  servicePlans            ServicePlan[]
 }
 
 // =============================================================================
@@ -213,6 +222,12 @@ model Customer {
   masterPlanCommitments MasterPlanCommitment[]
   unifiedAssignments    UnifiedAssignment[]
 
+  // Plan Proposal relations
+  planProposals         PlanProposal[]
+
+  // Service Plan relations
+  servicePlans          ServicePlan[] @relation("ServicePlanCustomer")
+
   @@unique([code, companyId])
 }
 
@@ -228,10 +243,14 @@ model Car {
   projectNumber            String           @default("") // Project or work order number
   reasonsShopped           String           @default("") // Reason(s) for shopping: qualification, repair, maintenance, etc.
 
-  // Current Status - Values: Arrived, Complete, To Be Routed, Release, Up Marketed, Enroute, Reassigned, Released, Other
+  // Current Status (Column AK) - Values: Complete, Arrived, To Be Routed, Enroute, Release, Reassigned, Up Marketed
+  // Complete = Car is done, no longer needs shopping
+  // Arrived = Car is in shop now
+  // To Be Routed = Car has not been sent to shop
+  // Enroute = Car is on its way to shop
   status                   String           @default("To Be Routed")
 
-  // Shopping Status - Computed field: Urgent, Must Shop, Upcoming, Compliant, In Shop, Planned, Unknown
+  // Shopping Status - Computed field: Urgent, MustShop, Upcoming, Compliant, InShop, Planned, Unknown
   shoppingStatus           String           @default("Unknown")
 
   // Portfolio and Qualification flags
@@ -308,6 +327,9 @@ model Car {
   masterPlanCommitments    MasterPlanCommitment[]
   unifiedAssignments       UnifiedAssignment[]
 
+  // Service Plan relations
+  servicePlanCars          ServicePlanCar[] @relation("ServicePlanCarCar")
+
   // Note: railcarNumber has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([railcarNumber, companyId])
@@ -327,14 +349,22 @@ model Car {
 
 model Shop {
   id                 String           @id @default(uuid())
+  externalId         Int?             // Original ID from CSV import (for reference)
   name               String
+  displayName        String           @default("") // Display name with city, e.g., "AITX Railcar Services LLC (Longview)"
   code               String           @unique // Shop code as unique business key
+  shopType           String           @default("Repair") // Repair, Repair: Mini Mobile, Storage Yard, Scrap Yard, Cleaning
   location           String
+  address1           String           @default("")
+  address2           String           @default("")
   city               String           @default("")
   state              String           @default("")
+  zip                String           @default("")
   region             String           @default("") // Geographic region: Northeast, Southeast, Midwest, Southwest, West
   network            String           @default("") // Shop network: e.g., "AITX-Own", "3rd Party" (legacy, use networkId)
   servingRailroad    String           @default("") // Primary serving railroad: UP, BNSF, CSX, NS, etc.
+  splc               String           @default("") // Standard Point Location Code (railroad location identifier)
+  scac               String           @default("") // Standard Carrier Alpha Code
 
   // Location coordinates for map view
   latitude           Float?           // GPS latitude
@@ -369,7 +399,22 @@ model Shop {
   contactName        String           @default("")
   contactEmail       String           @default("")
   contactPhone       String           @default("")
+  contactFax         String           @default("")
+  website            String           @default("")
+  sapVendorId        String           @default("") // SAP vendor number
   notes              String           @default("")
+
+  // Certification tracking
+  certificationClass String           @default("")
+  certificationDate  DateTime?        // When certified
+  certificationExp   DateTime?        // Certification expiration
+
+  // Visibility and portal flags
+  displayOnMap       Boolean          @default(false) // Show on customer map
+  displayOnPortal    Boolean          @default(false) // Show on web portal
+  environmentalReview Boolean         @default(false) // Environmental review completed
+  lastVerified       DateTime?        // When shop data was last verified
+
   isActive           Boolean          @default(true)
   companyId          String
   company            Company          @relation(fields: [companyId], references: [id])
@@ -405,6 +450,10 @@ model Shop {
   // Shop Capability Profile (shop-first constraints)
   capabilityProfile     ShopCapabilityProfile?
 
+  // Service Plan relations
+  planOptionAssignments   PlanOptionAssignment[] @relation("PlanOptionAssignmentShop")
+  capacityReservations    CapacityReservation[] @relation("CapacityReservationShop")
+
   // Note: code has @unique constraint for UPSERT operations
   // Compound constraint retained for multi-tenant compatibility
   @@index([code, companyId])
@@ -415,8 +464,11 @@ model Shop {
   @@index([companyId])
   @@index([isActive])
   @@index([isParent])
+  @@index([shopType])
+  @@index([externalId])
   // Composite index for shop search/recommendations
   @@index([companyId, tankQualified, region])
+  @@index([companyId, shopType, isActive])
 }
 
 // =============================================================================
@@ -543,11 +595,11 @@ model Plan {
   description String           @default("")
   startDate   DateTime
   endDate     DateTime
-  status      String           @default("draft") // draft, active, completed, archived
+  status      String           @default("draft") // Values: draft, active, completed, archived
   companyId   String
   company     Company          @relation(fields: [companyId], references: [id])
-  createdBy   String
-  creator     User             @relation("PlanCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdBy   String?
+  creator     User?            @relation("PlanCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   assignments PlanAssignment[]
   scenarios   Scenario[]
   createdAt   DateTime         @default(now())
@@ -616,8 +668,8 @@ model Scenario {
 
   companyId      String
   company        Company                @relation(fields: [companyId], references: [id])
-  createdBy      String
-  creator        User                   @relation("ScenarioCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  createdBy      String?
+  creator        User?                  @relation("ScenarioCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
 
@@ -638,6 +690,9 @@ model Scenario {
 
   // Car Flow Plan relation - scenarios that created car flow plans
   carFlowPlans   CarFlowPlan[]
+
+  // Plan Proposal relation - proposals generated from this scenario
+  planProposals  PlanProposal[]
 
   @@index([projectNumber, companyId])
   // Performance indexes for frequently filtered fields
@@ -744,14 +799,14 @@ model CarFlowPlan {
   // Commitment tracking
   committedAt     DateTime  @default(now())
   committedById   String
-  committedBy     User      @relation("CarFlowPlanCommitter", fields: [committedById], references: [id], onDelete: Cascade)
+  committedBy     User?     @relation("CarFlowPlanCommitter", fields: [committedById], references: [id], onDelete: SetNull)
 
-  // Status workflow: Planned → In Progress → Complete, Cancelled
+  // Status workflow: Planned → InProgress → Complete, Cancelled
   // - Planned: Committed to the plan, not yet started
-  // - In Progress: Car has arrived at shop (status = 'Arrived')
+  // - InProgress: Car has arrived at shop (status = 'Arrived')
   // - Complete: Work finished (car status = 'Complete')
   // - Cancelled: Removed from plan (soft delete, capacity restored)
-  status          String    @default("Planned")
+  status          String            @default("Planned") // Values: Planned, InProgress, Complete, Cancelled
 
   // Source tracking - where did this assignment come from?
   source          String    @default("csv_import") // csv_import, scenario, manual, master_plan, migration
@@ -814,11 +869,12 @@ model SOPCommitment {
 
   // Audit fields
   createdById     String
-  createdBy       User     @relation("SOPCommitmentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy       User?    @relation("SOPCommitmentCreator", fields: [createdById], references: [id], onDelete: SetNull)
   updatedById     String?
   updatedBy       User?    @relation("SOPCommitmentUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
 
   companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -988,7 +1044,7 @@ model LeaseContract {
   startDate           DateTime
   endDate             DateTime  // Lease expiration date
   releaseDate         DateTime? // Actual or planned release date
-  status              String    @default("active") // active, pending_release, released, renewed, terminated
+  status              String              @default("active") // Values: active, pending_release, released, renewed, terminated
   commodity           String    @default("") // What the car carries
   releaseReason       String    @default("") // full_qualification, partial_qualification, assignment, release, repair
   nextCustomerId      String?   // New customer if immediate reassignment
@@ -1599,76 +1655,107 @@ model FilterPreset {
 }
 
 // =============================================================================
+// PLAN PROPOSAL - Customer Approval Workflow
+// =============================================================================
+// Tracks plan proposals sent to customers for approval. This is the bridge
+// between the planning team (creates drafts) and the scheduling team (executes
+// approved plans). The workflow is:
+//   1. Planner creates Scenario (draft)
+//   2. Planner generates PlanProposal from Scenario
+//   3. PlanProposal sent to customer (status = SENT)
+//   4. Customer approves/rejects/requests changes
+//   5. Approved proposals appear in Scheduling Queue
+//   6. Scheduler converts approved proposals to CarFlowPlans
+// =============================================================================
+
+model PlanProposal {
+  id                    String         @id @default(uuid())
+
+  // Proposal identification
+  proposalNumber        String         // Human-readable proposal number (e.g., "PROP-2026-001")
+  name                  String         // Display name (e.g., "Shell Q1 2026 Qualification Plan")
+  description           String         @default("")
+
+  // Customer this proposal is for
+  customerId            String
+  customer              Customer       @relation(fields: [customerId], references: [id])
+
+  // Source scenario (the draft plan)
+  sourceScenarioId      String
+  sourceScenario        Scenario       @relation(fields: [sourceScenarioId], references: [id])
+
+  // Proposal status workflow
+  // Values: DRAFT, SENT, CUSTOMER_APPROVED, CUSTOMER_REJECTED, REVISION_REQUESTED, SCHEDULED, EXPIRED, CANCELLED
+  status                String         @default("DRAFT")
+
+  // Version tracking (for revision requests)
+  version               Int            @default(1)
+  parentProposalId      String?        // Previous version if this is a revision
+  parentProposal        PlanProposal?  @relation("ProposalVersions", fields: [parentProposalId], references: [id])
+  childProposals        PlanProposal[] @relation("ProposalVersions")
+
+  // Communication tracking
+  sentAt                DateTime?      // When proposal was sent to customer
+  sentById              String?        // User who sent the proposal
+  sentToEmail           String         @default("") // Customer email sent to
+  sentToName            String         @default("") // Customer contact name
+
+  // Customer response
+  respondedAt           DateTime?      // When customer responded
+  approvedBy            String         @default("") // Customer contact who approved (name)
+  approverEmail         String         @default("") // Customer contact email
+  approverTitle         String         @default("") // Customer contact title
+  responseNotes         String         @default("") // Customer's notes/comments
+  rejectionReason       String         @default("") // If rejected, why
+
+  // Scheduling (when approved and scheduled)
+  scheduledAt           DateTime?      // When scheduler converted to CarFlowPlans
+  scheduledById         String?        // User who scheduled
+
+  // Summary metrics (snapshot at time of proposal)
+  carCount              Int            @default(0)
+  totalEstimatedCost    Float          @default(0)
+  planningHorizonStart  DateTime?      // First month of plan
+  planningHorizonEnd    DateTime?      // Last month of plan
+  shopCount             Int            @default(0)
+
+  // Proposal content (JSON snapshot of cars/assignments at time of send)
+  // This allows us to track exactly what was proposed even if scenario changes
+  proposalSnapshot      String         @default("{}") // JSON: { cars: [...], shops: [...], assignments: [...] }
+
+  // PDF generation
+  proposalPdfUrl        String         @default("") // Path to generated PDF
+  proposalPdfGeneratedAt DateTime?
+
+  // Expiration
+  expiresAt             DateTime?      // When proposal expires if no response
+
+  // Audit fields
+  createdById           String
+  companyId             String
+  company               Company        @relation(fields: [companyId], references: [id])
+
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  // Indexes
+  @@unique([proposalNumber, companyId])
+  @@index([customerId])
+  @@index([sourceScenarioId])
+  @@index([status])
+  @@index([companyId, status])
+  @@index([companyId, customerId, status])
+  @@index([sentAt])
+  @@index([expiresAt])
+}
+
+// =============================================================================
 // MASTER PLAN ENTITY - Versioned Container for Fleet Schedule Snapshots
 // =============================================================================
 // The MasterPlan acts as the single source of truth for the entire fleet's
 // schedule at a given point in time. Each MasterPlan is a versioned snapshot
 // that contains commitments for one or many cars across the planning horizon.
 // =============================================================================
-
-// =============================================================================
-// STATUS ENUMS - Type-safe status fields
-// =============================================================================
-
-enum CarStatus {
-  TO_BE_ROUTED
-  ARRIVED
-  COMPLETE
-  RELEASE
-  UP_MARKETED
-  ENROUTE
-  REASSIGNED
-  RELEASED
-  SCHEDULED
-  OTHER
-}
-
-enum ShoppingStatus {
-  URGENT
-  MUST_SHOP
-  UPCOMING
-  COMPLIANT
-  IN_SHOP
-  PLANNED
-  UNKNOWN
-}
-
-enum PlanStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  ARCHIVED
-}
-
-enum ScenarioStatus {
-  DRAFT
-  CONFIRMED
-  ARCHIVED
-}
-
-enum CarFlowPlanStatus {
-  PLANNED
-  IN_PROGRESS
-  COMPLETE
-  CANCELLED
-}
-
-enum LeaseContractStatus {
-  ACTIVE
-  PENDING_RELEASE
-  RELEASED
-  RENEWED
-  TERMINATED
-}
-
-enum MasterPlanStatus {
-  DRAFT      // Plan is being worked on, not yet approved
-  PENDING    // Awaiting approval
-  APPROVED   // Approved but not yet active
-  ACTIVE     // Currently active plan (only one can be active at a time)
-  SUPERSEDED // Replaced by a newer version
-  ARCHIVED   // Historical reference only
-}
 
 model MasterPlan {
   id              String           @id @default(uuid())
@@ -1687,7 +1774,8 @@ model MasterPlan {
   planningHorizonEnd   DateTime    // End of the planning window
 
   // Status workflow
-  status          MasterPlanStatus @default(DRAFT)
+  // Values: DRAFT, PENDING, APPROVED, ACTIVE, SUPERSEDED, ARCHIVED
+  status          String           @default("DRAFT")
 
   // Snapshot metadata
   snapshotTakenAt DateTime?        // When the snapshot was captured
@@ -1710,7 +1798,7 @@ model MasterPlan {
 
   // Audit fields
   createdById     String
-  createdBy       User             @relation("MasterPlanCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("MasterPlanCreator", fields: [createdById], references: [id], onDelete: SetNull)
   companyId       String
   company         Company          @relation(fields: [companyId], references: [id])
 
@@ -1739,17 +1827,6 @@ model MasterPlan {
 // - Maintaining historical audit trail
 // =============================================================================
 
-enum CommitmentStatus {
-  DRAFT         // Not yet committed, can be modified freely
-  PLANNED       // Committed to the plan, awaiting execution
-  SCHEDULED     // Confirmed with shop and customer, specific arrival date set
-  IN_PROGRESS   // Work has begun (car arrived at shop)
-  COMPLETE      // Work finished successfully
-  CANCELLED     // Removed from plan (soft delete)
-  DEFERRED      // Pushed to a future plan
-  RESCHEDULED   // Moved to different shop/date within same plan
-}
-
 model MasterPlanCommitment {
   id                    String           @id @default(uuid())
 
@@ -1776,7 +1853,8 @@ model MasterPlanCommitment {
   scheduledCompletionDate DateTime?      // Expected completion date
 
   // Commitment status workflow
-  status                CommitmentStatus @default(DRAFT)
+  // Values: DRAFT, PLANNED, SCHEDULED, IN_PROGRESS, COMPLETE, CANCELLED, DEFERRED, RESCHEDULED
+  status                String           @default("DRAFT")
 
   // Scheduling confirmation fields (populated when status = SCHEDULED)
   scheduledAt           DateTime?        // When the commitment was confirmed/scheduled
@@ -1855,17 +1933,6 @@ model MasterPlanCommitment {
 // - COMMITTED: Authoritative assignment, part of the Master Plan
 // =============================================================================
 
-enum AssignmentStatus {
-  DRAFT           // Initial draft, fully editable
-  SCENARIO        // Part of a what-if scenario
-  PENDING_REVIEW  // Awaiting review before commitment
-  COMMITTED       // Part of the authoritative Master Plan
-  IN_PROGRESS     // Execution started
-  COMPLETED       // Successfully completed
-  CANCELLED       // Removed/cancelled
-  SUPERSEDED      // Replaced by a newer assignment
-}
-
 model UnifiedAssignment {
   id                    String           @id @default(uuid())
 
@@ -1890,7 +1957,8 @@ model UnifiedAssignment {
   scheduledCompletionDate DateTime?
 
   // Assignment status - the key discriminator
-  status                AssignmentStatus @default(DRAFT)
+  // Values: DRAFT, SCENARIO, PENDING_REVIEW, COMMITTED, IN_PROGRESS, COMPLETED, CANCELLED, SUPERSEDED
+  status                String           @default("DRAFT")
 
   // Link to qualification requirement this assignment addresses
   qualificationEntryId  String?
@@ -1964,4 +2032,388 @@ model UnifiedAssignment {
   @@index([shopId, plannedYear, plannedMonth])
   @@index([carId, status])
   @@index([customerId, status, plannedYear])
+}
+
+// =============================================================================
+// SERVICE PLAN BUILDER - Customer Service Plan Proposals with Multiple Options
+// =============================================================================
+// The Service Plan Builder allows planners to create comprehensive service
+// proposals for customers. Each ServicePlan defines a car flow (X cars/month
+// from start to end date) and can have multiple PlanOptions (different shop
+// configurations) for customer comparison.
+//
+// Workflow:
+// 1. Create ServicePlan with car flow definition (cars/month, date range)
+// 2. Add cars to the plan (ServicePlanCar) - shared pool across all options
+// 3. Create multiple PlanOptions with different shop assignments
+// 4. Generate comparison PDF for customer review
+// 5. Customer approves one option → cars get scheduled
+// 6. Other options deleted, capacity reservations released
+// =============================================================================
+
+model ServicePlan {
+  id                    String              @id @default(uuid())
+
+  // Plan identification
+  name                  String              // e.g., "Q1 2026 Tank Car Service Plan"
+  description           String              @default("")
+
+  // Version control (increments on changes)
+  version               Int                 @default(1)
+
+  // Customer association (REQUIRED - Plan belongs to exactly one customer)
+  customerId            String
+  customer              Customer            @relation("ServicePlanCustomer", fields: [customerId], references: [id])
+  projectNumber         String              @default("") // Optional project reference
+
+  // Car Flow Definition
+  carFlowRate           Int                 // Cars per month (e.g., 10)
+  startMonth            Int                 // 1-12
+  startYear             Int                 // e.g., 2026
+  endMonth              Int                 // 1-12
+  endYear               Int                 // e.g., 2026
+
+  // Status workflow
+  // Values: draft, pending, final_confirmed, scheduled, archived
+  // draft = editable, pending = ready for review, final_confirmed = locked and sent to master schedule
+  status                String              @default("draft")
+
+  // Approved option (when customer approves)
+  approvedOptionId      String?             // FK to PlanOption - set when approved
+
+  // Proposal tracking
+  proposedAt            DateTime?           // When sent to customer
+  proposedById          String?
+  approvedAt            DateTime?           // When customer approved
+  approvedBy            String              @default("") // Customer contact who approved
+
+  // Final Confirmation tracking
+  finalConfirmedAt      DateTime?           // When plan was finally confirmed
+  finalConfirmedById    String?             // User who confirmed the plan
+
+  // Cars scheduled tracking
+  scheduledAt           DateTime?           // When confirmed cars were sent to Master Schedule
+
+  // Summary metrics (calculated)
+  totalCarSlots         Int                 @default(0) // carFlowRate * months
+  selectedCarCount      Int                 @default(0) // Actual cars added (pending + confirmed)
+  confirmedCarCount     Int                 @default(0) // Only confirmed cars
+  pendingCarCount       Int                 @default(0) // Only pending cars
+
+  // Audit fields
+  createdById           String
+  creator               User?               @relation("ServicePlanCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  companyId             String
+  company               Company             @relation(fields: [companyId], references: [id])
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Customer response tracking (for proposals awaiting feedback)
+  customerResponseStatus String              @default("none") // none, awaiting_response, approved, rejected, revision_requested
+  customerRespondedAt   DateTime?
+  customerFeedback      String              @default("") // Customer notes/feedback
+
+  // Revision tracking
+  revisionCount         Int                 @default(0) // Number of times revised
+  currentSnapshotId     String?             // Points to the latest active snapshot
+  lastSentAt            DateTime?           // Last time sent to customer
+
+  // Relations
+  cars                  ServicePlanCar[]
+  options               PlanOption[]
+  auditEvents           ServicePlanAuditEvent[]
+  proposalSnapshots     ProposalSnapshot[]
+
+  @@index([companyId, status])
+  @@index([customerId])
+  @@index([customerId, status])  // For finding final_confirmed plan per customer
+  @@index([status])
+  @@index([createdById])
+  @@index([customerResponseStatus]) // For finding proposals awaiting response
+}
+
+// Cars selected for a Service Plan (shared pool across all options)
+// Car Matrix: Displays all cars with their confirmation status
+model ServicePlanCar {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Car reference
+  carId                 String
+  car                   Car                 @relation("ServicePlanCarCar", fields: [carId], references: [id])
+
+  // Car Status: pending = editable, confirmed = locked, deleted = soft-deleted with audit
+  // Confirmation can ONLY occur in the Car Matrix
+  status                String              @default("pending")
+
+  // Assignment details (editable until confirmed)
+  assignedShopId        String?             // Shop assignment
+  plannedMonth          Int?                // 1-12
+  plannedYear           Int?                // e.g., 2026
+  shopReason            String              @default("") // Shopping reason
+
+  // Auto-distribution suggestion (system-calculated default month)
+  autoAssignedMonth     Int?                // 1-12 (system suggestion)
+  autoAssignedYear      Int?                // e.g., 2026
+
+  // User can override the month
+  userAssignedMonth     Int?                // 1-12 (user override)
+  userAssignedYear      Int?                // e.g., 2026
+
+  // Metadata for sorting/prioritization
+  qualificationDueDate  DateTime?           // Copied from car for display
+  contractExpiration    DateTime?           // Copied from car for display
+  shoppingStatus        String              @default("") // Copied from car
+
+  // Confirmation tracking
+  confirmedAt           DateTime?           // When car was confirmed
+  confirmedById         String?             // User who confirmed
+
+  // Soft-delete tracking (for audit)
+  deletedAt             DateTime?           // When car was deleted
+  deletedById           String?             // User who deleted
+  deleteReason          String              @default("") // Reason for deletion
+
+  addedAt               DateTime            @default(now())
+  updatedAt             DateTime            @default(now()) @updatedAt
+
+  // Relations
+  optionAssignments     PlanOptionAssignment[]
+
+  @@unique([servicePlanId, carId])
+  @@index([servicePlanId])
+  @@index([servicePlanId, status])  // For filtering by status
+  @@index([carId])
+  @@index([status])
+}
+
+// A specific configuration option within a Service Plan
+model PlanOption {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Option identification
+  name                  String              // e.g., "Option A - All to ABC Rail"
+  description           String              @default("")
+
+  // Calculated summary metrics
+  totalEstimatedCost    Float               @default(0)
+  totalEstimatedDays    Int                 @default(0)
+  shopCount             Int                 @default(0) // Number of unique shops
+
+  // Status
+  // Values: draft, ready, selected, rejected
+  status                String              @default("draft")
+
+  // Order for display
+  displayOrder          Int                 @default(0)
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  // Relations
+  assignments           PlanOptionAssignment[]
+  capacityReservations  CapacityReservation[]
+
+  @@index([servicePlanId])
+  @@index([status])
+}
+
+// Shop assignment for a specific car within a Plan Option
+model PlanOptionAssignment {
+  id                    String              @id @default(uuid())
+
+  // Parent Plan Option
+  planOptionId          String
+  planOption            PlanOption          @relation(fields: [planOptionId], references: [id], onDelete: Cascade)
+
+  // Reference to the car in the plan
+  servicePlanCarId      String
+  servicePlanCar        ServicePlanCar      @relation(fields: [servicePlanCarId], references: [id], onDelete: Cascade)
+
+  // Shop assignment
+  shopId                String
+  shop                  Shop                @relation("PlanOptionAssignmentShop", fields: [shopId], references: [id])
+
+  // Suggested shop (from rule engine)
+  suggestedShopId       String?
+
+  // Planned timing
+  plannedMonth          Int                 // 1-12
+  plannedYear           Int                 // e.g., 2026
+
+  // Cost and duration estimates
+  estimatedCost         Float               @default(0)
+  estimatedDays         Int                 @default(14)
+
+  // Shop reason (copied from car or manually entered)
+  shopReason            String              @default("")
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([planOptionId, servicePlanCarId])
+  @@index([planOptionId])
+  @@index([servicePlanCarId])
+  @@index([shopId])
+  @@index([plannedYear, plannedMonth])
+}
+
+// Capacity Reservation - Soft-books shop capacity to prevent overbooking
+model CapacityReservation {
+  id                    String              @id @default(uuid())
+
+  // Which Plan Option holds this reservation
+  planOptionId          String
+  planOption            PlanOption          @relation(fields: [planOptionId], references: [id], onDelete: Cascade)
+
+  // Shop and period being reserved
+  shopId                String
+  shop                  Shop                @relation("CapacityReservationShop", fields: [shopId], references: [id])
+  reservedMonth         Int                 // 1-12
+  reservedYear          Int                 // e.g., 2026
+
+  // Number of car slots reserved
+  reservedSlots         Int                 @default(0)
+
+  // Status
+  // Values: active, released, converted (when approved and scheduled)
+  status                String              @default("active")
+
+  // Timestamps
+  reservedAt            DateTime            @default(now())
+  releasedAt            DateTime?
+  convertedAt           DateTime?           // When converted to actual commitment
+
+  companyId             String
+
+  @@unique([planOptionId, shopId, reservedYear, reservedMonth])
+  @@index([shopId, reservedYear, reservedMonth])
+  @@index([planOptionId])
+  @@index([status])
+  @@index([companyId])
+}
+
+// =============================================================================
+// SERVICE PLAN AUDIT EVENT - Tracks all confirmation and planning actions
+// =============================================================================
+// Required for Story 9: Versioning & Audit Control
+// Tracks: car_confirmed, car_deleted, plan_final_confirmed, car_added, car_updated
+// =============================================================================
+
+model ServicePlanAuditEvent {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Event type
+  // Values: car_added, car_updated, car_confirmed, car_deleted, plan_created,
+  //         plan_updated, plan_final_confirmed, plan_scheduled, plan_archived
+  eventType             String
+
+  // Version at time of event
+  planVersion           Int
+
+  // Associated car (if car-level event)
+  servicePlanCarId      String?
+  carId                 String?
+  railcarNumber         String?             // Denormalized for audit readability
+
+  // Event details (JSON serialized)
+  // For car events: { shopId, plannedMonth, plannedYear, shopReason, previousStatus, newStatus }
+  // For plan events: { previousStatus, newStatus, confirmedCarCount, pendingCarCount }
+  eventDetails          String              @default("{}")
+
+  // Who performed the action
+  performedById         String
+  performedByName       String              @default("") // Denormalized for audit readability
+
+  // When
+  performedAt           DateTime            @default(now())
+
+  // Company for multi-tenant isolation
+  companyId             String
+
+  @@index([servicePlanId])
+  @@index([servicePlanId, eventType])
+  @@index([eventType])
+  @@index([performedAt])
+  @@index([companyId])
+  @@index([carId])
+}
+
+// =============================================================================
+// PROPOSAL SNAPSHOT - Immutable record of what was sent to customer
+// =============================================================================
+// Required for: Historical tracking of shopping options offered to customers
+// Each time a proposal is sent (or revised), a snapshot is created
+// =============================================================================
+
+model ProposalSnapshot {
+  id                    String              @id @default(uuid())
+
+  // Parent Service Plan
+  servicePlanId         String
+  servicePlan           ServicePlan         @relation(fields: [servicePlanId], references: [id], onDelete: Cascade)
+
+  // Snapshot identification
+  snapshotNumber        Int                 // Sequential number (1, 2, 3...) for this plan
+  version               String              @default("1.0") // Display version (1.0, 1.1, 2.0)
+
+  // Snapshot type
+  // Values: initial_proposal, revision, final_confirmation
+  snapshotType          String              @default("initial_proposal")
+
+  // Immutable snapshot data (JSON)
+  // Contains: { cars: [], options: [], selectedOption: {}, summary: {} }
+  snapshotData          String              // JSON blob of entire proposal state
+
+  // Customer communication tracking
+  sentToCustomer        Boolean             @default(false)
+  sentAt                DateTime?           // When sent
+  sentById              String?             // Who sent it
+  sentToEmail           String?             // Customer email
+  sentToName            String?             // Customer contact name
+
+  // Customer response tracking
+  customerResponseStatus String             @default("pending") // pending, approved, rejected, revision_requested
+  customerRespondedAt   DateTime?
+  customerResponseNotes String              @default("") // Customer feedback
+
+  // If revision was requested, track what changed
+  revisionRequestedAt   DateTime?
+  revisionNotes         String              @default("") // What customer wants changed
+  supersededBySnapshotId String?            // Points to the new snapshot that replaced this one
+
+  // PDF generation
+  pdfUrl                String?             // Generated PDF path
+  pdfGeneratedAt        DateTime?
+
+  // Summary metrics (denormalized for quick display)
+  carCount              Int                 @default(0)
+  optionCount           Int                 @default(0)
+  totalEstimatedCost    Float               @default(0)
+  selectedOptionName    String?             // If customer selected an option
+
+  // Audit fields
+  createdById           String
+  companyId             String
+
+  createdAt             DateTime            @default(now())
+
+  @@unique([servicePlanId, snapshotNumber])
+  @@index([servicePlanId])
+  @@index([servicePlanId, snapshotType])
+  @@index([customerResponseStatus])
+  @@index([companyId])
+  @@index([sentAt])
 }

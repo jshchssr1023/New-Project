@@ -260,16 +260,15 @@ export const sopPlanningApi = {
     // Build demand by month
     const demandByMonth: Record<
       string,
-      { fullQualifications: number; partialQualifications: number; assignments: number; releases: number; total: number }
+      { qualifications: number; assignments: number; returns: number; total: number }
     > = {};
 
     months.forEach((month) => {
       const monthItems = demandRegister.items.filter((i) => i.dueMonth === month);
       demandByMonth[month] = {
-        fullQualifications: monthItems.filter((i) => i.workType === 'full_qualification').length,
-        partialQualifications: monthItems.filter((i) => i.workType === 'partial_qualification').length,
+        qualifications: monthItems.filter((i) => i.workType === 'qualification').length,
         assignments: monthItems.filter((i) => i.workType === 'assignment').length,
-        releases: monthItems.filter((i) => i.workType === 'release').length,
+        returns: monthItems.filter((i) => i.workType === 'return').length,
         total: monthItems.length,
       };
     });

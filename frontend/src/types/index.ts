@@ -24,6 +24,7 @@ export interface Car {
   isTankCar: boolean;
   commodity: string;
   customer: string;
+  customerId: string | null; // FK to Customer table (preferred for filtering)
   projectNumber: string;
   reasonsShopped: string;
   status: string; // Current Status: Arrived, Complete, To Be Routed, Release, etc.
@@ -64,6 +65,18 @@ export interface Car {
   buildYear: number | null; // Car Age / Year Built
 
   // =============================================================================
+  // REFERENCE FIELDS (from CSV columns T-AD)
+  // =============================================================================
+  csr: string; // Customer Service Rep - Column G
+  csl: string; // Customer Service Lead - Column H
+  commercial: string; // Commercial contact - Column I
+  carMark: string; // Car Mark prefix - Column B
+  carNumber: string; // Car Number suffix - Column Q
+  fmsLesseeNumber: string; // FMS Lessee Number - Column C
+  pastRegion: string; // Past Region - Column J
+  region2026: string; // 2026 Region - Column K
+
+  // =============================================================================
   // QUALIFICATION DUE DATES (from CSV columns T-AB)
   // These drive shopping urgency - earliest due date determines shopping_status
   // =============================================================================
@@ -87,6 +100,22 @@ export interface Car {
   performTankQual: boolean; // Perform Tank Qual flag
   performScheduled: boolean; // Scheduled flag
 
+  // =============================================================================
+  // ACTIVE PLAN INFORMATION (populated from CarFlowPlan)
+  // =============================================================================
+  activePlan?: CarActivePlan | null; // Current active plan for this car
+  hasActivePlan?: boolean; // Convenience flag: true if car has Planned/InProgress plan
+
+  // =============================================================================
+  // PENDING SERVICE PLAN (for cars in draft/proposed service plans)
+  // =============================================================================
+  pendingServicePlan?: {
+    id: string;
+    name: string;
+    status: string;
+  } | null;
+  hasPendingServicePlan?: boolean; // True if car is in a pending (draft/proposed) service plan
+
   // Legacy aliases for backwards compatibility
   scheduled: string | null; // Alias for performScheduled
   currentStatusNote: string; // Additional status notes
@@ -97,14 +126,41 @@ export interface Car {
   updatedAt: string;
 }
 
+// Active plan information attached to a car
+export interface CarActivePlan {
+  id: string;
+  shopId: string;
+  shopName: string;
+  shopCode: string;
+  shopLocation: string;
+  networkId: string | null;
+  networkName: string | null;
+  isAitxInternal: boolean;
+  plannedMonth: number;
+  plannedYear: number;
+  plannedDate: string; // Formatted as "Month YYYY" for display
+  status: string; // Planned, InProgress
+  source: string; // csv_import, scenario, manual
+  // S&OP validation
+  hasSOPCommitment: boolean; // True if shop has S&OP commitment for this month
+  sopValidationError: string | null; // Error message if shop lacks S&OP setup
+}
+
 // Shopping status for regulatory qualification
 export type ShoppingStatus = 'Urgent' | 'Must Shop' | 'Upcoming' | 'Compliant' | 'In Shop' | 'Planned' | 'Unknown';
 
+// Type guard for ShoppingStatus
+const SHOPPING_STATUS_VALUES: readonly ShoppingStatus[] = ['Urgent', 'Must Shop', 'Upcoming', 'Compliant', 'In Shop', 'Planned', 'Unknown'] as const;
+
+function isShoppingStatus(value: string): value is ShoppingStatus {
+  return SHOPPING_STATUS_VALUES.includes(value as ShoppingStatus);
+}
+
 // Helper function to calculate shopping status from car qualification dates
 export function calculateShoppingStatus(car: Car): ShoppingStatus {
-  // If shoppingStatus is already set, return it
-  if (car.shoppingStatus) {
-    return car.shoppingStatus as ShoppingStatus;
+  // If shoppingStatus is already set and valid, return it
+  if (car.shoppingStatus && isShoppingStatus(car.shoppingStatus)) {
+    return car.shoppingStatus;
   }
 
   const currentYear = new Date().getFullYear();
@@ -224,6 +280,7 @@ export interface Shop {
   // Shop Network Reference (for 3rd party networks)
   networkId?: string | null;
   shopNetwork?: ShopNetwork;
+  networkName?: string | null; // Populated from shopNetwork.name or network field
   // Parent/Child Shop Hierarchy
   parentShopId: string | null;  // Reference to parent shop (for network/group hierarchy)
   parentShop?: Shop;            // Parent shop object (when populated)
@@ -255,6 +312,22 @@ export interface Shop {
   monthlyCapacity?: MonthlyCapacity[];
   createdAt: string;
   updatedAt: string;
+}
+
+// =============================================================================
+// CUSTOMER
+// =============================================================================
+
+export interface Customer {
+  id: string;
+  name: string;
+  code: string;
+  contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  address?: string;
+  notes?: string;
+  isActive?: boolean;
 }
 
 export interface ShopFilters {
@@ -398,9 +471,11 @@ export interface AnalyticsData {
     id: string;
     railcarNumber: string;
     customer: string;
-    reasonsShopped: string;
-    nextServiceDue: string | null;
-    daysUntilDue: number | null;
+    planStatus?: string;
+    status?: string;
+    reasonsShopped?: string;
+    nextServiceDue?: string | null;
+    daysUntilDue?: number | null;
   }[];
   inShopStatus: {
     id: string;
@@ -423,6 +498,21 @@ export interface AnalyticsData {
     }[];
     hasAlerts: boolean;
   };
+  // S&OP Planning Summary
+  sopSummary?: {
+    notPlanned: number;
+    overdue: number;
+    planned: number;
+    scheduled: number;
+  };
+  // Monthly Shoppings by network
+  monthlyShoppings?: {
+    month: string;
+    aitx: number;
+    thirdParty: number;
+    total: number;
+    byShop: Record<string, number>;
+  }[];
 }
 
 export interface AuthResponse {
@@ -496,7 +586,7 @@ export interface ReportData {
 
 export type MasterPlanStatus = 'draft' | 'under_review' | 'approved' | 'active' | 'archived';
 export type CommitmentStatus = 'committed' | 'scheduled' | 'in_transit' | 'arrived' | 'in_progress' | 'released';
-export type WorkType = 'qualification' | 'assignment' | 'return' | 'repair' | 'maintenance';
+export type WorkType = 'qualification' | 'full_qualification' | 'partial_qualification' | 'assignment' | 'return' | 'release' | 'repair' | 'maintenance' | 'project';
 
 export interface MasterPlan {
   id: string;

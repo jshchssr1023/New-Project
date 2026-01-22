@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 import type { Car } from '../../types';
+import { CAR_STATUS_OPTIONS } from '../../constants/carOptions';
 
 interface CarFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: Partial<Car>) => Promise<void>;
   editingCar?: Car | null;
-  carTypeOptions: string[];
-  reasonOptions: string[];
-  liningTypeOptions?: string[];
+  carTypeOptions: readonly string[];
+  reasonOptions: readonly string[];
+  liningTypeOptions?: readonly string[];
 }
 
 const defaultLiningTypes = ['None', 'Rubber', 'Epoxy', 'Glass', 'Stainless Steel', 'Polyurethane'];
@@ -32,7 +33,7 @@ export default function CarFormModal({
     customer: '',
     projectNumber: '',
     reasonsShopped: '',
-    status: 'available',
+    status: 'To Be Routed',
     notes: '',
     lined: false,
     liningType: '',
@@ -67,7 +68,7 @@ export default function CarFormModal({
           customer: '',
           projectNumber: '',
           reasonsShopped: '',
-          status: 'available',
+          status: 'To Be Routed',
           notes: '',
           lined: false,
           liningType: '',
@@ -236,16 +237,13 @@ export default function CarFormModal({
                     <div>
                       <label className="label">Status</label>
                       <select
-                        value={formData.status || 'available'}
+                        value={formData.status || 'To Be Routed'}
                         onChange={(e) => updateField('status', e.target.value as Car['status'])}
                         className="input"
                       >
-                        <option value="available">Available</option>
-                        <option value="planned">Planned</option>
-                        <option value="scheduled">Scheduled</option>
-                        <option value="in_service">In Service</option>
-                        <option value="in_shop">In Shop</option>
-                        <option value="retired">Retired</option>
+                        {CAR_STATUS_OPTIONS.map((status) => (
+                          <option key={status.value} value={status.value}>{status.label}</option>
+                        ))}
                       </select>
                     </div>
                     <div className="flex items-center gap-2">

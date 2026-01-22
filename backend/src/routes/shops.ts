@@ -9,7 +9,7 @@ router.use(authenticate);
 // Get all shops with optional filters
 router.get('/', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
-  const { region, network, servingRailroad, isActive, hasCapacity, month } = req.query;
+  const { region, network, servingRailroad, isActive, hasCapacity, month, hasSOPCommitment, year } = req.query;
 
   try {
     let shops = await prisma.shop.findMany({
@@ -23,9 +23,37 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       orderBy: { name: 'asc' },
     });
 
+    // Filter to only shops with S&OP commitments
+    if (hasSOPCommitment === 'true') {
+      const targetYear = year ? parseInt(year as string) : new Date().getFullYear();
+
+      // Get all shop IDs that have S&OP commitments for the target year
+      const sopCommitments = await prisma.sOPCommitment.findMany({
+        where: {
+          year: targetYear,
+          committedVolume: { gt: 0 },
+        },
+        select: {
+          shopId: true,
+        },
+        distinct: ['shopId'],
+      });
+
+      const shopIdsWithSOP = new Set(sopCommitments.map((c: { shopId: string }) => c.shopId));
+
+      // Filter shops to only those with S&OP commitments
+      shops = shops.filter((shop: { id: string }) => shopIdsWithSOP.has(shop.id));
+
+      // Add a flag indicating S&OP status
+      shops = shops.map((shop: { id: string }) => ({
+        ...shop,
+        hasSOPCommitment: true,
+      }));
+    }
+
     // If checking capacity for a specific month
     if (hasCapacity === 'true' && month) {
-      const shopIds = shops.map(s => s.id);
+      const shopIds = shops.map((s: { id: string }) => s.id);
       const assignments = await prisma.planAssignment.groupBy({
         by: ['shopId'],
         where: {
@@ -35,16 +63,16 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         _count: { id: true },
       });
 
-      const assignmentMap = new Map<string, number>(assignments.map(a => [a.shopId, a._count.id]));
+      const assignmentMap = new Map<string, number>(assignments.map((a: { shopId: string; _count: { id: number } }) => [a.shopId, a._count.id]));
 
-      shops = shops.map(shop => ({
+      shops = shops.map((shop: { id: string; capacity: number }) => ({
         ...shop,
         currentLoad: assignmentMap.get(shop.id) || 0,
         availableCapacity: (shop.capacity as number) - (assignmentMap.get(shop.id) || 0),
       })) as typeof shops;
 
       // Filter to only shops with available capacity
-      shops = shops.filter((s: any) => s.availableCapacity > 0);
+      shops = shops.filter((s: { availableCapacity: number }) => s.availableCapacity > 0);
     }
 
     res.json(shops);
@@ -574,51 +602,76 @@ router.get('/export', async (req: AuthRequest, res: Response) => {
 // Update shop
 router.put('/:id', async (req: AuthRequest, res: Response) => {
   const prisma: any = req.app.locals.prisma;
-  const {
-    name, code, location, city, state, region, network, servingRailroad,
-    capacity, baseCostPerCar, costMultiplier, baseTurnTime, turnTimeMultiplier,
-    capabilities, certifications, preferredCustomers,
-    contactName, contactEmail, contactPhone, notes, isActive
-  } = req.body;
 
   try {
-    const result = await prisma.shop.updateMany({
+    // Verify shop exists and belongs to this company
+    const existingShop = await prisma.shop.findFirst({
       where: {
         id: req.params.id,
         companyId: req.user!.companyId,
       },
-      data: {
-        name,
-        code,
-        location,
-        city,
-        state,
-        region,
-        network,
-        servingRailroad,
-        capacity,
-        baseCostPerCar,
-        costMultiplier,
-        baseTurnTime,
-        turnTimeMultiplier,
-        capabilities: capabilities ? JSON.stringify(capabilities) : undefined,
-        certifications: certifications ? JSON.stringify(certifications) : undefined,
-        preferredCustomers: preferredCustomers ? JSON.stringify(preferredCustomers) : undefined,
-        contactName,
-        contactEmail,
-        contactPhone,
-        notes,
-        isActive,
-      },
     });
 
-    if (result.count === 0) {
+    if (!existingShop) {
       res.status(404).json({ message: 'Shop not found' });
       return;
     }
 
-    const updatedShop = await prisma.shop.findUnique({
+    // Build update data object - only include fields that are actually provided
+    const updateData: Record<string, any> = {};
+
+    // Basic fields - only set if provided (not undefined)
+    if (req.body.name !== undefined) updateData.name = req.body.name;
+    if (req.body.code !== undefined) updateData.code = req.body.code;
+    if (req.body.location !== undefined) updateData.location = req.body.location;
+    if (req.body.city !== undefined) updateData.city = req.body.city;
+    if (req.body.state !== undefined) updateData.state = req.body.state;
+    if (req.body.region !== undefined) updateData.region = req.body.region;
+    if (req.body.network !== undefined) updateData.network = req.body.network;
+    if (req.body.servingRailroad !== undefined) updateData.servingRailroad = req.body.servingRailroad;
+    if (req.body.capacity !== undefined) updateData.capacity = req.body.capacity;
+    if (req.body.baseCostPerCar !== undefined) updateData.baseCostPerCar = req.body.baseCostPerCar;
+    if (req.body.costMultiplier !== undefined) updateData.costMultiplier = req.body.costMultiplier;
+    if (req.body.baseTurnTime !== undefined) updateData.baseTurnTime = req.body.baseTurnTime;
+    if (req.body.turnTimeMultiplier !== undefined) updateData.turnTimeMultiplier = req.body.turnTimeMultiplier;
+    if (req.body.contactName !== undefined) updateData.contactName = req.body.contactName;
+    if (req.body.contactEmail !== undefined) updateData.contactEmail = req.body.contactEmail;
+    if (req.body.contactPhone !== undefined) updateData.contactPhone = req.body.contactPhone;
+    if (req.body.notes !== undefined) updateData.notes = req.body.notes;
+    if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
+
+    // JSON array fields - stringify if provided
+    if (req.body.capabilities !== undefined) {
+      updateData.capabilities = Array.isArray(req.body.capabilities)
+        ? JSON.stringify(req.body.capabilities)
+        : req.body.capabilities;
+    }
+    if (req.body.certifications !== undefined) {
+      updateData.certifications = Array.isArray(req.body.certifications)
+        ? JSON.stringify(req.body.certifications)
+        : req.body.certifications;
+    }
+    if (req.body.preferredCustomers !== undefined) {
+      updateData.preferredCustomers = Array.isArray(req.body.preferredCustomers)
+        ? JSON.stringify(req.body.preferredCustomers)
+        : req.body.preferredCustomers;
+    }
+
+    // Shop hierarchy and tier fields
+    if (req.body.parentShopId !== undefined) updateData.parentShopId = req.body.parentShopId || null;
+    if (req.body.isParent !== undefined) updateData.isParent = req.body.isParent;
+    if (req.body.isAitxInternal !== undefined) updateData.isAitxInternal = req.body.isAitxInternal;
+    if (req.body.networkTier !== undefined) updateData.networkTier = req.body.networkTier;
+    if (req.body.annualTargetVolume !== undefined) updateData.annualTargetVolume = req.body.annualTargetVolume;
+    if (req.body.laborRate !== undefined) updateData.laborRate = req.body.laborRate;
+    if (req.body.costIndex !== undefined) updateData.costIndex = req.body.costIndex;
+
+    logger.info('Updating shop:', { id: req.params.id, updateData });
+
+    // Use update() for single record updates
+    const updatedShop = await prisma.shop.update({
       where: { id: req.params.id },
+      data: updateData,
     });
 
     res.json(updatedShop);

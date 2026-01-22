@@ -130,6 +130,30 @@ CREATE TABLE IF NOT EXISTS Car (
   tankQualDueDate TEXT,
   performScheduled INTEGER DEFAULT 0,
   planStatus TEXT DEFAULT '',
+  portfolio INTEGER DEFAULT 0,
+  shoppingStatus TEXT DEFAULT 'Unknown',
+  customerId TEXT,
+  performedTankQual INTEGER DEFAULT 0,
+  -- Reference fields from CSV
+  csr TEXT DEFAULT '',
+  csl TEXT DEFAULT '',
+  commercial TEXT DEFAULT '',
+  liningType TEXT DEFAULT '',
+  carMark TEXT DEFAULT '',
+  carNumber TEXT DEFAULT '',
+  fmsLesseeNumber TEXT DEFAULT '',
+  pastRegion TEXT DEFAULT '',
+  region2026 TEXT DEFAULT '',
+  -- Qualification date fields
+  minNoLining TEXT,
+  minWLining TEXT,
+  interiorLining TEXT,
+  rule88B TEXT,
+  safetyRelief TEXT,
+  serviceEquipment TEXT,
+  stubSill TEXT,
+  tankThickness TEXT,
+  tankQualification TEXT,
   companyId TEXT NOT NULL,
   createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
   updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -768,6 +792,177 @@ CREATE TABLE IF NOT EXISTS ApiKey (
   FOREIGN KEY (companyId) REFERENCES Company(id)
 );
 
+<<<<<<< HEAD
+-- CarFlowPlan (Car Flow Planning module)
+CREATE TABLE IF NOT EXISTS CarFlowPlan (
+  id TEXT PRIMARY KEY,
+  carId TEXT NOT NULL,
+  shopId TEXT NOT NULL,
+  customerId TEXT,
+  plannedMonth INTEGER NOT NULL,
+  plannedYear INTEGER NOT NULL,
+  sourceScenarioId TEXT,
+  committedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  committedById TEXT NOT NULL,
+  status TEXT DEFAULT 'Planned',
+  source TEXT DEFAULT 'csv_import',
+  shopReason TEXT DEFAULT '',
+  estimatedCost REAL,
+  priority INTEGER DEFAULT 3,
+  notes TEXT DEFAULT '',
+  companyId TEXT NOT NULL,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  cancelledAt TEXT,
+  FOREIGN KEY (carId) REFERENCES Car(id),
+  FOREIGN KEY (shopId) REFERENCES Shop(id),
+  FOREIGN KEY (customerId) REFERENCES Customer(id),
+  FOREIGN KEY (sourceScenarioId) REFERENCES Scenario(id),
+  FOREIGN KEY (committedById) REFERENCES User(id),
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
+=======
+-- ============================================================================
+-- SERVICE PLAN BUILDER TABLES
+-- ============================================================================
+
+-- ServicePlan (Customer-specific plan container)
+CREATE TABLE IF NOT EXISTS ServicePlan (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  version INTEGER DEFAULT 1,
+  customerId TEXT NOT NULL,
+  projectNumber TEXT DEFAULT '',
+  carFlowRate INTEGER NOT NULL,
+  startMonth INTEGER NOT NULL,
+  startYear INTEGER NOT NULL,
+  endMonth INTEGER NOT NULL,
+  endYear INTEGER NOT NULL,
+  status TEXT DEFAULT 'draft',
+  approvedOptionId TEXT,
+  proposedAt TEXT,
+  proposedById TEXT,
+  approvedAt TEXT,
+  approvedBy TEXT DEFAULT '',
+  finalConfirmedAt TEXT,
+  finalConfirmedById TEXT,
+  scheduledAt TEXT,
+  totalCarSlots INTEGER DEFAULT 0,
+  selectedCarCount INTEGER DEFAULT 0,
+  confirmedCarCount INTEGER DEFAULT 0,
+  pendingCarCount INTEGER DEFAULT 0,
+  createdById TEXT NOT NULL,
+  companyId TEXT NOT NULL,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customerId) REFERENCES Customer(id),
+  FOREIGN KEY (createdById) REFERENCES User(id),
+  FOREIGN KEY (companyId) REFERENCES Company(id)
+);
+
+-- ServicePlanCar (Cars in a plan with confirmation status)
+CREATE TABLE IF NOT EXISTS ServicePlanCar (
+  id TEXT PRIMARY KEY,
+  servicePlanId TEXT NOT NULL,
+  carId TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  assignedShopId TEXT,
+  plannedMonth INTEGER,
+  plannedYear INTEGER,
+  shopReason TEXT DEFAULT '',
+  autoAssignedMonth INTEGER,
+  autoAssignedYear INTEGER,
+  userAssignedMonth INTEGER,
+  userAssignedYear INTEGER,
+  qualificationDueDate TEXT,
+  contractExpiration TEXT,
+  shoppingStatus TEXT DEFAULT '',
+  confirmedAt TEXT,
+  confirmedById TEXT,
+  deletedAt TEXT,
+  deletedById TEXT,
+  deleteReason TEXT DEFAULT '',
+  addedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (servicePlanId) REFERENCES ServicePlan(id) ON DELETE CASCADE,
+  FOREIGN KEY (carId) REFERENCES Car(id),
+  UNIQUE(servicePlanId, carId)
+);
+
+-- PlanOption (Configuration options within a service plan)
+CREATE TABLE IF NOT EXISTS PlanOption (
+  id TEXT PRIMARY KEY,
+  servicePlanId TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  totalEstimatedCost REAL DEFAULT 0,
+  totalEstimatedDays INTEGER DEFAULT 0,
+  shopCount INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'draft',
+  displayOrder INTEGER DEFAULT 0,
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (servicePlanId) REFERENCES ServicePlan(id) ON DELETE CASCADE
+);
+
+-- PlanOptionAssignment (Shop assignments for a specific car within an option)
+CREATE TABLE IF NOT EXISTS PlanOptionAssignment (
+  id TEXT PRIMARY KEY,
+  planOptionId TEXT NOT NULL,
+  servicePlanCarId TEXT NOT NULL,
+  shopId TEXT NOT NULL,
+  suggestedShopId TEXT,
+  plannedMonth INTEGER NOT NULL,
+  plannedYear INTEGER NOT NULL,
+  estimatedCost REAL DEFAULT 0,
+  estimatedDays INTEGER DEFAULT 14,
+  shopReason TEXT DEFAULT '',
+  createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (planOptionId) REFERENCES PlanOption(id) ON DELETE CASCADE,
+  FOREIGN KEY (servicePlanCarId) REFERENCES ServicePlanCar(id) ON DELETE CASCADE,
+  FOREIGN KEY (shopId) REFERENCES Shop(id),
+  UNIQUE(planOptionId, servicePlanCarId)
+);
+
+-- CapacityReservation (Soft-books shop capacity)
+CREATE TABLE IF NOT EXISTS CapacityReservation (
+  id TEXT PRIMARY KEY,
+  planOptionId TEXT NOT NULL,
+  shopId TEXT NOT NULL,
+  reservedMonth INTEGER NOT NULL,
+  reservedYear INTEGER NOT NULL,
+  reservedSlots INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'active',
+  reservedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  releasedAt TEXT,
+  convertedAt TEXT,
+  companyId TEXT NOT NULL,
+  FOREIGN KEY (planOptionId) REFERENCES PlanOption(id) ON DELETE CASCADE,
+  FOREIGN KEY (shopId) REFERENCES Shop(id),
+  UNIQUE(planOptionId, shopId, reservedYear, reservedMonth)
+);
+
+-- ServicePlanAuditEvent (Audit trail for all confirmation actions)
+CREATE TABLE IF NOT EXISTS ServicePlanAuditEvent (
+  id TEXT PRIMARY KEY,
+  servicePlanId TEXT NOT NULL,
+  eventType TEXT NOT NULL,
+  planVersion INTEGER NOT NULL,
+  servicePlanCarId TEXT,
+  carId TEXT,
+  railcarNumber TEXT,
+  eventDetails TEXT DEFAULT '{}',
+  performedById TEXT NOT NULL,
+  performedByName TEXT DEFAULT '',
+  performedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+  companyId TEXT NOT NULL,
+  FOREIGN KEY (servicePlanId) REFERENCES ServicePlan(id) ON DELETE CASCADE
+);
+
+>>>>>>> 06e796b51b4c9f6cb71e6aa28694d2475ae98912
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_car_company ON Car(companyId);
 CREATE INDEX IF NOT EXISTS idx_shop_company ON Shop(companyId);
@@ -813,6 +1008,39 @@ CREATE INDEX IF NOT EXISTS idx_invalidated_token_expires ON InvalidatedToken(exp
 CREATE INDEX IF NOT EXISTS idx_webhook_company ON Webhook(companyId);
 CREATE INDEX IF NOT EXISTS idx_webhook_delivery ON WebhookDelivery(webhookId);
 CREATE INDEX IF NOT EXISTS idx_apikey_company ON ApiKey(companyId);
+<<<<<<< HEAD
+CREATE INDEX IF NOT EXISTS idx_carflowplan_car ON CarFlowPlan(carId);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_shop ON CarFlowPlan(shopId, plannedYear, plannedMonth);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_customer ON CarFlowPlan(customerId);
+CREATE INDEX IF NOT EXISTS idx_carflowplan_company ON CarFlowPlan(companyId, status);
+=======
+
+-- Service Plan indexes
+CREATE INDEX IF NOT EXISTS idx_sp_company_status ON ServicePlan(companyId, status);
+CREATE INDEX IF NOT EXISTS idx_sp_customer ON ServicePlan(customerId);
+CREATE INDEX IF NOT EXISTS idx_sp_customer_status ON ServicePlan(customerId, status);
+CREATE INDEX IF NOT EXISTS idx_sp_status ON ServicePlan(status);
+CREATE INDEX IF NOT EXISTS idx_sp_creator ON ServicePlan(createdById);
+CREATE INDEX IF NOT EXISTS idx_spc_servicePlan ON ServicePlanCar(servicePlanId);
+CREATE INDEX IF NOT EXISTS idx_spc_servicePlan_status ON ServicePlanCar(servicePlanId, status);
+CREATE INDEX IF NOT EXISTS idx_spc_car ON ServicePlanCar(carId);
+CREATE INDEX IF NOT EXISTS idx_spc_status ON ServicePlanCar(status);
+CREATE INDEX IF NOT EXISTS idx_po_servicePlan ON PlanOption(servicePlanId);
+CREATE INDEX IF NOT EXISTS idx_po_status ON PlanOption(status);
+CREATE INDEX IF NOT EXISTS idx_poa_option ON PlanOptionAssignment(planOptionId);
+CREATE INDEX IF NOT EXISTS idx_poa_spc ON PlanOptionAssignment(servicePlanCarId);
+CREATE INDEX IF NOT EXISTS idx_poa_shop ON PlanOptionAssignment(shopId);
+CREATE INDEX IF NOT EXISTS idx_poa_year_month ON PlanOptionAssignment(plannedYear, plannedMonth);
+CREATE INDEX IF NOT EXISTS idx_cr_option ON CapacityReservation(planOptionId);
+CREATE INDEX IF NOT EXISTS idx_cr_shop_period ON CapacityReservation(shopId, reservedYear, reservedMonth);
+CREATE INDEX IF NOT EXISTS idx_cr_status ON CapacityReservation(status);
+CREATE INDEX IF NOT EXISTS idx_cr_company ON CapacityReservation(companyId);
+CREATE INDEX IF NOT EXISTS idx_spae_servicePlan ON ServicePlanAuditEvent(servicePlanId);
+CREATE INDEX IF NOT EXISTS idx_spae_event_type ON ServicePlanAuditEvent(eventType);
+CREATE INDEX IF NOT EXISTS idx_spae_performed_at ON ServicePlanAuditEvent(performedAt);
+CREATE INDEX IF NOT EXISTS idx_spae_company ON ServicePlanAuditEvent(companyId);
+CREATE INDEX IF NOT EXISTS idx_spae_car ON ServicePlanAuditEvent(carId);
+>>>>>>> 06e796b51b4c9f6cb71e6aa28694d2475ae98912
 `;
 
 // Execute schema

@@ -35,10 +35,9 @@ import {
 import { analyticsApi, carsApi, shopsApi } from '../services/api';
 import type { AnalyticsData, Car, Shop } from '../types';
 import { useCarUpdates, useDashboardUpdates } from '../contexts/WebSocketContext';
-import { useActiveMasterPlan, useMasterPlanSummary } from '../hooks/useQueryWithCompany';
 import { sopApi } from '../services/sopApi';
 import type { DemandRegister } from '../types/sop';
-import { ALL_NETWORKS, getSystemTotalCapacity } from '../constants/shopNetworks';
+import { useShopNetworks } from '../hooks/useShopNetworks';
 
 const DAYS_IN_SHOP_THRESHOLD = 10;
 
@@ -57,19 +56,57 @@ interface DashboardFilters {
   customer: string | null;
 }
 
+// Monthly shopping data structure
+interface MonthlyShoppingData {
+  month: string;
+  aitx: number;
+  thirdParty: number;
+  total: number;
+  byShop: Record<string, number>;
+}
+
+// My Queue car structure
+interface MyQueueCar {
+  id: string;
+  railcarNumber: string;
+  customer: string;
+  planStatus: string;
+  status: string;
+}
+
+// S&OP Summary structure
+interface SOPSummary {
+  notPlanned: number;
+  overdue: number;
+  planned: number;
+  scheduled: number;
+}
+
 export default function Dashboard() {
   const currentYear = new Date().getFullYear();
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filteredCars, setFilteredCars] = useState<Car[]>([]);
-  const [monthlyShoppings, setMonthlyShoppings] = useState<{ month: string; count: number }[]>([]);
+  const [monthlyShoppings, setMonthlyShoppings] = useState<MonthlyShoppingData[]>([]);
   const [shops, setShops] = useState<Shop[]>([]);
   const [customers, setCustomers] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [myQueueSortField, setMyQueueSortField] = useState<'railcarNumber' | 'customer'>('railcarNumber');
+  const [myQueueSortAsc, setMyQueueSortAsc] = useState(true);
+  const [myQueueFilter, setMyQueueFilter] = useState('');
   const navigate = useNavigate();
 
-  // S&OP Dashboard state
+  // Load shop networks from API
+  const {
+    ALL_NETWORKS,
+    getSystemTotalCapacity,
+    isLoading: networksLoading,
+  } = useShopNetworks();
+
+  // S&OP Dashboard state - now uses API data
+  const [sopSummary, setSopSummary] = useState<SOPSummary | null>(null);
   const [demandRegister, setDemandRegister] = useState<DemandRegister | null>(null);
   const [sopLoading, setSopLoading] = useState(true);
   const [sopError, setSopError] = useState<string | null>(null);
@@ -82,10 +119,6 @@ export default function Dashboard() {
     region: null,
     customer: null,
   });
-
-  // MasterPlan data using TanStack Query
-  const { data: activeMasterPlan, isLoading: isMasterPlanLoading } = useActiveMasterPlan();
-  const { data: masterPlanSummary } = useMasterPlanSummary(activeMasterPlan?.id);
 
   // Count active filters
   const activeFilterCount = useMemo(() => {
@@ -100,11 +133,25 @@ export default function Dashboard() {
   const loadAnalytics = useCallback(async () => {
     try {
       setError(null);
+      setSopLoading(true);
       const data = await analyticsApi.getDashboard();
       setAnalytics(data);
-      loadMonthlyShoppings();
+
+      // Set S&OP summary from API
+      if ((data as any).sopSummary) {
+        setSopSummary((data as any).sopSummary);
+        setSopLoading(false);
+      }
+
+      // Set monthly shoppings from API
+      if ((data as any).monthlyShoppings) {
+        setMonthlyShoppings((data as any).monthlyShoppings);
+      } else {
+        loadMonthlyShoppings();
+      }
     } catch (err: unknown) {
       console.error('Failed to load analytics:', err);
+      setSopLoading(false);
       // Check if we have partial data from the error response
       const errorResponse = err as { response?: { data?: { partialData?: AnalyticsData; error?: string } } };
       if (errorResponse?.response?.data?.partialData) {
@@ -205,7 +252,7 @@ export default function Dashboard() {
     }
   };
 
-  // Load monthly shoppings (cars with arrived status)
+  // Load monthly shoppings fallback (cars with arrived status)
   const loadMonthlyShoppings = async () => {
     try {
       const response = await carsApi.getAll({
@@ -215,19 +262,29 @@ export default function Dashboard() {
       });
 
       // Group by month
-      const monthlyData: Record<string, number> = {};
+      const monthlyData: Record<string, { total: number; byShop: Record<string, number> }> = {};
       response.data.forEach((car: Car) => {
-        if (car.arrivalDate) {
-          const month = car.arrivalDate.slice(0, 7);
-          monthlyData[month] = (monthlyData[month] || 0) + 1;
-        } else if (car.shopEntryDate) {
-          const month = car.shopEntryDate.slice(0, 7);
-          monthlyData[month] = (monthlyData[month] || 0) + 1;
+        const dateStr = car.arrivalDate || car.shopEntryDate;
+        if (dateStr) {
+          const month = dateStr.slice(0, 7);
+          if (!monthlyData[month]) {
+            monthlyData[month] = { total: 0, byShop: {} };
+          }
+          monthlyData[month].total++;
+          // Track by shop if available
+          const shopName = (car as any).assignedShop?.name || 'Unknown';
+          monthlyData[month].byShop[shopName] = (monthlyData[month].byShop[shopName] || 0) + 1;
         }
       });
 
-      const sortedData = Object.entries(monthlyData)
-        .map(([month, count]) => ({ month, count }))
+      const sortedData: MonthlyShoppingData[] = Object.entries(monthlyData)
+        .map(([month, data]) => ({
+          month,
+          aitx: 0, // Fallback doesn't have network info
+          thirdParty: data.total, // Put all in 3rd party for fallback
+          total: data.total,
+          byShop: data.byShop,
+        }))
         .sort((a, b) => a.month.localeCompare(b.month))
         .slice(-6);
 
@@ -317,7 +374,7 @@ export default function Dashboard() {
           key: 'shopsWithCars',
           name: 'Shops with Cars',
           value: analytics.shopsWithCars?.toString() || '0',
-          description: 'Active allocations',
+          description: 'Shops with arrived cars',
           icon: BuildingStorefrontIcon,
           color: 'bg-emerald-500',
           hoverColor: 'hover:bg-emerald-600',
@@ -602,92 +659,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Active Master Plan Summary */}
-      {activeMasterPlan && (
-        <div className="card p-4 border-l-4 border-l-rail-500">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start gap-3">
-              <div className="bg-rail-100 rounded-lg p-2">
-                <CalendarDaysIcon className="h-5 w-5 text-rail-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-steel-900">Active Master Plan</h3>
-                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-green-100 text-green-700">
-                    Active
-                  </span>
-                </div>
-                <p className="text-sm text-steel-600 mt-0.5">{activeMasterPlan.planName}</p>
-                <p className="text-xs text-steel-500 mt-1">
-                  FY{activeMasterPlan.fiscalYear} v{activeMasterPlan.version} |{' '}
-                  {activeMasterPlan.commitments?.length || masterPlanSummary?.totalCommitments || 0} commitments
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate('/masterplan')}
-              className="flex items-center gap-1 text-sm font-medium text-rail-600 hover:text-rail-800"
-            >
-              View Plan
-              <ChevronRightIcon className="h-4 w-4" />
-            </button>
-          </div>
-
-          {masterPlanSummary && (
-            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-steel-100">
-              <div className="flex items-center gap-2">
-                <DocumentChartBarIcon className="h-4 w-4 text-steel-400" />
-                <span className="text-sm text-steel-600">
-                  <strong className="text-steel-900">{Object.keys(masterPlanSummary.commitmentsByShop || {}).length}</strong> shops
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CalendarDaysIcon className="h-4 w-4 text-steel-400" />
-                <span className="text-sm text-steel-600">
-                  <strong className="text-steel-900">{Object.keys(masterPlanSummary.commitmentsByMonth || {}).length}</strong> months
-                </span>
-              </div>
-              {masterPlanSummary.commitmentsByStatus?.released !== undefined && (
-                <div className="flex items-center gap-2">
-                  <CheckCircleIcon className="h-4 w-4 text-green-500" />
-                  <span className="text-sm text-steel-600">
-                    <strong className="text-green-600">{masterPlanSummary.commitmentsByStatus.released || 0}</strong> released
-                  </span>
-                </div>
-              )}
-              {masterPlanSummary.totalEstimatedCost > 0 && (
-                <div className="flex items-center gap-2 ml-auto">
-                  <span className="text-sm text-steel-500">
-                    Est. Cost: <strong className="text-steel-900">${(masterPlanSummary.totalEstimatedCost / 1000).toFixed(0)}K</strong>
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* No Active Plan Banner */}
-      {!isMasterPlanLoading && !activeMasterPlan && (
-        <div className="card p-4 bg-steel-50 border-dashed border-2 border-steel-300">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <CalendarDaysIcon className="h-5 w-5 text-steel-400" />
-              <div>
-                <p className="text-sm font-medium text-steel-700">No Active Master Plan</p>
-                <p className="text-xs text-steel-500">Create one by approving a scenario in Car Flow Planning</p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate('/car-flow')}
-              className="btn-secondary text-sm"
-            >
-              Go to Car Flow
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {kpiStats.map((stat) => (
@@ -734,72 +705,72 @@ export default function Dashboard() {
           </button>
         </div>
 
-        {sopLoading ? (
+        {sopLoading && !sopSummary ? (
           <div className="flex justify-center py-6">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
           </div>
-        ) : sopError ? (
+        ) : sopError && !sopSummary ? (
           <div className="text-center py-4 text-sm text-red-600">
             {sopError}
-            <button onClick={loadSOPData} className="ml-2 text-indigo-600 hover:underline">
+            <button onClick={loadAnalytics} className="ml-2 text-indigo-600 hover:underline">
               Retry
             </button>
           </div>
-        ) : demandRegister ? (
+        ) : sopSummary ? (
           <>
-            {/* Planning Status Cards */}
+            {/* Planning Status Cards - Using API sopSummary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
               <div
                 className="bg-red-50 border border-red-200 rounded-lg p-3 cursor-pointer hover:bg-red-100 transition-colors"
-                onClick={() => navigate('/demand-registry?filter=not_planned')}
+                onClick={() => navigate('/cars?planStatus=Not%20Planned')}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <ExclamationTriangleIcon className="h-4 w-4 text-red-600" />
                   <span className="text-xs font-medium text-red-700">Not Planned</span>
                 </div>
-                <p className="text-2xl font-bold text-red-900">{demandRegister.totalNotPlanned}</p>
-                <p className="text-xs text-red-600">Cars need scheduling</p>
+                <p className="text-2xl font-bold text-red-900">{sopSummary.notPlanned}</p>
+                <p className="text-xs text-red-600">Cars with no shopping plan</p>
               </div>
 
               <div
                 className="bg-amber-50 border border-amber-200 rounded-lg p-3 cursor-pointer hover:bg-amber-100 transition-colors"
-                onClick={() => navigate('/demand-registry?filter=overdue')}
+                onClick={() => navigate('/cars?overdue=true')}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <ClockIcon className="h-4 w-4 text-amber-600" />
                   <span className="text-xs font-medium text-amber-700">Overdue</span>
                 </div>
-                <p className="text-2xl font-bold text-amber-900">{demandRegister.totalOverdue}</p>
-                <p className="text-xs text-amber-600">Past due date</p>
+                <p className="text-2xl font-bold text-amber-900">{sopSummary.overdue}</p>
+                <p className="text-xs text-amber-600">Due in prior years</p>
               </div>
 
               <div
                 className="bg-blue-50 border border-blue-200 rounded-lg p-3 cursor-pointer hover:bg-blue-100 transition-colors"
-                onClick={() => navigate('/demand-registry?filter=planned')}
+                onClick={() => navigate('/cars?hasActivePlan=true')}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <CubeIcon className="h-4 w-4 text-blue-600" />
                   <span className="text-xs font-medium text-blue-700">Planned</span>
                 </div>
-                <p className="text-2xl font-bold text-blue-900">{demandRegister.totalPlanned}</p>
-                <p className="text-xs text-blue-600">Tentatively assigned</p>
+                <p className="text-2xl font-bold text-blue-900">{sopSummary.planned}</p>
+                <p className="text-xs text-blue-600">Have a shopping plan</p>
               </div>
 
               <div
                 className="bg-green-50 border border-green-200 rounded-lg p-3 cursor-pointer hover:bg-green-100 transition-colors"
-                onClick={() => navigate('/demand-registry?filter=scheduled')}
+                onClick={() => navigate('/cars?planStatus=Confirmed')}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <CheckCircleIcon className="h-4 w-4 text-green-600" />
                   <span className="text-xs font-medium text-green-700">Scheduled</span>
                 </div>
-                <p className="text-2xl font-bold text-green-900">{demandRegister.totalScheduled}</p>
-                <p className="text-xs text-green-600">Confirmed for shop</p>
+                <p className="text-2xl font-bold text-green-900">{sopSummary.scheduled}</p>
+                <p className="text-xs text-green-600">Confirmed status</p>
               </div>
             </div>
 
             {/* Demand by Work Type */}
-            {demandRegister.summaries && demandRegister.summaries.length > 0 && (
+            {demandRegister?.summaries && demandRegister.summaries.length > 0 && (
               <div className="border-t border-steel-100 pt-4 mb-4">
                 <h4 className="text-sm font-medium text-steel-700 mb-3">Demand by Work Type</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -823,7 +794,7 @@ export default function Dashboard() {
             {/* System Capacity Overview */}
             {(() => {
               const capacity = getSystemTotalCapacity();
-              const totalDemand = demandRegister.items.length;
+              const totalDemand = demandRegister?.items?.length || 0;
               const utilization = capacity.annual > 0 ? (totalDemand / capacity.annual) * 100 : 0;
               return (
                 <div className="border-t border-steel-100 pt-4">
@@ -923,7 +894,7 @@ export default function Dashboard() {
                     <tr
                       key={car.id}
                       className="hover:bg-steel-50 cursor-pointer"
-                      onClick={() => navigate(`/cars?search=${car.railcarNumber}`)}
+                      onClick={() => navigate(`/cars?search=${encodeURIComponent(car.railcarNumber)}&carId=${car.id}`)}
                     >
                       <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
                       <td className="py-2 text-steel-700">{car.customer || '-'}</td>
@@ -985,7 +956,7 @@ export default function Dashboard() {
 
       {/* Operational Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* My Queue Widget */}
+        {/* My Queue Widget - Cars with no plan */}
         <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -993,15 +964,25 @@ export default function Dashboard() {
               <h3 className="text-sm font-semibold text-steel-900">My Queue</h3>
             </div>
             <button
-              onClick={() => navigate('/cars?status=available')}
+              onClick={() => navigate('/cars?planStatus=Not%20Planned')}
               className="text-xs text-rail-600 hover:text-rail-800 font-medium"
             >
               View All
             </button>
           </div>
-          <p className="text-xs text-steel-500 mb-3">
-            Railcars ready for immediate action or assignment
+          <p className="text-xs text-steel-500 mb-2">
+            Cars with no shopping plan - requires scheduling
           </p>
+          {/* Filter input */}
+          <div className="mb-3">
+            <input
+              type="text"
+              placeholder="Filter by car number or customer..."
+              value={myQueueFilter}
+              onChange={(e) => setMyQueueFilter(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-steel-200 rounded focus:outline-none focus:ring-1 focus:ring-rail-500"
+            />
+          </div>
           {isLoading ? (
             <div className="text-sm text-steel-500 py-4 text-center">Loading...</div>
           ) : analytics?.myQueue?.length ? (
@@ -1009,34 +990,66 @@ export default function Dashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-steel-200">
-                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Railcar #</th>
-                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Customer</th>
-                    <th className="text-left py-2 text-xs font-medium text-steel-500 uppercase">Reason</th>
-                    <th className="text-right py-2 text-xs font-medium text-steel-500 uppercase">Days Until Due</th>
+                    <th
+                      className="text-left py-2 text-xs font-medium text-steel-500 uppercase cursor-pointer hover:text-steel-700"
+                      onClick={() => {
+                        if (myQueueSortField === 'railcarNumber') {
+                          setMyQueueSortAsc(!myQueueSortAsc);
+                        } else {
+                          setMyQueueSortField('railcarNumber');
+                          setMyQueueSortAsc(true);
+                        }
+                      }}
+                    >
+                      Railcar # {myQueueSortField === 'railcarNumber' && (myQueueSortAsc ? '↑' : '↓')}
+                    </th>
+                    <th
+                      className="text-left py-2 text-xs font-medium text-steel-500 uppercase cursor-pointer hover:text-steel-700"
+                      onClick={() => {
+                        if (myQueueSortField === 'customer') {
+                          setMyQueueSortAsc(!myQueueSortAsc);
+                        } else {
+                          setMyQueueSortField('customer');
+                          setMyQueueSortAsc(true);
+                        }
+                      }}
+                    >
+                      Customer {myQueueSortField === 'customer' && (myQueueSortAsc ? '↑' : '↓')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-steel-100">
-                  {analytics.myQueue.slice(0, 5).map((car) => (
-                    <tr
-                      key={car.id}
-                      className="hover:bg-steel-50 cursor-pointer"
-                      onClick={() => navigate(`/cars?search=${car.railcarNumber}`)}
-                    >
-                      <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
-                      <td className="py-2 text-steel-700">{car.customer || '-'}</td>
-                      <td className="py-2 text-steel-700">{car.reasonsShopped || '-'}</td>
-                      <td className={`py-2 text-right ${getDaysUntilDueColor(car.daysUntilDue)}`}>
-                        {car.daysUntilDue !== null ? (
-                          car.daysUntilDue < 0 ? `${Math.abs(car.daysUntilDue)} overdue` : car.daysUntilDue
-                        ) : '-'}
-                      </td>
-                    </tr>
-                  ))}
+                  {(analytics.myQueue as MyQueueCar[])
+                    .filter((car) => {
+                      if (!myQueueFilter) return true;
+                      const filterLower = myQueueFilter.toLowerCase();
+                      return (
+                        car.railcarNumber?.toLowerCase().includes(filterLower) ||
+                        car.customer?.toLowerCase().includes(filterLower)
+                      );
+                    })
+                    .sort((a, b) => {
+                      const aVal = myQueueSortField === 'railcarNumber' ? a.railcarNumber : a.customer;
+                      const bVal = myQueueSortField === 'railcarNumber' ? b.railcarNumber : b.customer;
+                      const comparison = (aVal || '').localeCompare(bVal || '');
+                      return myQueueSortAsc ? comparison : -comparison;
+                    })
+                    .slice(0, 10)
+                    .map((car) => (
+                      <tr
+                        key={car.id}
+                        className="hover:bg-steel-50 cursor-pointer"
+                        onClick={() => navigate(`/cars?search=${encodeURIComponent(car.railcarNumber)}&carId=${car.id}`)}
+                      >
+                        <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
+                        <td className="py-2 text-steel-700">{car.customer || '-'}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="text-sm text-steel-500 py-4 text-center">No cars in queue</p>
+            <p className="text-sm text-steel-500 py-4 text-center">No cars without plans</p>
           )}
         </div>
 
@@ -1075,7 +1088,7 @@ export default function Dashboard() {
                     <tr
                       key={car.id}
                       className="hover:bg-steel-50 cursor-pointer"
-                      onClick={() => navigate(`/cars?search=${car.railcarNumber}`)}
+                      onClick={() => navigate(`/cars?search=${encodeURIComponent(car.railcarNumber)}&carId=${car.id}`)}
                     >
                       <td className="py-2 font-medium text-steel-900">{car.railcarNumber}</td>
                       <td className="py-2 text-steel-700">{car.shopName}</td>
@@ -1102,45 +1115,57 @@ export default function Dashboard() {
 
       {/* Lower Section - Charts and Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Monthly Shoppings (Arrived Cars) */}
+        {/* Monthly Shoppings - Stacked bars by network */}
         <div className="card p-4">
           <div className="flex items-center justify-between mb-1">
             <h3 className="text-sm font-semibold text-steel-900">Monthly Shoppings</h3>
-            <ChartBarIcon className="h-4 w-4 text-steel-400" />
+            <div className="flex items-center gap-3 text-xs">
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-rail-500 rounded" />
+                <span className="text-steel-500">AITX</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-emerald-500 rounded" />
+                <span className="text-steel-500">3rd Party</span>
+              </div>
+            </div>
           </div>
-          <p className="text-xs text-steel-500 mb-3">Cars arrived at shops by month</p>
-          <div className="h-48 flex items-end justify-around bg-steel-50 rounded-lg p-3">
+          <p className="text-xs text-steel-500 mb-3">Total cars in plan by month (click month for shop breakdown)</p>
+          <div className="h-52 flex items-end justify-around bg-steel-50 rounded-lg p-3">
             {isLoading ? (
               <p className="text-steel-500 text-sm self-center">Loading...</p>
             ) : monthlyShoppings.length > 0 ? (
-              monthlyShoppings.map((item) => {
-                const maxCount = Math.max(...monthlyShoppings.map((s) => s.count), 1);
-                const heightPercent = (item.count / maxCount) * 100;
+              monthlyShoppings.slice(-6).map((item) => {
+                const maxCount = Math.max(...monthlyShoppings.slice(-6).map((s) => s.total), 1);
+                const aitxHeight = (item.aitx / maxCount) * 100;
+                const thirdPartyHeight = (item.thirdParty / maxCount) * 100;
+                const isSelected = selectedMonth === item.month;
                 return (
-                  <div key={item.month} className="flex flex-col items-center">
-                    <span className="text-xs text-steel-600 mb-1">{item.count}</span>
-                    <div
-                      className="bg-green-500 w-10 rounded-t transition-all hover:bg-green-600"
-                      style={{ height: `${Math.max(heightPercent * 1.5, 8)}px` }}
-                    />
-                    <span className="text-xs text-steel-500 mt-2">
-                      {item.month.slice(5)}
-                    </span>
-                  </div>
-                );
-              })
-            ) : analytics?.monthlyServiceCounts?.length ? (
-              analytics.monthlyServiceCounts.slice(-6).map((item) => {
-                const maxCount = Math.max(...analytics.monthlyServiceCounts!.slice(-6).map((s) => s.count), 1);
-                const heightPercent = (item.count / maxCount) * 100;
-                return (
-                  <div key={item.month} className="flex flex-col items-center">
-                    <span className="text-xs text-steel-600 mb-1">{item.count}</span>
-                    <div
-                      className="bg-rail-500 w-10 rounded-t transition-all hover:bg-rail-600"
-                      style={{ height: `${Math.max(heightPercent * 1.5, 8)}px` }}
-                    />
-                    <span className="text-xs text-steel-500 mt-2">
+                  <div
+                    key={item.month}
+                    className={`flex flex-col items-center cursor-pointer transition-all ${isSelected ? 'scale-105' : 'hover:scale-102'}`}
+                    onClick={() => setSelectedMonth(isSelected ? null : item.month)}
+                  >
+                    <span className="text-xs text-steel-700 font-medium mb-1">{item.total}</span>
+                    <div className="flex flex-col w-10">
+                      {/* 3rd Party (top) */}
+                      {item.thirdParty > 0 && (
+                        <div
+                          className={`bg-emerald-500 w-full rounded-t transition-all ${isSelected ? 'bg-emerald-600' : 'hover:bg-emerald-600'}`}
+                          style={{ height: `${Math.max(thirdPartyHeight * 1.3, item.thirdParty > 0 ? 4 : 0)}px` }}
+                          title={`3P: ${item.thirdParty}`}
+                        />
+                      )}
+                      {/* AITX (bottom) */}
+                      {item.aitx > 0 && (
+                        <div
+                          className={`bg-rail-500 w-full transition-all ${item.thirdParty === 0 ? 'rounded-t' : ''} ${isSelected ? 'bg-rail-600' : 'hover:bg-rail-600'}`}
+                          style={{ height: `${Math.max(aitxHeight * 1.3, item.aitx > 0 ? 4 : 0)}px` }}
+                          title={`AITX: ${item.aitx}`}
+                        />
+                      )}
+                    </div>
+                    <span className={`text-xs mt-2 ${isSelected ? 'text-rail-600 font-medium' : 'text-steel-500'}`}>
                       {item.month.slice(5)}
                     </span>
                   </div>
@@ -1150,6 +1175,36 @@ export default function Dashboard() {
               <p className="text-steel-500 text-sm self-center">No data available</p>
             )}
           </div>
+
+          {/* Month drill-down - Show cars by shop when a month is selected */}
+          {selectedMonth && monthlyShoppings.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-steel-200">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-sm font-medium text-steel-700">
+                  {selectedMonth} - Cars by Shop
+                </h4>
+                <button
+                  onClick={() => setSelectedMonth(null)}
+                  className="text-xs text-steel-500 hover:text-steel-700"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {(() => {
+                  const monthData = monthlyShoppings.find((m) => m.month === selectedMonth);
+                  if (!monthData?.byShop) return <p className="text-xs text-steel-500">No shop breakdown available</p>;
+                  const shopEntries = Object.entries(monthData.byShop).sort((a, b) => b[1] - a[1]);
+                  return shopEntries.map(([shopName, count]) => (
+                    <div key={shopName} className="flex items-center justify-between text-sm">
+                      <span className="text-steel-700 truncate">{shopName}</span>
+                      <span className="font-medium text-steel-900 bg-steel-100 px-2 py-0.5 rounded">{count}</span>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Shop Performance */}
