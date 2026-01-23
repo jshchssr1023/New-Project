@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requireAdmin } from '../middleware/requireAdmin';
 import websocketService from '../services/websocketService';
 import { recommendShopsForCar } from '../services/ruleEngine';
 import { prisma } from '../services/db';
@@ -32,6 +33,16 @@ const ScheduleCarSchema = z.object({
   estimatedCost: z.number().min(0).optional(),
   estimatedDuration: z.number().int().min(1).max(365).optional(),
   useRuleEngine: z.boolean().optional(),
+});
+
+// SECURITY FIX: Added validation schema for /:id/assignments POST
+// Previously this endpoint directly destructured req.body without validation
+const CreateAssignmentSchema = z.object({
+  carId: z.string().uuid('Invalid car ID'),
+  shopId: z.string().uuid('Invalid shop ID').optional(),
+  scheduledMonth: z.string().regex(/^\d{4}-\d{2}$/, 'Must be YYYY-MM format'),
+  estimatedCost: z.number().min(0).optional(),
+  estimatedDuration: z.number().int().min(1).max(365).optional(),
 });
 
 const router = Router();
@@ -86,8 +97,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Transform to include assignmentCount (from _count)
-    const plansWithCount = plans.map((plan) => ({
+    // Transform to include assignmentCount
+    // FIX: _count is not available in our custom ORM, calculate from assignments array instead
+    const plansWithCount = plans.map((plan: any) => ({
       id: plan.id,
       name: plan.name,
       description: plan.description,
@@ -97,7 +109,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
       creator: plan.creator,
-      assignmentCount: plan._count?.assignments ?? 0,
+      assignmentCount: Array.isArray(plan.assignments) ? plan.assignments.length : 0,
     }));
 
     res.json(plansWithCount);
@@ -171,13 +183,26 @@ router.get('/:id/grid', async (req: AuthRequest, res: Response) => {
     });
 
     // Generate months for the plan duration
+    // FIX: Use first day of month to avoid overflow issues with setMonth()
+    // Example issue: Jan 31 + 1 month = Mar 3 (overflow) instead of Feb 28/29
     const startDate = new Date(plan.startDate);
     const endDate = new Date(plan.endDate);
     const months: string[] = [];
-    const current = new Date(startDate);
-    while (current <= endDate) {
-      months.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}`);
-      current.setMonth(current.getMonth() + 1);
+
+    // Start from first day of start month to avoid day overflow issues
+    let currentYear = startDate.getFullYear();
+    let currentMonth = startDate.getMonth();
+    const endYear = endDate.getFullYear();
+    const endMonth = endDate.getMonth();
+
+    // Iterate by year/month rather than using Date arithmetic to avoid DST/overflow issues
+    while (currentYear < endYear || (currentYear === endYear && currentMonth <= endMonth)) {
+      months.push(`${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`);
+      currentMonth++;
+      if (currentMonth > 11) {
+        currentMonth = 0;
+        currentYear++;
+      }
     }
 
     // Group assignments by shop
@@ -313,7 +338,17 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 // NOTE: Also creates CarFlowPlan entry (dual-write for SST migration)
 // @deprecated Use POST /api/car-flow/plans instead for new implementations
 router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
-  const { carId, shopId, scheduledMonth, estimatedCost, estimatedDuration } = req.body;
+  // SECURITY FIX: Added input validation - previously directly destructured req.body
+  const validation = CreateAssignmentSchema.safeParse(req.body);
+  if (!validation.success) {
+    res.status(400).json({
+      message: 'Validation failed',
+      errors: validation.error.errors,
+    });
+    return;
+  }
+
+  const { carId, shopId, scheduledMonth, estimatedCost, estimatedDuration } = validation.data;
 
   try {
     const plan = await prisma.plan.findFirst({
@@ -334,6 +369,8 @@ router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
     const plannedMonth = parseInt(monthStr);
 
     // Create both PlanAssignment (legacy) and CarFlowPlan (SST) in transaction
+    // ATOMICITY FIX: SST status update now happens inside transaction
+    // Previously updateCarShoppingStatus was called outside transaction, causing stale status on failure
     const [assignment] = await prisma.$transaction(async (tx) => {
       // Create legacy PlanAssignment
       const newAssignment = await tx.planAssignment.create({
@@ -375,11 +412,12 @@ router.post('/:id/assignments', async (req: AuthRequest, res: Response) => {
         });
       }
 
+      // FIX: Update shopping status INSIDE transaction for atomicity
+      // If this fails, the entire transaction will be rolled back
+      await sstConsolidationService.updateCarShoppingStatus(carId);
+
       return [newAssignment];
     });
-
-    // Update shopping status (SST consolidation)
-    await sstConsolidationService.updateCarShoppingStatus(carId);
 
     res.status(201).json(assignment);
   } catch (error) {
@@ -892,26 +930,31 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
     const carIds = assignments.map((a: { carId: string }) => a.carId);
     const shopIds = [...new Set(assignments.map((a: { shopId: string }) => a.shopId))];
 
+    // Type definitions for validation data
+    type CarValidationData = { id: string; railcarNumber: string; isTankCar: boolean };
+    type ShopValidationData = { id: string; name: string; code: string; tankQualified: boolean; capacity: number };
+    type ExistingAssignmentData = { carId: string; scheduledMonth: string };
+
     const [cars, shops, existingAssignments] = await Promise.all([
       prisma.car.findMany({
         where: { id: { in: carIds }, companyId: req.user!.companyId },
         select: { id: true, railcarNumber: true, isTankCar: true },
-      }),
+      }) as Promise<CarValidationData[]>,
       prisma.shop.findMany({
         where: { id: { in: shopIds }, companyId: req.user!.companyId },
         select: { id: true, name: true, code: true, tankQualified: true, capacity: true },
-      }),
+      }) as Promise<ShopValidationData[]>,
       prisma.planAssignment.findMany({
         where: {
           planId: req.params.id,
           carId: { in: carIds },
         },
         select: { carId: true, scheduledMonth: true },
-      }),
+      }) as Promise<ExistingAssignmentData[]>,
     ]);
 
-    const carMap = new Map(cars.map(c => [c.id, c]));
-    const shopMap = new Map(shops.map(s => [s.id, s]));
+    const carMap = new Map<string, CarValidationData>(cars.map(c => [c.id, c]));
+    const shopMap = new Map<string, ShopValidationData>(shops.map(s => [s.id, s]));
     const existingSet = new Set(existingAssignments.map(a => `${a.carId}-${a.scheduledMonth}`));
 
     // Validate all assignments before creating any
@@ -1395,9 +1438,10 @@ router.get('/:id/export-data', async (req: AuthRequest, res: Response) => {
 /**
  * Migrate PlanAssignment data to CarFlowPlan (SST)
  * This is an admin operation for SST consolidation.
+ * SECURITY FIX: Added requireAdmin to prevent unauthorized database-wide migrations
  * @deprecated PlanAssignment is being phased out in favor of CarFlowPlan
  */
-router.post('/migrate-to-car-flow-plan', async (req: AuthRequest, res: Response) => {
+router.post('/migrate-to-car-flow-plan', requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const result = await sstConsolidationService.migratePlanAssignmentsToCarFlowPlan(
       req.user!.companyId,
@@ -1416,8 +1460,9 @@ router.post('/migrate-to-car-flow-plan', async (req: AuthRequest, res: Response)
 
 /**
  * Sync all shopping statuses (recalculate from SST)
+ * SECURITY FIX: Added requireAdmin to prevent unauthorized database-wide operations
  */
-router.post('/sync-shopping-status', async (req: AuthRequest, res: Response) => {
+router.post('/sync-shopping-status', requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const result = await sstConsolidationService.batchUpdateShoppingStatus(
       req.user!.companyId
@@ -1435,8 +1480,9 @@ router.post('/sync-shopping-status', async (req: AuthRequest, res: Response) => 
 
 /**
  * Sync SOPCommitment usage counts with actual CarFlowPlan data
+ * SECURITY FIX: Added requireAdmin to prevent unauthorized database-wide operations
  */
-router.post('/sync-sop-usage', async (req: AuthRequest, res: Response) => {
+router.post('/sync-sop-usage', requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const result = await sstConsolidationService.syncSOPCommitmentUsage(
       req.user!.companyId

@@ -14,6 +14,7 @@ import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { ScenarioService, createScenarioService } from '../services/scenarioService';
 import { DEFAULT_PRIORITY } from '../constants/defaults';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -86,7 +87,7 @@ router.get('/scenarios/:id', async (req: AuthRequest, res: Response) => {
   try {
     const service = getScenarioService(req);
     // SECURITY: Pass companyId to verify ownership
-    const scenario = await service.getScenario(req.params.id, req.user!.companyId);
+    const scenario = await service.getScenario(getParam(req.params.id), req.user!.companyId);
 
     if (!scenario) {
       res.status(404).json({ message: 'Scenario not found' });
@@ -114,7 +115,7 @@ router.post('/scenarios/:id/clone', async (req: AuthRequest, res: Response) => {
 
     const service = getScenarioService(req);
     // SECURITY: Pass companyId to verify ownership
-    const cloned = await service.cloneScenario(req.params.id, name, req.user!.id, req.user!.companyId);
+    const cloned = await service.cloneScenario(getParam(req.params.id), name, req.user!.id, req.user!.companyId);
 
     res.status(201).json(cloned);
   } catch (error: any) {
@@ -138,7 +139,7 @@ router.delete('/scenarios/:id', async (req: AuthRequest, res: Response) => {
   try {
     const service = getScenarioService(req);
     // SECURITY: Pass companyId to verify ownership
-    await service.deleteScenario(req.params.id, req.user!.companyId);
+    await service.deleteScenario(getParam(req.params.id), req.user!.companyId);
     res.status(204).send();
   } catch (error: any) {
     console.error('Delete scenario error:', error);
@@ -207,7 +208,7 @@ router.post('/scenarios/:id/assignments', async (req: AuthRequest, res: Response
     }
 
     const service = getScenarioService(req);
-    const assignment = await service.addAssignment(req.params.id, carId, shopId, {
+    const assignment = await service.addAssignment(getParam(req.params.id), carId, shopId, {
       workTypes: workTypes || ['full_qualification'],
       monthKey,
       estimatedCost,
@@ -229,7 +230,7 @@ router.post('/scenarios/:id/assignments', async (req: AuthRequest, res: Response
 router.get('/scenarios/:id/assignments', async (req: AuthRequest, res: Response) => {
   try {
     const service = getScenarioService(req);
-    const assignments = await service.getAssignments(req.params.id);
+    const assignments = await service.getAssignments(getParam(req.params.id));
     res.json(assignments);
   } catch (error: any) {
     console.error('Get assignments error:', error);
@@ -256,7 +257,7 @@ router.put('/scenarios/:id/assignments/:aid', async (req: AuthRequest, res: Resp
     } = req.body;
 
     const service = getScenarioService(req);
-    const assignment = await service.updateAssignment(req.params.aid, {
+    const assignment = await service.updateAssignment(getParam(req.params.aid), {
       shopId,
       workTypes,
       monthKey,
@@ -282,7 +283,7 @@ router.put('/scenarios/:id/assignments/:aid', async (req: AuthRequest, res: Resp
 router.delete('/scenarios/:id/assignments/:aid', async (req: AuthRequest, res: Response) => {
   try {
     const service = getScenarioService(req);
-    await service.removeAssignment(req.params.aid);
+    await service.removeAssignment(getParam(req.params.aid));
     res.status(204).send();
   } catch (error: any) {
     console.error('Remove assignment error:', error);
@@ -344,7 +345,7 @@ router.get('/shops/:id/capacity', async (req: AuthRequest, res: Response) => {
   try {
     const shop = await prisma.shop.findFirst({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });

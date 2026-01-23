@@ -74,7 +74,7 @@ export const CreateShopSchema = z.object({
 export const UpdateShopSchema = z.object(
   Object.fromEntries(
     Object.entries(ShopBaseFields).map(([key, schema]) => [key, schema.optional()])
-  ) as Record<keyof typeof ShopBaseFields, z.ZodTypeAny>
+  ) as unknown as Record<keyof typeof ShopBaseFields, z.ZodTypeAny>
 ).partial();
 
 // Shop query/filter schema

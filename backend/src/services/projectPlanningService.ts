@@ -1628,23 +1628,23 @@ if (require.main === module) {
   logger.debug('='.repeat(70));
   logger.debug('  PROJECT PLANNING SERVICE - TEST EXECUTION');
   logger.debug('='.repeat(70));
-  logger.debug();
+  logger.debug('');
 
   // Initialize services
   const { dataStore, chronosEngine, shopLoadService } = createProjectPlanningServices();
 
   // Create sample project
   const project = createSampleProject();
-  logger.debug('Sample Project:', JSON.stringify(project, null, 2));
-  logger.debug();
+  logger.debug('Sample Project:', { project });
+  logger.debug('');
 
   // Test 1: Capacity Pre-Check
   logger.debug('-'.repeat(70));
   logger.debug('TEST 1: Capacity Pre-Check');
   logger.debug('-'.repeat(70));
   const capacityResult = chronosEngine.checkProjectCapacity(project);
-  logger.debug('Result:', JSON.stringify(capacityResult, null, 2));
-  logger.debug();
+  logger.debug('Result:', { capacityResult });
+  logger.debug('');
 
   // Test 2: Force Project to Planned
   logger.debug('-'.repeat(70));
@@ -1652,15 +1652,15 @@ if (require.main === module) {
   logger.debug('-'.repeat(70));
   const assignments = shopLoadService.forceProjectToPlanned(project);
   logger.debug(`Created ${assignments.length} assignments`);
-  logger.debug();
+  logger.debug('');
 
   // Test 3: Get Shop Load
   logger.debug('-'.repeat(70));
   logger.debug('TEST 3: Get Shop Load');
   logger.debug('-'.repeat(70));
   const shopLoad = shopLoadService.getShopLoad('AITX-BC', '2026-03');
-  logger.debug('Shop Load:', JSON.stringify(shopLoad, null, 2));
-  logger.debug();
+  logger.debug('Shop Load:', { shopLoad });
+  logger.debug('');
 
   // Test 4: Lifecycle Transitions
   logger.debug('-'.repeat(70));
@@ -1681,7 +1681,7 @@ if (require.main === module) {
   const departed = shopLoadService.confirmDeparture(testCarId, new Date('2026-03-20'), false);
   logger.debug(`Departed: ${departed?.railcarId} -> ${departed?.status}`);
 
-  logger.debug();
+  logger.debug('');
   logger.debug('='.repeat(70));
   logger.debug('  TEST EXECUTION COMPLETE');
   logger.debug('='.repeat(70));

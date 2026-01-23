@@ -13,6 +13,7 @@ import {
   deleteApiKey,
   AVAILABLE_PERMISSIONS,
 } from '../services/apiKeyService';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -116,7 +117,7 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response) => {
 router.post('/:id/revoke', requireRole('admin'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!companyId) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -142,7 +143,7 @@ router.post('/:id/revoke', requireRole('admin'), async (req: Request, res: Respo
 router.delete('/:id', requireRole('admin'), async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!companyId) {
     return res.status(401).json({ error: 'Unauthorized' });

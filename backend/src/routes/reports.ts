@@ -7,6 +7,7 @@ import auditService from '../services/auditService';
 import pdfService from '../services/pdfService';
 import schedulerService from '../services/schedulerService';
 import logger from '../utils/logger';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.use(authenticate);
 // Get available columns for entity type
 router.get('/columns/:entityType', async (req, res) => {
   try {
-    const { entityType } = req.params;
+    const entityType = getParam(req.params.entityType);
     const columns = reportBuilderService.getAvailableColumns(entityType);
 
     if (columns.length === 0) {
@@ -199,7 +200,7 @@ router.get('/scheduler/status', requireRole('admin'), (_, res) => {
 // Trigger a scheduled report immediately (admin only)
 router.post('/schedules/:id/trigger', requireRole('admin'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const result = await schedulerService.triggerReport(id);
     res.json(result);
   } catch (error) {
@@ -225,7 +226,7 @@ router.get('/templates', async (req, res) => {
 // Get single template
 router.get('/templates/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const companyId = (req as any).user.companyId;
     const template = await reportBuilderService.getTemplate(id, companyId);
 
@@ -282,7 +283,7 @@ router.post('/templates', async (req, res) => {
 // Update template
 router.put('/templates/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const user = (req as any).user;
     const updates = req.body;
 
@@ -312,7 +313,7 @@ router.put('/templates/:id', async (req, res) => {
 // Delete template
 router.delete('/templates/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const user = (req as any).user;
 
     await reportBuilderService.deleteTemplate(id, user.companyId);
@@ -357,7 +358,7 @@ router.get('/schedules', async (req, res) => {
 // Get single scheduled report
 router.get('/schedules/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const companyId = (req as any).user.companyId;
     const report = await scheduledReportService.getScheduledReport(id, companyId);
 
@@ -415,7 +416,7 @@ router.post('/schedules', async (req, res) => {
 // Update scheduled report
 router.put('/schedules/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const user = (req as any).user;
     const updates = req.body;
 
@@ -444,7 +445,7 @@ router.put('/schedules/:id', async (req, res) => {
 // Toggle scheduled report
 router.post('/schedules/:id/toggle', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const user = (req as any).user;
 
     const report = await scheduledReportService.toggleScheduledReport(id, user.companyId);
@@ -470,7 +471,7 @@ router.post('/schedules/:id/toggle', async (req, res) => {
 // Delete scheduled report
 router.delete('/schedules/:id', async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const user = (req as any).user;
 
     await scheduledReportService.deleteScheduledReport(id, user.companyId);
@@ -496,7 +497,7 @@ router.delete('/schedules/:id', async (req, res) => {
 // Run scheduled report manually (admin only)
 router.post('/schedules/:id/run', requireRole('admin'), async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const result = await scheduledReportService.executeScheduledReport(id);
     res.json(result);
   } catch (error) {

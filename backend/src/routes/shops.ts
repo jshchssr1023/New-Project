@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -154,7 +155,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const shop = await prisma.shop.findFirst({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });
@@ -175,7 +176,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
     const assignments = await prisma.planAssignment.groupBy({
       by: ['scheduledMonth'],
       where: {
-        shopId: req.params.id,
+        shopId: getParam(req.params.id),
         scheduledMonth: { in: months },
       },
       _count: { id: true },
@@ -214,7 +215,7 @@ router.get('/:id/capacity', async (req: AuthRequest, res: Response) => {
   try {
     const shop = await prisma.shop.findFirst({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });
@@ -226,7 +227,7 @@ router.get('/:id/capacity', async (req: AuthRequest, res: Response) => {
 
     const assignmentCount = await prisma.planAssignment.count({
       where: {
-        shopId: req.params.id,
+        shopId: getParam(req.params.id),
         scheduledMonth: month as string,
       },
     });
@@ -607,7 +608,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     // Verify shop exists and belongs to this company
     const existingShop = await prisma.shop.findFirst({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });
@@ -666,11 +667,11 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     if (req.body.laborRate !== undefined) updateData.laborRate = req.body.laborRate;
     if (req.body.costIndex !== undefined) updateData.costIndex = req.body.costIndex;
 
-    logger.info('Updating shop:', { id: req.params.id, updateData });
+    logger.info('Updating shop:', { id: getParam(req.params.id), updateData });
 
     // Use update() for single record updates
     const updatedShop = await prisma.shop.update({
-      where: { id: req.params.id },
+      where: { id: getParam(req.params.id) },
       data: updateData,
     });
 
@@ -688,7 +689,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     // Check if shop has assignments
     const assignmentCount = await prisma.planAssignment.count({
-      where: { shopId: req.params.id },
+      where: { shopId: getParam(req.params.id) },
     });
 
     if (assignmentCount > 0) {
@@ -701,7 +702,7 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
 
     const result = await prisma.shop.deleteMany({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });
@@ -804,7 +805,7 @@ import shopPerformanceService from '../services/shopPerformanceService';
 router.get('/:id/performance', async (req: AuthRequest, res: Response) => {
   try {
     const scorecard = await shopPerformanceService.getShopScorecard(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
     res.json(scorecard);
@@ -852,7 +853,7 @@ router.post('/:id/performance/calculate', async (req: AuthRequest, res: Response
     }
 
     const performance = await shopPerformanceService.calculateShopPerformance(
-      req.params.id,
+      getParam(req.params.id),
       periodStart,
       periodEnd,
       periodType as 'monthly' | 'quarterly' | 'yearly',
@@ -870,14 +871,14 @@ router.post('/:id/performance/calculate', async (req: AuthRequest, res: Response
 router.get('/:id/performance/concerns', async (req: AuthRequest, res: Response) => {
   try {
     const scorecard = await shopPerformanceService.getShopScorecard(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
     const concerns = shopPerformanceService.hasPerformanceConcerns(scorecard);
 
     res.json({
-      shopId: req.params.id,
+      shopId: getParam(req.params.id),
       shopName: scorecard.shop.name,
       ...concerns,
       performanceScore: scorecard.metrics.performanceScore,

@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import planProposalService from '../services/planProposalService';
 import { ProposalStatus } from '../types/prismaTypes';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -126,7 +127,7 @@ router.get('/scheduling-queue', async (req: Request, res: Response) => {
  */
 router.get('/:id', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const proposal = await planProposalService.getProposal(id);
 
     if (!proposal) {
@@ -190,7 +191,7 @@ router.post('/:id/send', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const validationResult = sendProposalSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -223,7 +224,7 @@ router.post('/:id/send', async (req: Request, res: Response) => {
  */
 router.post('/:id/approve', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const validationResult = recordApprovalSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -255,7 +256,7 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
  */
 router.post('/:id/reject', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const validationResult = recordRejectionSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -285,7 +286,7 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
  */
 router.post('/:id/request-revision', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const validationResult = requestRevisionSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -319,7 +320,7 @@ router.post('/:id/revise', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const proposal = await planProposalService.createRevision(id, user.id);
 
     res.status(201).json(proposal);
@@ -341,7 +342,7 @@ router.post('/:id/schedule', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const result = await planProposalService.scheduleProposal({
       proposalId: id,
       scheduledById: user.id,
@@ -361,7 +362,7 @@ router.post('/:id/schedule', async (req: Request, res: Response) => {
  */
 router.post('/:id/cancel', async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const proposal = await planProposalService.cancelProposal(id);
     res.json(proposal);
   } catch (error) {

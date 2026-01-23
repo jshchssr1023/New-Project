@@ -762,7 +762,9 @@ export class ServicePlanService {
       const shops = await this.prismaClient.shop.findMany({
         where: { id: { in: shopIds } },
       });
-      const shopMap = new Map(shops.map((s) => [s.id, s]));
+      const shopMap = new Map<string, { id: string; baseCostPerCar?: number; baseTurnTime?: number }>(
+        shops.map((s) => [s.id as string, s as { id: string; baseCostPerCar?: number; baseTurnTime?: number }])
+      );
 
       const assignmentData = assignments.map((a) => {
         const shop = shopMap.get(a.shopId);
