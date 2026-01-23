@@ -79,25 +79,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         companyId: req.user!.companyId,
         ...(status && { status: status as string }),
       },
-      select: {
-        id: true,
-        name: true,
-        description: true,
-        startDate: true,
-        endDate: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-        creator: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        _count: {
-          select: { assignments: true },
-        },
+      include: {
+        creator: true,
+        assignments: true,
       },
       orderBy: { createdAt: 'desc' },
     });
