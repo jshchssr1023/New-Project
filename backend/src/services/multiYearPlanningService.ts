@@ -5,7 +5,9 @@
  * Provides forecasting, capacity planning, and budget projections across multiple fiscal years.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
+
+type PrismaClient = typeof prisma;
 
 // =============================================================================
 // TYPES

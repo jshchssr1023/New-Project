@@ -7,8 +7,10 @@
  * 3. Capability-based validation (shop-first constraints)
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import logger from '../utils/logger';
+
+type PrismaClient = typeof prisma;
 import {
   validateAllocation,
   getEligibleShopsForCar,

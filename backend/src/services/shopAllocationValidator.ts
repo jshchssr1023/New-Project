@@ -8,8 +8,10 @@
  * Now shops declare their capabilities and the allocation engine validates against them.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import logger from '../utils/logger';
+
+type PrismaClient = typeof prisma;
 
 // Types for validation
 export interface CarForValidation {

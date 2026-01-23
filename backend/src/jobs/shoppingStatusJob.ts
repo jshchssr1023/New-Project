@@ -10,8 +10,10 @@
  * - Daily at 2 AM for full backfill
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../services/db';
 import { createShoppingStatusService } from '../services/shoppingStatusService';
+
+type PrismaClient = typeof prisma;
 import logger from '../utils/logger';
 
 interface JobConfig {

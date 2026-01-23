@@ -9,7 +9,7 @@
  * - Audit logging
  */
 
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../types/prismaTypes';
 import { prisma } from './db';
 import logger from '../utils/logger';
 
