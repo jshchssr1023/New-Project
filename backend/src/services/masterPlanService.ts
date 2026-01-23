@@ -22,6 +22,7 @@
 
 import { prisma } from './db';
 import { MasterPlan, MasterPlanCommitment, Prisma } from '../types/prismaTypes';
+import logger from '../utils/logger';
 
 type PrismaClient = typeof prisma;
 import { z } from 'zod';
@@ -619,11 +620,13 @@ export class MasterPlanService {
       offset?: number;
     }
   ): Promise<MasterPlan[]> {
-    const where: Prisma.MasterPlanWhereInput = {
-      companyId,
-      ...(options?.fiscalYear && { fiscalYear: options.fiscalYear }),
-      ...(options?.status && { status: options.status }),
-    };
+    const where: Prisma.MasterPlanWhereInput = { companyId };
+    if (options?.fiscalYear) {
+      where.fiscalYear = options.fiscalYear;
+    }
+    if (options?.status) {
+      where.status = options.status as MasterPlanStatus;
+    }
 
     const plans = await this.prisma.masterPlan.findMany({
       where,

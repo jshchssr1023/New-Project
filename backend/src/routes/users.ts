@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authenticate, requireRole, AuthRequest } from '../middleware/auth';
 import logger from '../utils/logger';
 import auditService, { calculateChanges } from '../services/auditService';
+import { getParam } from '../utils/routeParams';
 
 // INPUT VALIDATION SCHEMAS
 const PasswordSchema = z
@@ -70,7 +71,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
   // Users can only view their own profile unless admin
   // SECURITY FIX: Use strict equality (===) instead of non-strict (!=)
-  if (req.params.id !== req.user!.id && req.user!.role !== 'admin') {
+  if (getParam(req.params.id) !== req.user!.id && req.user!.role !== 'admin') {
     res.status(403).json({ message: 'Insufficient permissions' });
     return;
   }
@@ -78,7 +79,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findFirst({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
       select: {
@@ -182,7 +183,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 
   // Users can only update their own profile unless admin
   // Non-admins cannot change roles
-  if (req.params.id !== req.user!.id && req.user!.role !== 'admin') {
+  if (getParam(req.params.id) !== req.user!.id && req.user!.role !== 'admin') {
     res.status(403).json({ message: 'Insufficient permissions' });
     return;
   }
@@ -195,7 +196,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const result = await prisma.user.updateMany({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
       data: {
@@ -212,7 +213,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     }
 
     const updatedUser = await prisma.user.findUnique({
-      where: { id: req.params.id },
+      where: { id: getParam(req.params.id) },
       select: {
         id: true,
         email: true,
@@ -266,7 +267,7 @@ router.put('/:id/password', async (req: AuthRequest, res: Response) => {
   const { currentPassword, newPassword } = req.body;
 
   // Users can only update their own password unless admin
-  if (req.params.id !== req.user!.id && req.user!.role !== 'admin') {
+  if (getParam(req.params.id) !== req.user!.id && req.user!.role !== 'admin') {
     res.status(403).json({ message: 'Insufficient permissions' });
     return;
   }
@@ -274,7 +275,7 @@ router.put('/:id/password', async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findFirst({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });
@@ -297,7 +298,7 @@ router.put('/:id/password', async (req: AuthRequest, res: Response) => {
     const hashedPassword = await bcrypt.hash(newPassword, 12);
 
     await prisma.user.update({
-      where: { id: req.params.id },
+      where: { id: getParam(req.params.id) },
       data: { password: hashedPassword },
     });
 
@@ -307,7 +308,7 @@ router.put('/:id/password', async (req: AuthRequest, res: Response) => {
       userEmail: req.user!.email,
       action: 'update',
       entityType: 'User',
-      entityId: req.params.id,
+      entityId: getParam(req.params.id),
       entityName: user.email,
       changes: { password: { old: '[REDACTED]', new: '[REDACTED]' } },
       companyId: req.user!.companyId,
@@ -325,7 +326,7 @@ router.delete('/:id', requireRole('admin'), async (req: AuthRequest, res: Respon
   const prisma: any = req.app.locals.prisma;
 
   // Prevent self-deletion
-  if (req.params.id === req.user!.id) {
+  if (getParam(req.params.id) === req.user!.id) {
     res.status(400).json({ message: 'Cannot delete your own account' });
     return;
   }
@@ -333,7 +334,7 @@ router.delete('/:id', requireRole('admin'), async (req: AuthRequest, res: Respon
   try {
     const result = await prisma.user.deleteMany({
       where: {
-        id: req.params.id,
+        id: getParam(req.params.id),
         companyId: req.user!.companyId,
       },
     });
@@ -349,7 +350,7 @@ router.delete('/:id', requireRole('admin'), async (req: AuthRequest, res: Respon
       userEmail: req.user!.email,
       action: 'delete',
       entityType: 'User',
-      entityId: req.params.id,
+      entityId: getParam(req.params.id),
       companyId: req.user!.companyId,
     }, req);
 

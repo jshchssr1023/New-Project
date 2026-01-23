@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { authenticate, requireRole } from '../middleware/auth';
 import permissionsService, { ROLES, DEFAULT_PERMISSIONS, FIELD_SECURITY_DEFAULTS } from '../services/permissionsService';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ router.get('/roles', (_, res) => {
 
 // Get default permissions for a role
 router.get('/roles/:role/defaults', (req, res) => {
-  const { role } = req.params;
+  const role = getParam(req.params.role);
   const permissions = DEFAULT_PERMISSIONS[role];
 
   if (!permissions) {
@@ -40,7 +41,7 @@ router.get('/roles/:role/defaults', (req, res) => {
 // Get permissions for a role (with custom overrides)
 router.get('/roles/:role', async (req, res) => {
   try {
-    const { role } = req.params;
+    const role = getParam(req.params.role);
     const companyId = (req as any).user.companyId;
 
     const permissions = await permissionsService.getRolePermissions(role, companyId);
@@ -58,7 +59,7 @@ router.get('/roles/:role', async (req, res) => {
 // Set permission for a role (admin only)
 router.post('/roles/:role/permissions', requireRole('admin'), async (req, res) => {
   try {
-    const { role } = req.params;
+    const role = getParam(req.params.role);
     const { permission, isGranted } = req.body;
     const companyId = (req as any).user.companyId;
 
@@ -78,7 +79,7 @@ router.post('/roles/:role/permissions', requireRole('admin'), async (req, res) =
 // Check if current user has a permission
 router.get('/check/:permission', async (req, res) => {
   try {
-    const { permission } = req.params;
+    const permission = getParam(req.params.permission);
     const user = (req as any).user;
 
     const hasPermission = await permissionsService.hasPermission(
@@ -116,7 +117,7 @@ router.get('/my-permissions', async (req, res) => {
 // Get field security config for an entity
 router.get('/fields/:entityType', async (req, res) => {
   try {
-    const { entityType } = req.params;
+    const entityType = getParam(req.params.entityType);
     const user = (req as any).user;
 
     const config = await permissionsService.getFieldSecurityConfig(

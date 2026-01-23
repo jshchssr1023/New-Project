@@ -20,6 +20,12 @@ import { servicePlanExportService } from '../services/servicePlanExportService';
 import logger from '../utils/logger';
 import { prisma } from '../services/db';
 
+// Helper to extract string param (Express 5 types params as string | string[])
+const getParam = (param: string | string[] | undefined): string => {
+  if (Array.isArray(param)) return param[0] || '';
+  return param || '';
+};
+
 const router = Router();
 
 // Apply authentication to all routes
@@ -297,7 +303,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 router.get('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const servicePlan = await servicePlanService.getServicePlan(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -332,7 +338,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
     } = req.body;
 
     const servicePlan = await servicePlanService.updateServicePlan(
-      req.params.id,
+      getParam(req.params.id),
       {
         name,
         description,
@@ -369,7 +375,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     await servicePlanService.deleteServicePlan(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -404,7 +410,7 @@ router.post('/:id/cars', async (req: AuthRequest, res: Response) => {
     }
 
     const cars = await servicePlanService.addCarsToServicePlan(
-      req.params.id,
+      getParam(req.params.id),
       carIds,
       req.user!.companyId
     );
@@ -434,7 +440,7 @@ router.post('/:id/cars/by-filter', async (req: AuthRequest, res: Response) => {
     const { customerId, shoppingStatuses, limit } = req.body;
 
     const cars = await servicePlanService.addCarsByFilter(
-      req.params.id,
+      getParam(req.params.id),
       {
         customerId,
         shoppingStatuses,
@@ -466,8 +472,8 @@ router.post('/:id/cars/by-filter', async (req: AuthRequest, res: Response) => {
 router.delete('/:id/cars/:carId', async (req: AuthRequest, res: Response) => {
   try {
     await servicePlanService.removeCarFromServicePlan(
-      req.params.id,
-      req.params.carId,
+      getParam(req.params.id),
+      getParam(req.params.carId),
       req.user!.companyId
     );
 
@@ -502,7 +508,7 @@ router.put('/:id/cars/:carId/month', async (req: AuthRequest, res: Response) => 
     }
 
     const car = await servicePlanService.updateCarMonthAssignment(
-      req.params.carId,
+      getParam(req.params.carId),
       month,
       year,
       req.user!.companyId
@@ -539,7 +545,7 @@ router.post('/:id/options', async (req: AuthRequest, res: Response) => {
     }
 
     const option = await servicePlanService.createPlanOption(
-      req.params.id,
+      getParam(req.params.id),
       { name, description },
       req.user!.companyId
     );
@@ -566,7 +572,7 @@ router.put('/:id/options/:optionId', async (req: AuthRequest, res: Response) => 
     const { name, description } = req.body;
 
     const option = await servicePlanService.updatePlanOption(
-      req.params.optionId,
+      getParam(req.params.optionId),
       { name, description },
       req.user!.companyId
     );
@@ -591,7 +597,7 @@ router.put('/:id/options/:optionId', async (req: AuthRequest, res: Response) => 
 router.delete('/:id/options/:optionId', async (req: AuthRequest, res: Response) => {
   try {
     await servicePlanService.deletePlanOption(
-      req.params.optionId,
+      getParam(req.params.optionId),
       req.user!.companyId
     );
 
@@ -636,7 +642,7 @@ router.put('/:id/options/:optionId/assignments', async (req: AuthRequest, res: R
     }
 
     const option = await servicePlanService.setOptionAssignments(
-      req.params.optionId,
+      getParam(req.params.optionId),
       assignments,
       req.user!.companyId
     );
@@ -670,7 +676,7 @@ router.put('/:id/options/:optionId/assignments/:assignmentId', async (req: AuthR
     } = req.body;
 
     const assignment = await servicePlanService.updateAssignment(
-      req.params.assignmentId,
+      getParam(req.params.assignmentId),
       {
         shopId,
         plannedMonth,
@@ -705,7 +711,7 @@ router.put('/:id/options/:optionId/assignments/:assignmentId', async (req: AuthR
  */
 router.get('/:id/options/:optionId/capacity', async (req: AuthRequest, res: Response) => {
   try {
-    const validation = await servicePlanService.validateOptionCapacity(req.params.optionId);
+    const validation = await servicePlanService.validateOptionCapacity(getParam(req.params.optionId));
 
     res.json(validation);
   } catch (error: any) {
@@ -732,7 +738,7 @@ router.get('/capacity/shop/:shopId', async (req: AuthRequest, res: Response) => 
     }
 
     const capacity = await servicePlanService.getAvailableCapacity(
-      req.params.shopId,
+      getParam(req.params.shopId),
       parseInt(month as string),
       parseInt(year as string),
       excludeOptionId as string | undefined,
@@ -761,7 +767,7 @@ router.get('/capacity/shop/:shopId', async (req: AuthRequest, res: Response) => 
 router.get('/:id/compare', async (req: AuthRequest, res: Response) => {
   try {
     const comparison = await servicePlanService.compareOptions(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -788,7 +794,7 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
 
     // Verify access
     const servicePlan = await servicePlanService.getServicePlan(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -798,7 +804,7 @@ router.get('/:id/export', async (req: AuthRequest, res: Response) => {
     }
 
     const pdfBuffer = await servicePlanExportService.exportServicePlan({
-      servicePlanId: req.params.id,
+      servicePlanId: getParam(req.params.id),
       branding: (branding as 'aitx' | 'customer') || 'aitx',
       includeCarDetails: includeCarDetails !== 'false',
       includeShopDetails: includeShopDetails === 'true',
@@ -836,7 +842,7 @@ router.post('/:id/propose', async (req: AuthRequest, res: Response) => {
     const { sentToEmail, sentToName } = req.body;
 
     const servicePlan = await servicePlanService.proposeServicePlan(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.id,
       sentToEmail,
       sentToName,
@@ -875,7 +881,7 @@ router.post('/:id/customer-feedback', async (req: AuthRequest, res: Response) =>
     }
 
     const servicePlan = await servicePlanService.recordCustomerFeedback(
-      req.params.id,
+      getParam(req.params.id),
       responseStatus,
       feedback || '',
       req.user!.id,
@@ -908,7 +914,7 @@ router.post('/:id/customer-feedback', async (req: AuthRequest, res: Response) =>
 router.get('/:id/proposal-history', async (req: AuthRequest, res: Response) => {
   try {
     const history = await servicePlanService.getProposalHistory(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -939,8 +945,8 @@ router.post('/:id/approve/:optionId', async (req: AuthRequest, res: Response) =>
     }
 
     const servicePlan = await servicePlanService.approveOption(
-      req.params.id,
-      req.params.optionId,
+      getParam(req.params.id),
+      getParam(req.params.optionId),
       approvedBy,
       req.user!.id,
       req.user!.companyId

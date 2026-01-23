@@ -5,6 +5,7 @@
 import { Router, Request, Response } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import notificationService from '../services/notificationService';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -63,7 +64,7 @@ router.get('/unread-count', authenticateToken, async (req: Request, res: Respons
 router.post('/:id/read', authenticateToken, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const userId = authReq.user?.id;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -104,7 +105,7 @@ router.post('/read-all', authenticateToken, async (req: Request, res: Response) 
 router.delete('/:id', authenticateToken, async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const userId = authReq.user?.id;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' });

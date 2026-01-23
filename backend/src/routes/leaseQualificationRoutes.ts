@@ -24,6 +24,7 @@ import {
   createQualificationDocumentGenerator,
   DocumentSelectionCriteria,
 } from '../services/qualificationDocumentGenerator';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -166,7 +167,7 @@ router.get('/scenarios/:id', async (req: AuthRequest, res: Response) => {
   try {
     const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const scenario = await prisma.qualificationScenario.findFirst({
       where: { id, companyId },
@@ -262,7 +263,7 @@ router.post('/scenarios/compare', async (req: AuthRequest, res: Response) => {
  */
 router.post('/scenarios/:id/approve', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const { id: userId, email } = req.user!;
 
     const engine = getEngine(req);
@@ -318,7 +319,7 @@ router.get('/scenarios/approved', async (req: AuthRequest, res: Response) => {
  */
 router.get('/scenarios/:id/available-cars', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const docGen = getDocGenerator(req);
     const cars = await docGen.getAvailableCars(id);
 
@@ -339,7 +340,7 @@ router.get('/scenarios/:id/available-cars', async (req: AuthRequest, res: Respon
  */
 router.get('/scenarios/:id/available-shops', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const docGen = getDocGenerator(req);
     const shops = await docGen.getAvailableShops(id);
 
@@ -360,7 +361,7 @@ router.get('/scenarios/:id/available-shops', async (req: AuthRequest, res: Respo
  */
 router.get('/scenarios/:id/available-customers', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const docGen = getDocGenerator(req);
     const customers = await docGen.getAvailableCustomers(id);
 
@@ -381,7 +382,7 @@ router.get('/scenarios/:id/available-customers', async (req: AuthRequest, res: R
  */
 router.get('/scenarios/:id/available-months', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const docGen = getDocGenerator(req);
     const months = await docGen.getAvailableMonths(id);
 
@@ -402,7 +403,7 @@ router.get('/scenarios/:id/available-months', async (req: AuthRequest, res: Resp
  */
 router.post('/scenarios/:id/selected-assignments', async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const criteria: DocumentSelectionCriteria = {
       ...req.body,
       scenarioId: id,
@@ -592,7 +593,7 @@ router.get('/documents/:id', async (req: AuthRequest, res: Response) => {
   try {
     const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const document = await prisma.qualificationPlanDocument.findFirst({
       where: { id, companyId },
@@ -624,7 +625,7 @@ router.get('/documents/:id/markdown', async (req: AuthRequest, res: Response) =>
   try {
     const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
-    const { id } = req.params;
+    const id = getParam(req.params.id);
 
     const document = await prisma.qualificationPlanDocument.findFirst({
       where: { id, companyId },
@@ -755,7 +756,7 @@ router.put('/contracts/:id', async (req: AuthRequest, res: Response) => {
   try {
     const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const updates = req.body;
 
     // Verify contract belongs to company
@@ -800,7 +801,7 @@ router.post('/contracts/:id/confirm-release', async (req: AuthRequest, res: Resp
   try {
     const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const { releaseDate, delayDays } = req.body;
 
     const contract = await prisma.leaseContract.update({
@@ -877,7 +878,7 @@ router.put('/queue/:id', async (req: AuthRequest, res: Response) => {
   try {
     const prisma: any = req.app.locals.prisma;
     const { companyId } = req.user!;
-    const { id } = req.params;
+    const id = getParam(req.params.id);
     const updates = req.body;
 
     // Verify entry belongs to company

@@ -383,11 +383,12 @@ export namespace Prisma {
     id?: string | { in?: string[]; not?: string; equals?: string };
     companyId?: string;
     version?: number | { gte?: number; lte?: number };
-    status?: MasterPlanStatus | { in?: MasterPlanStatus[] };
+    status?: MasterPlanStatus | string | { in?: MasterPlanStatus[] | string[] };
     validFrom?: Date | { gte?: Date; lte?: Date };
     validTo?: Date | { gte?: Date; lte?: Date } | null;
     parentPlanId?: string | null;
     createdById?: string;
+    fiscalYear?: number;
     [key: string]: unknown;
   }
 
@@ -520,7 +521,7 @@ export namespace Prisma {
     carId?: string;
     shopId?: string;
     customerId?: string | null;
-    status?: AssignmentStatus | { in?: AssignmentStatus[] };
+    status?: AssignmentStatus | { in?: AssignmentStatus[] | readonly string[]; notIn?: AssignmentStatus[] | readonly string[] };
     masterPlanId?: string | null;
     scenarioId?: string | null;
     qualificationEntryId?: string | null;
@@ -583,12 +584,14 @@ export namespace Prisma {
     scenarioId?: string | null;
     committedAt?: Date | null;
     committedById?: string | null;
+    actualStartDate?: Date | null;
     actualArrivalDate?: Date | null;
     actualCompletionDate?: Date | null;
     cancelledAt?: Date | null;
     cancelledById?: string | null;
     cancellationReason?: string;
     notes?: string;
+    version?: number | { increment: number };
   }
 }
 

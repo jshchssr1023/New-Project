@@ -109,7 +109,7 @@ export const CreateCarSchema = z.object({
 export const UpdateCarSchema = z.object(
   Object.fromEntries(
     Object.entries(CarBaseFields).map(([key, schema]) => [key, schema.optional()])
-  ) as Record<keyof typeof CarBaseFields, z.ZodTypeAny>
+  ) as unknown as Record<keyof typeof CarBaseFields, z.ZodTypeAny>
 ).partial();
 
 // Bulk update schema

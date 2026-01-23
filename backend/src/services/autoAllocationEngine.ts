@@ -316,7 +316,7 @@ async function getShopsWithCapacity(
     _count: { id: true },
   });
 
-  const usageMap = new Map(usageData.map(u => [u.shopId, u._count.id]));
+  const usageMap = new Map<string, number>(usageData.map(u => [u.shopId as string, (u._count as { id: number }).id]));
 
   // Get S&OP commitments for the target month
   const commitments = await prisma.sOPCommitment.findMany({
@@ -330,15 +330,15 @@ async function getShopsWithCapacity(
   const commitmentMap = new Map(commitments.map(c => [c.shopId, c]));
 
   return shops.map(shop => {
-    const profile = shop.capabilityProfile;
-    const monthlyCapacity = profile?.monthlyCapacity || shop.capacity || 50;
+    const profile = shop.capabilityProfile as { monthlyCapacity?: number; hasContractualCommitment?: boolean } | null;
+    const monthlyCapacity = profile?.monthlyCapacity || (shop.capacity as number) || 50;
     const currentUsage = usageMap.get(shop.id) || 0;
     const availableCapacity = monthlyCapacity - currentUsage;
-    const commitment = commitmentMap.get(shop.id);
+    const commitment = commitmentMap.get(shop.id) as { committedVolume?: number } | undefined;
 
     let unfilledCommitment = 0;
     if (commitment && profile?.hasContractualCommitment) {
-      unfilledCommitment = Math.max(0, commitment.committedVolume - currentUsage);
+      unfilledCommitment = Math.max(0, (commitment.committedVolume || 0) - currentUsage);
     }
 
     return {

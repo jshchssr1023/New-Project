@@ -9,7 +9,7 @@
  * - Audit logging
  */
 
-import { Prisma } from '../types/prismaTypes';
+import { Prisma, AssignmentStatus } from '../types/prismaTypes';
 import { prisma } from './db';
 import logger from '../utils/logger';
 
@@ -48,22 +48,22 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 /**
  * Terminal statuses (no longer active)
  */
-export const TERMINAL_STATUSES = [UA_STATUS.COMPLETED, UA_STATUS.CANCELLED, UA_STATUS.SUPERSEDED];
+export const TERMINAL_STATUSES: readonly string[] = [UA_STATUS.COMPLETED, UA_STATUS.CANCELLED, UA_STATUS.SUPERSEDED];
 
 /**
  * Active statuses (consume capacity)
  */
-export const ACTIVE_STATUSES = [UA_STATUS.DRAFT, UA_STATUS.PENDING_REVIEW, UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS];
+export const ACTIVE_STATUSES: readonly string[] = [UA_STATUS.DRAFT, UA_STATUS.PENDING_REVIEW, UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS];
 
 /**
  * Confirmed statuses (deduct capacity)
  */
-export const CONFIRMED_STATUSES = [UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS];
+export const CONFIRMED_STATUSES: readonly string[] = [UA_STATUS.COMMITTED, UA_STATUS.IN_PROGRESS];
 
 /**
  * Planned statuses (visibility only)
  */
-export const PLANNED_STATUSES = [UA_STATUS.DRAFT, UA_STATUS.PENDING_REVIEW];
+export const PLANNED_STATUSES: readonly string[] = [UA_STATUS.DRAFT, UA_STATUS.PENDING_REVIEW];
 
 // =============================================================================
 // VALIDATION FUNCTIONS
@@ -88,14 +88,14 @@ export function getAllowedTransitions(fromStatus: string): string[] {
  * Check if status is terminal
  */
 export function isTerminalStatus(status: string): boolean {
-  return TERMINAL_STATUSES.includes(status as UAStatus);
+  return TERMINAL_STATUSES.includes(status);
 }
 
 /**
  * Check if status is active (not terminal)
  */
 export function isActiveStatus(status: string): boolean {
-  return ACTIVE_STATUSES.includes(status as UAStatus);
+  return ACTIVE_STATUSES.includes(status);
 }
 
 // =============================================================================
@@ -323,7 +323,7 @@ export async function updateAssignment(data: UpdateAssignmentInput) {
 
   // Status-specific timestamps
   if (data.status && data.status !== current.status) {
-    updateData.status = data.status;
+    updateData.status = data.status as AssignmentStatus;
 
     if (data.status === UA_STATUS.COMMITTED) {
       updateData.committedAt = new Date();
@@ -438,8 +438,8 @@ async function updateCapacityForAssignment(
 ) {
   const delta = operation === 'add' ? 1 : -1;
 
-  const isConfirmed = CONFIRMED_STATUSES.includes(status as UAStatus);
-  const isPlanned = PLANNED_STATUSES.includes(status as UAStatus);
+  const isConfirmed = CONFIRMED_STATUSES.includes(status);
+  const isPlanned = PLANNED_STATUSES.includes(status);
 
   if (!isConfirmed && !isPlanned) {
     return; // Terminal status - no capacity impact

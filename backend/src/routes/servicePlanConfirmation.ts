@@ -18,6 +18,12 @@ import { authenticate, AuthRequest, requireRole } from '../middleware/auth';
 import { servicePlanConfirmationService } from '../services/servicePlanConfirmationService';
 import logger from '../utils/logger';
 
+// Helper to extract string param (Express 5 types params as string | string[])
+const getParam = (param: string | string[] | undefined): string => {
+  if (Array.isArray(param)) return param[0] || '';
+  return param || '';
+};
+
 const router = Router();
 
 // Apply authentication to all routes
@@ -108,7 +114,7 @@ router.post('/v2', requireRole('admin', 'planner'), async (req: AuthRequest, res
 router.get('/:id/car-matrix', async (req: AuthRequest, res: Response) => {
   try {
     const carMatrix = await servicePlanConfirmationService.getCarMatrix(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -139,7 +145,7 @@ router.post('/:id/cars/v2', requireRole('admin', 'planner'), async (req: AuthReq
     }
 
     const car = await servicePlanConfirmationService.addCarToPlan(
-      req.params.id,
+      getParam(req.params.id),
       { carId, assignedShopId, plannedMonth, plannedYear, shopReason },
       req.user!.id,
       req.user!.companyId
@@ -169,7 +175,7 @@ router.put('/:id/cars/:carId/assignment', requireRole('admin', 'planner'), async
     const { assignedShopId, plannedMonth, plannedYear, shopReason } = req.body;
 
     const updated = await servicePlanConfirmationService.updateCarAssignment(
-      req.params.carId,
+      getParam(req.params.carId),
       { assignedShopId, plannedMonth, plannedYear, shopReason },
       req.user!.id,
       req.user!.companyId
@@ -199,7 +205,7 @@ router.put('/:id/cars/:carId/assignment', requireRole('admin', 'planner'), async
 router.post('/:id/cars/:carId/confirm', requireRole('admin', 'planner'), async (req: AuthRequest, res: Response) => {
   try {
     const result = await servicePlanConfirmationService.confirmCar(
-      req.params.carId,
+      getParam(req.params.carId),
       req.user!.id,
       req.user!.companyId
     );
@@ -274,7 +280,7 @@ router.delete('/:id/cars/:carId', requireRole('admin', 'planner'), async (req: A
     }
 
     const result = await servicePlanConfirmationService.deleteCar(
-      req.params.carId,
+      getParam(req.params.carId),
       deleteReason || '',
       true,  // secondaryConfirmation already validated
       req.user!.id,
@@ -308,7 +314,7 @@ router.delete('/:id/cars/:carId', requireRole('admin', 'planner'), async (req: A
 router.get('/:id/confirmation-summary', async (req: AuthRequest, res: Response) => {
   try {
     const summary = await servicePlanConfirmationService.getConfirmationSummary(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -340,7 +346,7 @@ router.get('/:id/confirmation-summary', async (req: AuthRequest, res: Response) 
 router.post('/:id/final-confirm', requireRole('admin', 'planner'), async (req: AuthRequest, res: Response) => {
   try {
     const result = await servicePlanConfirmationService.finalConfirmPlan(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.id,
       req.user!.companyId
     );
@@ -425,7 +431,7 @@ router.get('/reports/pending', async (req: AuthRequest, res: Response) => {
 router.get('/:id/report', async (req: AuthRequest, res: Response) => {
   try {
     const report = await servicePlanConfirmationService.getPlanReport(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId
     );
 
@@ -455,7 +461,7 @@ router.get('/:id/audit', async (req: AuthRequest, res: Response) => {
     const { limit, offset, eventType } = req.query;
 
     const auditEvents = await servicePlanConfirmationService.getAuditHistory(
-      req.params.id,
+      getParam(req.params.id),
       req.user!.companyId,
       {
         limit: limit ? parseInt(limit as string) : undefined,
@@ -486,7 +492,7 @@ router.get('/:id/audit', async (req: AuthRequest, res: Response) => {
 router.get('/customer/:customerId/has-final-confirmed', async (req: AuthRequest, res: Response) => {
   try {
     const hasFinalConfirmed = await servicePlanConfirmationService.hasCustomerFinalConfirmedPlan(
-      req.params.customerId
+      getParam(req.params.customerId)
     );
 
     res.json({ hasFinalConfirmed });

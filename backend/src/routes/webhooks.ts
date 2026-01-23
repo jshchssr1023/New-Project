@@ -13,6 +13,7 @@ import webhookAlertService, {
   WebhookType,
 } from '../services/webhookAlertService';
 import logger from '../utils/logger';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -180,7 +181,7 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!companyId) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -247,7 +248,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.delete('/:id', async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!companyId) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -273,7 +274,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 router.post('/:id/test', async (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const companyId = authReq.user?.companyId;
-  const { id } = req.params;
+  const id = getParam(req.params.id);
 
   if (!companyId) {
     return res.status(401).json({ error: 'Unauthorized' });

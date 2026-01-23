@@ -21,6 +21,7 @@ import {
   getUrgencyQueue,
   calculateUrgencyScore,
 } from '../services/autoAllocationEngine';
+import { getParam } from '../utils/routeParams';
 
 const router = Router();
 
@@ -101,7 +102,7 @@ router.get('/urgency/:carId', async (req: AuthRequest, res: Response) => {
   try {
     const car = await prisma.car.findFirst({
       where: {
-        id: req.params.carId,
+        id: getParam(req.params.carId),
         companyId: req.user!.companyId,
       },
     });
@@ -253,14 +254,14 @@ router.get('/eligible-shops/:carId', async (req: AuthRequest, res: Response) => 
 
     const eligibleShops = await getEligibleShopsForCar(
       prisma,
-      req.params.carId,
+      getParam(req.params.carId),
       plannedMonth,
       plannedYear,
       req.user!.companyId
     );
 
     res.json({
-      carId: req.params.carId,
+      carId: getParam(req.params.carId),
       targetMonth: plannedMonth,
       targetYear: plannedYear,
       shops: eligibleShops.map(es => ({
@@ -393,7 +394,7 @@ router.get('/capability-profile/:shopId', async (req: AuthRequest, res: Response
   try {
     const profile = await prisma.shopCapabilityProfile.findFirst({
       where: {
-        shopId: req.params.shopId,
+        shopId: getParam(req.params.shopId),
         companyId: req.user!.companyId,
       },
     });
@@ -462,7 +463,7 @@ router.put('/capability-profile/:shopId', async (req: AuthRequest, res: Response
     // Verify shop exists
     const shop = await prisma.shop.findFirst({
       where: {
-        id: req.params.shopId,
+        id: getParam(req.params.shopId),
         companyId: req.user!.companyId,
       },
     });
@@ -473,9 +474,9 @@ router.put('/capability-profile/:shopId', async (req: AuthRequest, res: Response
     }
 
     const profile = await prisma.shopCapabilityProfile.upsert({
-      where: { shopId: req.params.shopId },
+      where: { shopId: getParam(req.params.shopId) },
       create: {
-        shopId: req.params.shopId,
+        shopId: getParam(req.params.shopId),
         companyId: req.user!.companyId,
         canPerformTankLining: canPerformTankLining ?? false,
         canPerformAnnualQuals: canPerformAnnualQuals ?? false,
