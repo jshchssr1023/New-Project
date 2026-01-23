@@ -425,7 +425,7 @@ export class MasterPlanService {
       return plan;
     });
 
-    console.log(
+    logger.debug(
       `[MasterPlanService] Created MasterPlan ${masterPlan.id} (FY${fiscalYear} v${newVersion}) ` +
         `with ${scenario.sopAssignments.length} commitments from scenario ${scenario.name} (SST synced)`
     );
@@ -691,7 +691,7 @@ export class MasterPlanService {
       },
     });
 
-    console.log(
+    logger.debug(
       `[MasterPlanService] ${activate ? 'Approved and activated' : 'Approved'} ` +
         `MasterPlan ${masterPlanId} by user ${userId}`
     );
@@ -741,7 +741,7 @@ export class MasterPlanService {
       data: { status: newStatus },
     });
 
-    console.log(
+    logger.debug(
       `[MasterPlanService] Updated commitment ${commitmentId} status: ` +
         `${commitment.status} -> ${newStatus}`
     );

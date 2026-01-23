@@ -75,7 +75,20 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  // SECURITY FIX: Add isLoading check to prevent race condition
+  // where user role might not be loaded yet
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-steel-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-rail-600 mx-auto"></div>
+          <p className="mt-4 text-steel-600">Verifying permissions...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;

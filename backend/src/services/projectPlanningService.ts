@@ -12,6 +12,8 @@
  * @version 1.0.0
  */
 
+import logger from '../utils/logger';
+
 // =============================================================================
 // SECTION 1 - ENUMERATIONS
 // =============================================================================
@@ -604,7 +606,7 @@ export class MasterDataStore {
   upsertFleetRecord(record: FleetMasterRecord): FleetMasterRecord {
     record.updatedAt = new Date();
     this.fleetMaster.set(record.railcarId, record);
-    console.log(`[DB] FleetMaster.upsert: ${record.railcarId} -> status: ${record.status}`);
+    logger.debug(`[DB] FleetMaster.upsert: ${record.railcarId} -> status: ${record.status}`);
     return record;
   }
 
@@ -615,14 +617,14 @@ export class MasterDataStore {
   updateFleetStatus(railcarId: string, status: RailcarStatus): FleetMasterRecord | null {
     const record = this.fleetMaster.get(railcarId);
     if (!record) {
-      console.warn(`[DB] FleetMaster.update: Record not found for ${railcarId}`);
+      logger.warn(`[DB] FleetMaster.update: Record not found for ${railcarId}`);
       return null;
     }
 
     record.status = status;
     record.updatedAt = new Date();
     this.fleetMaster.set(railcarId, record);
-    console.log(`[DB] FleetMaster.update: ${railcarId} status -> ${status}`);
+    logger.debug(`[DB] FleetMaster.update: ${railcarId} status -> ${status}`);
     return record;
   }
 
@@ -696,7 +698,7 @@ export class MasterDataStore {
       shop.monthlySlots[monthKey].total = Math.max(0, (shop.monthlySlots[monthKey].total ?? 0) - count);
     }
 
-    console.log(`[DB] ShopCapacity.consumeSlot: ${shopId} ${monthKey} ${slotType} -= ${count}`);
+    logger.debug(`[DB] ShopCapacity.consumeSlot: ${shopId} ${monthKey} ${slotType} -= ${count}`);
     return true;
   }
 
@@ -717,7 +719,7 @@ export class MasterDataStore {
     const current = shop.monthlySlots[monthKey][slotType] ?? 0;
     shop.monthlySlots[monthKey][slotType] = Math.min(current + count, maxCapacity);
 
-    console.log(`[DB] ShopCapacity.releaseSlot: ${shopId} ${monthKey} ${slotType} += ${count}`);
+    logger.debug(`[DB] ShopCapacity.releaseSlot: ${shopId} ${monthKey} ${slotType} += ${count}`);
   }
 
   /**
@@ -769,7 +771,7 @@ export class MasterDataStore {
     };
 
     this.shopAssignments.set(newAssignment.assignmentId, newAssignment);
-    console.log(`[DB] ShopAssignment.create: ${newAssignment.assignmentId} for car ${newAssignment.railcarId}`);
+    logger.debug(`[DB] ShopAssignment.create: ${newAssignment.assignmentId} for car ${newAssignment.railcarId}`);
     return newAssignment;
   }
 
@@ -780,7 +782,7 @@ export class MasterDataStore {
   updateAssignment(assignmentId: string, updates: Partial<ShopAssignment>): ShopAssignment | null {
     const existing = this.shopAssignments.get(assignmentId);
     if (!existing) {
-      console.warn(`[DB] ShopAssignment.update: Assignment not found: ${assignmentId}`);
+      logger.warn(`[DB] ShopAssignment.update: Assignment not found: ${assignmentId}`);
       return null;
     }
 
@@ -793,7 +795,7 @@ export class MasterDataStore {
     };
 
     this.shopAssignments.set(assignmentId, updated);
-    console.log(`[DB] ShopAssignment.update: ${assignmentId} -> status: ${updated.status}`);
+    logger.debug(`[DB] ShopAssignment.update: ${assignmentId} -> status: ${updated.status}`);
     return updated;
   }
 
@@ -834,7 +836,7 @@ export class MasterDataStore {
   addProject(project: ProjectDetails): ProjectDetails {
     project.createdAt = new Date();
     this.projects.set(project.projectId, project);
-    console.log(`[DB] Project.create: ${project.projectId} - ${project.name}`);
+    logger.debug(`[DB] Project.create: ${project.projectId} - ${project.name}`);
     return project;
   }
 
@@ -854,21 +856,21 @@ export class MasterDataStore {
    * In a real implementation, this would start a database transaction.
    */
   beginTransaction(): void {
-    console.log('[DB] BEGIN TRANSACTION');
+    logger.debug('[DB] BEGIN TRANSACTION');
   }
 
   /**
    * Commit a transaction (mock).
    */
   commitTransaction(): void {
-    console.log('[DB] COMMIT TRANSACTION');
+    logger.debug('[DB] COMMIT TRANSACTION');
   }
 
   /**
    * Rollback a transaction (mock).
    */
   rollbackTransaction(): void {
-    console.log('[DB] ROLLBACK TRANSACTION');
+    logger.debug('[DB] ROLLBACK TRANSACTION');
   }
 }
 
@@ -897,11 +899,11 @@ export class ChronosEngine {
    * @returns CapacityCheckResult with detailed breakdown
    */
   checkProjectCapacity(projectDetails: ProjectDetails): CapacityCheckResult {
-    console.log(`[ChronosEngine] checkProjectCapacity: ${projectDetails.projectId}`);
-    console.log(`  - Cars: ${projectDetails.railcarIds.length}`);
-    console.log(`  - Target Shops: ${projectDetails.targetShops.join(', ')}`);
-    console.log(`  - Start Month: ${projectDetails.startMonth}`);
-    console.log(`  - Flow Rate: ${projectDetails.flowRatePerWeek} cars/week`);
+    logger.debug(`[ChronosEngine] checkProjectCapacity: ${projectDetails.projectId}`);
+    logger.debug(`  - Cars: ${projectDetails.railcarIds.length}`);
+    logger.debug(`  - Target Shops: ${projectDetails.targetShops.join(', ')}`);
+    logger.debug(`  - Start Month: ${projectDetails.startMonth}`);
+    logger.debug(`  - Flow Rate: ${projectDetails.flowRatePerWeek} cars/week`);
 
     // Clone capacity data to avoid affecting live database
     const clonedCapacity = this.dataStore.cloneShopCapacities();
@@ -1016,9 +1018,9 @@ export class ChronosEngine {
       message,
     };
 
-    console.log(`[ChronosEngine] checkProjectCapacity result: ${passed ? 'PASSED' : 'FAILED'}`);
-    console.log(`  - First Overload Month: ${firstOverloadMonth ?? 'None'}`);
-    console.log(`  - Total Backlog: ${totalBacklog}`);
+    logger.debug(`[ChronosEngine] checkProjectCapacity result: ${passed ? 'PASSED' : 'FAILED'}`);
+    logger.debug(`  - First Overload Month: ${firstOverloadMonth ?? 'None'}`);
+    logger.debug(`  - Total Backlog: ${totalBacklog}`);
 
     return result;
   }
@@ -1124,14 +1126,14 @@ export class ShopLoadService {
    * @throws Error if capacity check fails or transaction fails
    */
   forceProjectToPlanned(projectDetails: ProjectDetails): ShopAssignment[] {
-    console.log(`[ShopLoadService] forceProjectToPlanned: ${projectDetails.projectId}`);
+    logger.debug(`[ShopLoadService] forceProjectToPlanned: ${projectDetails.projectId}`);
 
     // First, run capacity pre-check
     const capacityCheck = this.chronosEngine.checkProjectCapacity(projectDetails);
 
     if (!capacityCheck.passed) {
-      console.warn(`[ShopLoadService] Capacity check failed: ${capacityCheck.message}`);
-      console.warn(`  - Proceeding anyway (force mode). Backlog: ${capacityCheck.totalBacklog}`);
+      logger.warn(`[ShopLoadService] Capacity check failed: ${capacityCheck.message}`);
+      logger.warn(`  - Proceeding anyway (force mode). Backlog: ${capacityCheck.totalBacklog}`);
     }
 
     // Begin transaction
@@ -1154,7 +1156,7 @@ export class ShopLoadService {
         const shop = this.dataStore.getShopCapacity(shopId);
 
         if (!shop) {
-          console.warn(`[ShopLoadService] Shop not found: ${shopId}`);
+          logger.warn(`[ShopLoadService] Shop not found: ${shopId}`);
           continue;
         }
 
@@ -1220,12 +1222,12 @@ export class ShopLoadService {
       // Commit transaction
       this.dataStore.commitTransaction();
 
-      console.log(`[ShopLoadService] forceProjectToPlanned complete: ${assignments.length} assignments created`);
+      logger.debug(`[ShopLoadService] forceProjectToPlanned complete: ${assignments.length} assignments created`);
       return assignments;
     } catch (error) {
       // Rollback on error
       this.dataStore.rollbackTransaction();
-      console.error(`[ShopLoadService] forceProjectToPlanned failed:`, error);
+      logger.error(`[ShopLoadService] forceProjectToPlanned failed:`, error);
       throw error;
     }
   }
@@ -1247,7 +1249,7 @@ export class ShopLoadService {
    * @returns Updated ShopAssignment or null if not found
    */
   moveToScheduled(railcarId: string, scheduledDate: Date): ShopAssignment | null {
-    console.log(`[ShopLoadService] moveToScheduled: ${railcarId} -> ${scheduledDate.toISOString()}`);
+    logger.debug(`[ShopLoadService] moveToScheduled: ${railcarId} -> ${scheduledDate.toISOString()}`);
 
     // Begin transaction
     this.dataStore.beginTransaction();
@@ -1280,11 +1282,11 @@ export class ShopLoadService {
       // Commit transaction
       this.dataStore.commitTransaction();
 
-      console.log(`[ShopLoadService] moveToScheduled complete: ${railcarId} scheduled for ${scheduledDate.toDateString()}`);
+      logger.debug(`[ShopLoadService] moveToScheduled complete: ${railcarId} scheduled for ${scheduledDate.toDateString()}`);
       return updatedAssignment;
     } catch (error) {
       this.dataStore.rollbackTransaction();
-      console.error(`[ShopLoadService] moveToScheduled failed:`, error);
+      logger.error(`[ShopLoadService] moveToScheduled failed:`, error);
       throw error;
     }
   }
@@ -1306,7 +1308,7 @@ export class ShopLoadService {
    * @returns Updated ShopAssignment or null if not found
    */
   confirmArrival(railcarId: string, actualArrival: Date): ShopAssignment | null {
-    console.log(`[ShopLoadService] confirmArrival: ${railcarId} arrived ${actualArrival.toISOString()}`);
+    logger.debug(`[ShopLoadService] confirmArrival: ${railcarId} arrived ${actualArrival.toISOString()}`);
 
     // Begin transaction
     this.dataStore.beginTransaction();
@@ -1338,11 +1340,11 @@ export class ShopLoadService {
       // Commit transaction
       this.dataStore.commitTransaction();
 
-      console.log(`[ShopLoadService] confirmArrival complete: ${railcarId} now IN_SHOP at ${assignment.shopName}`);
+      logger.debug(`[ShopLoadService] confirmArrival complete: ${railcarId} now IN_SHOP at ${assignment.shopName}`);
       return updatedAssignment;
     } catch (error) {
       this.dataStore.rollbackTransaction();
-      console.error(`[ShopLoadService] confirmArrival failed:`, error);
+      logger.error(`[ShopLoadService] confirmArrival failed:`, error);
       throw error;
     }
   }
@@ -1368,7 +1370,7 @@ export class ShopLoadService {
    * @returns Updated ShopAssignment or null if not found
    */
   confirmDeparture(railcarId: string, departureDate: Date, needsReinspection: boolean): ShopAssignment | null {
-    console.log(
+    logger.debug(
       `[ShopLoadService] confirmDeparture: ${railcarId} departing ${departureDate.toISOString()}, reinspection: ${needsReinspection}`
     );
 
@@ -1421,11 +1423,11 @@ export class ShopLoadService {
       // Commit transaction
       this.dataStore.commitTransaction();
 
-      console.log(`[ShopLoadService] confirmDeparture complete: ${railcarId} now ${newStatus}`);
+      logger.debug(`[ShopLoadService] confirmDeparture complete: ${railcarId} now ${newStatus}`);
       return updatedAssignment;
     } catch (error) {
       this.dataStore.rollbackTransaction();
-      console.error(`[ShopLoadService] confirmDeparture failed:`, error);
+      logger.error(`[ShopLoadService] confirmDeparture failed:`, error);
       throw error;
     }
   }
@@ -1446,14 +1448,14 @@ export class ShopLoadService {
    * @returns ShopLoadSummary with detailed breakdown
    */
   getShopLoad(shopName: string, month: string): ShopLoadSummary {
-    console.log(`[ShopLoadService] getShopLoad: ${shopName} for ${month}`);
+    logger.debug(`[ShopLoadService] getShopLoad: ${shopName} for ${month}`);
 
     // Find shop by name or ID
     const shops = this.dataStore.getAllShopCapacities();
     const shop = shops.find((s) => s.shopId === shopName || s.shopName === shopName);
 
     if (!shop) {
-      console.warn(`[ShopLoadService] Shop not found: ${shopName}`);
+      logger.warn(`[ShopLoadService] Shop not found: ${shopName}`);
       return {
         shopId: shopName,
         shopName: shopName,
@@ -1493,11 +1495,11 @@ export class ShopLoadService {
       utilizationPercent: Math.round(utilizationPercent * 10) / 10,
     };
 
-    console.log(`[ShopLoadService] getShopLoad result:`);
-    console.log(`  - Total Commitments: ${totalCommitments}`);
-    console.log(`  - Planned: ${plannedCount}, Scheduled: ${scheduledCount}, In Shop: ${inShopCount}`);
-    console.log(`  - Available Capacity: ${availableCapacity}/${totalCapacity}`);
-    console.log(`  - Utilization: ${summary.utilizationPercent}%`);
+    logger.debug(`[ShopLoadService] getShopLoad result:`);
+    logger.debug(`  - Total Commitments: ${totalCommitments}`);
+    logger.debug(`  - Planned: ${plannedCount}, Scheduled: ${scheduledCount}, In Shop: ${inShopCount}`);
+    logger.debug(`  - Available Capacity: ${availableCapacity}/${totalCapacity}`);
+    logger.debug(`  - Utilization: ${summary.utilizationPercent}%`);
 
     return summary;
   }
@@ -1518,7 +1520,7 @@ export class ShopLoadService {
    * Move a car to IN_TRANSIT status.
    */
   moveToInTransit(railcarId: string): FleetMasterRecord | null {
-    console.log(`[ShopLoadService] moveToInTransit: ${railcarId}`);
+    logger.debug(`[ShopLoadService] moveToInTransit: ${railcarId}`);
     return this.dataStore.updateFleetStatus(railcarId, RailcarStatus.IN_TRANSIT);
   }
 
@@ -1526,7 +1528,7 @@ export class ShopLoadService {
    * Mark a car as BAD_ORDER.
    */
   markBadOrder(railcarId: string, reason: string): FleetMasterRecord | null {
-    console.log(`[ShopLoadService] markBadOrder: ${railcarId} - ${reason}`);
+    logger.debug(`[ShopLoadService] markBadOrder: ${railcarId} - ${reason}`);
 
     const record = this.dataStore.getFleetRecord(railcarId);
     if (!record) return null;
@@ -1540,7 +1542,7 @@ export class ShopLoadService {
    * Cancel an assignment and release capacity.
    */
   cancelAssignment(assignmentId: string): ShopAssignment | null {
-    console.log(`[ShopLoadService] cancelAssignment: ${assignmentId}`);
+    logger.debug(`[ShopLoadService] cancelAssignment: ${assignmentId}`);
 
     this.dataStore.beginTransaction();
 
@@ -1565,7 +1567,7 @@ export class ShopLoadService {
       return updated;
     } catch (error) {
       this.dataStore.rollbackTransaction();
-      console.error(`[ShopLoadService] cancelAssignment failed:`, error);
+      logger.error(`[ShopLoadService] cancelAssignment failed:`, error);
       throw error;
     }
   }
@@ -1623,66 +1625,66 @@ export function createSampleProject(): ProjectDetails {
 // =============================================================================
 
 if (require.main === module) {
-  console.log('='.repeat(70));
-  console.log('  PROJECT PLANNING SERVICE - TEST EXECUTION');
-  console.log('='.repeat(70));
-  console.log();
+  logger.debug('='.repeat(70));
+  logger.debug('  PROJECT PLANNING SERVICE - TEST EXECUTION');
+  logger.debug('='.repeat(70));
+  logger.debug();
 
   // Initialize services
   const { dataStore, chronosEngine, shopLoadService } = createProjectPlanningServices();
 
   // Create sample project
   const project = createSampleProject();
-  console.log('Sample Project:', JSON.stringify(project, null, 2));
-  console.log();
+  logger.debug('Sample Project:', JSON.stringify(project, null, 2));
+  logger.debug();
 
   // Test 1: Capacity Pre-Check
-  console.log('-'.repeat(70));
-  console.log('TEST 1: Capacity Pre-Check');
-  console.log('-'.repeat(70));
+  logger.debug('-'.repeat(70));
+  logger.debug('TEST 1: Capacity Pre-Check');
+  logger.debug('-'.repeat(70));
   const capacityResult = chronosEngine.checkProjectCapacity(project);
-  console.log('Result:', JSON.stringify(capacityResult, null, 2));
-  console.log();
+  logger.debug('Result:', JSON.stringify(capacityResult, null, 2));
+  logger.debug();
 
   // Test 2: Force Project to Planned
-  console.log('-'.repeat(70));
-  console.log('TEST 2: Force Project to Planned');
-  console.log('-'.repeat(70));
+  logger.debug('-'.repeat(70));
+  logger.debug('TEST 2: Force Project to Planned');
+  logger.debug('-'.repeat(70));
   const assignments = shopLoadService.forceProjectToPlanned(project);
-  console.log(`Created ${assignments.length} assignments`);
-  console.log();
+  logger.debug(`Created ${assignments.length} assignments`);
+  logger.debug();
 
   // Test 3: Get Shop Load
-  console.log('-'.repeat(70));
-  console.log('TEST 3: Get Shop Load');
-  console.log('-'.repeat(70));
+  logger.debug('-'.repeat(70));
+  logger.debug('TEST 3: Get Shop Load');
+  logger.debug('-'.repeat(70));
   const shopLoad = shopLoadService.getShopLoad('AITX-BC', '2026-03');
-  console.log('Shop Load:', JSON.stringify(shopLoad, null, 2));
-  console.log();
+  logger.debug('Shop Load:', JSON.stringify(shopLoad, null, 2));
+  logger.debug();
 
   // Test 4: Lifecycle Transitions
-  console.log('-'.repeat(70));
-  console.log('TEST 4: Lifecycle Transitions');
-  console.log('-'.repeat(70));
+  logger.debug('-'.repeat(70));
+  logger.debug('TEST 4: Lifecycle Transitions');
+  logger.debug('-'.repeat(70));
 
   const testCarId = 'UTLX-10001';
 
   // Move to scheduled
   const scheduled = shopLoadService.moveToScheduled(testCarId, new Date('2026-03-15'));
-  console.log(`Scheduled: ${scheduled?.railcarId} -> ${scheduled?.status}`);
+  logger.debug(`Scheduled: ${scheduled?.railcarId} -> ${scheduled?.status}`);
 
   // Confirm arrival
   const arrived = shopLoadService.confirmArrival(testCarId, new Date('2026-03-16'));
-  console.log(`Arrived: ${arrived?.railcarId} -> ${arrived?.status}`);
+  logger.debug(`Arrived: ${arrived?.railcarId} -> ${arrived?.status}`);
 
   // Confirm departure
   const departed = shopLoadService.confirmDeparture(testCarId, new Date('2026-03-20'), false);
-  console.log(`Departed: ${departed?.railcarId} -> ${departed?.status}`);
+  logger.debug(`Departed: ${departed?.railcarId} -> ${departed?.status}`);
 
-  console.log();
-  console.log('='.repeat(70));
-  console.log('  TEST EXECUTION COMPLETE');
-  console.log('='.repeat(70));
+  logger.debug();
+  logger.debug('='.repeat(70));
+  logger.debug('  TEST EXECUTION COMPLETE');
+  logger.debug('='.repeat(70));
 }
 
 // Module exports
