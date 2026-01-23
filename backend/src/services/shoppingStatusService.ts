@@ -56,7 +56,7 @@ const QUALIFICATION_DATE_FIELDS = [
 
 type QualificationField = typeof QUALIFICATION_DATE_FIELDS[number];
 
-interface CarForStatusCalculation {
+export interface CarForStatusCalculation {
   id: string;
   status: string;
   portfolio: boolean;
@@ -256,7 +256,7 @@ export class ShoppingStatusService {
     const carsWithPlansSet = new Set(carsWithPlans.map(p => p.carId));
 
     // Calculate and update each car
-    const updates: Prisma.PrismaPromise<unknown>[] = [];
+    const updates: Promise<unknown>[] = [];
 
     for (const car of cars) {
       const hasCarFlowPlan = carsWithPlansSet.has(car.id);
@@ -338,7 +338,7 @@ export class ShoppingStatusService {
       const carsWithPlansSet = new Set(carsWithPlans.map(p => p.carId));
 
       // Calculate and update
-      const updates: Prisma.PrismaPromise<unknown>[] = [];
+      const updates: Promise<unknown>[] = [];
 
       for (const car of cars) {
         const hasCarFlowPlan = carsWithPlansSet.has(car.id);

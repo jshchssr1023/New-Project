@@ -6,162 +6,165 @@
 
 import {
   calculateShoppingStatus,
-  ShoppingStatus,
   CarForStatusCalculation,
 } from '../../services/shoppingStatusService';
 
 describe('Shopping Status Service', () => {
-  const baseDate = new Date('2025-06-15');
-  const currentYear = baseDate.getFullYear();
-
-  // Helper to create a car with default values
+  // Helper to create a car with default values matching the actual interface
   const createCar = (overrides: Partial<CarForStatusCalculation> = {}): CarForStatusCalculation => ({
     id: 'test-car-1',
-    status: 'In Service',
-    isTankCar: true,
+    status: 'ToBeRouted',
+    portfolio: false,
+    performedTankQual: false,
+    minNoLining: null,
+    minWLining: null,
+    interiorLining: null,
+    rule88B: null,
     safetyRelief: null,
     serviceEquipment: null,
+    stubSill: null,
+    tankThickness: null,
     tankQualification: null,
     ...overrides,
   });
 
   describe('calculateShoppingStatus', () => {
-    describe('Step 1: Car in shop', () => {
-      it('should return "In Shop" when status is "Arrived"', () => {
+    describe('Step 1: Car in shop (Arrived status)', () => {
+      it('should return "InShop" when status is "Arrived"', () => {
         const car = createCar({ status: 'Arrived' });
         const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('In Shop');
+        expect(result.status).toBe('InShop');
         expect(result.earliestQualDue).toBeNull();
       });
     });
 
-    describe('Step 2: Already planned', () => {
+    describe('Step 2: Complete with portfolio', () => {
+      it('should return "Compliant" when status is "Complete" and portfolio is true', () => {
+        const car = createCar({ status: 'Complete', portfolio: true });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).toBe('Compliant');
+      });
+
+      it('should NOT return "Compliant" when status is "Complete" but portfolio is false', () => {
+        const car = createCar({ status: 'Complete', portfolio: false });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).not.toBe('Compliant');
+      });
+    });
+
+    describe('Step 3: Already planned', () => {
       it('should return "Planned" when car has a Car Flow Plan', () => {
-        const car = createCar({ status: 'In Service' });
+        const car = createCar({ status: 'ToBeRouted' });
         const result = calculateShoppingStatus(car, true);
         expect(result.status).toBe('Planned');
         expect(result.earliestQualDue).toBeNull();
       });
     });
 
-    describe('Step 3: Non-tank cars', () => {
-      it('should return "Compliant" for non-tank cars with no qualifications', () => {
-        const car = createCar({ isTankCar: false });
+    describe('Step 4: Qualification date evaluation', () => {
+      const currentYear = new Date().getFullYear();
+
+      it('should return "Urgent" when qualification is from prior year', () => {
+        const car = createCar({
+          status: 'ToBeRouted',
+          safetyRelief: new Date(currentYear - 1, 2, 15), // Prior year
+        });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).toBe('Urgent');
+        expect(result.qualificationType).toBe('safetyRelief');
+      });
+
+      it('should return "MustShop" when qualification expires current year', () => {
+        const car = createCar({
+          status: 'ToBeRouted',
+          safetyRelief: new Date(currentYear, 8, 15), // Current year September
+        });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).toBe('MustShop');
+        expect(result.qualificationType).toBe('safetyRelief');
+      });
+
+      it('should return "Upcoming" when qualification expires next year', () => {
+        const car = createCar({
+          status: 'ToBeRouted',
+          safetyRelief: new Date(currentYear + 1, 2, 15), // Next year
+        });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).toBe('Upcoming');
+        expect(result.qualificationType).toBe('safetyRelief');
+      });
+
+      it('should return "Compliant" when all qualifications are 2+ years away', () => {
+        const car = createCar({
+          status: 'ToBeRouted',
+          safetyRelief: new Date(currentYear + 2, 5, 15), // 2+ years
+          serviceEquipment: new Date(currentYear + 3, 5, 15),
+          tankQualification: new Date(currentYear + 4, 5, 15),
+        });
         const result = calculateShoppingStatus(car, false);
         expect(result.status).toBe('Compliant');
       });
+
+      it('should use earliest expiring qualification date', () => {
+        const car = createCar({
+          status: 'ToBeRouted',
+          safetyRelief: new Date(currentYear - 1, 0, 15), // Earliest - prior year
+          serviceEquipment: new Date(currentYear + 1, 5, 15),
+          tankQualification: new Date(currentYear + 2, 5, 15),
+        });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).toBe('Urgent');
+        expect(result.qualificationType).toBe('safetyRelief');
+      });
     });
 
-    describe('Step 4: No qualification dates', () => {
-      it('should return "Unknown" when tank car has no qualification dates', () => {
+    describe('Step 5: Portfolio with tank qualification', () => {
+      it('should return "MustShop" when portfolio is true and performedTankQual is true', () => {
         const car = createCar({
-          isTankCar: true,
-          safetyRelief: null,
-          serviceEquipment: null,
-          tankQualification: null,
+          status: 'InService', // Not in qualification eval statuses
+          portfolio: true,
+          performedTankQual: true,
+        });
+        const result = calculateShoppingStatus(car, false);
+        expect(result.status).toBe('MustShop');
+      });
+    });
+
+    describe('Step 6: Unknown (default)', () => {
+      it('should return "Unknown" when no conditions match', () => {
+        const car = createCar({
+          status: 'InService', // Not in qualification eval statuses
+          portfolio: false,
+          performedTankQual: false,
         });
         const result = calculateShoppingStatus(car, false);
         expect(result.status).toBe('Unknown');
       });
     });
 
-    describe('Step 5: Prior year qualifications (Urgent)', () => {
-      it('should return "Urgent" when any qualification is expired (prior year)', () => {
-        const car = createCar({
-          isTankCar: true,
-          safetyRelief: new Date('2024-03-15'), // Prior year
-          serviceEquipment: new Date('2026-06-15'),
-          tankQualification: new Date('2026-06-15'),
-        });
-        const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('Urgent');
-        expect(result.qualificationType).toBe('safetyRelief');
-      });
-
-      it('should return the earliest expiring qualification', () => {
-        const car = createCar({
-          isTankCar: true,
-          safetyRelief: new Date('2024-01-15'),
-          serviceEquipment: new Date('2024-06-15'),
-          tankQualification: new Date('2024-03-15'),
-        });
-        const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('Urgent');
-        expect(result.qualificationType).toBe('safetyRelief');
-      });
-    });
-
-    describe('Step 6: Current year qualifications (Must Shop)', () => {
-      it('should return "Must Shop" when any qualification expires current year', () => {
-        const car = createCar({
-          isTankCar: true,
-          safetyRelief: new Date('2025-09-15'), // Current year
-          serviceEquipment: new Date('2027-06-15'),
-          tankQualification: new Date('2027-06-15'),
-        });
-        const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('Must Shop');
-        expect(result.qualificationType).toBe('safetyRelief');
-      });
-    });
-
-    describe('Step 7: Next year qualifications (Upcoming)', () => {
-      it('should return "Upcoming" when earliest qualification expires next year', () => {
-        const car = createCar({
-          isTankCar: true,
-          safetyRelief: new Date('2026-03-15'), // Next year
-          serviceEquipment: new Date('2027-06-15'),
-          tankQualification: new Date('2027-06-15'),
-        });
-        const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('Upcoming');
-        expect(result.qualificationType).toBe('safetyRelief');
-      });
-    });
-
-    describe('Step 8: Compliant (2+ years)', () => {
-      it('should return "Compliant" when all qualifications are 2+ years away', () => {
-        const car = createCar({
-          isTankCar: true,
-          safetyRelief: new Date('2027-06-15'), // 2+ years
-          serviceEquipment: new Date('2028-06-15'),
-          tankQualification: new Date('2029-06-15'),
-        });
-        const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('Compliant');
-      });
-    });
-
     describe('Edge cases', () => {
       it('should handle partial qualification dates', () => {
+        const currentYear = new Date().getFullYear();
         const car = createCar({
-          isTankCar: true,
-          safetyRelief: new Date('2025-06-15'),
+          status: 'ToBeRouted',
+          safetyRelief: new Date(currentYear, 5, 15),
           serviceEquipment: null,
           tankQualification: null,
         });
         const result = calculateShoppingStatus(car, false);
-        expect(result.status).toBe('Must Shop');
+        expect(result.status).toBe('MustShop');
       });
 
-      it('should handle string dates', () => {
+      it('should check all qualification date fields', () => {
+        const currentYear = new Date().getFullYear();
         const car = createCar({
-          isTankCar: true,
-          safetyRelief: '2024-06-15' as unknown as Date,
-          serviceEquipment: new Date('2026-06-15'),
-          tankQualification: new Date('2026-06-15'),
+          status: 'ToBeRouted',
+          minNoLining: new Date(currentYear - 1, 0, 1), // This should be earliest
+          safetyRelief: new Date(currentYear + 1, 5, 15),
         });
         const result = calculateShoppingStatus(car, false);
         expect(result.status).toBe('Urgent');
-      });
-
-      it('should handle all statuses that mean "in shop"', () => {
-        const inShopStatuses = ['Arrived'];
-        for (const status of inShopStatuses) {
-          const car = createCar({ status });
-          const result = calculateShoppingStatus(car, false);
-          expect(result.status).toBe('In Shop');
-        }
+        expect(result.qualificationType).toBe('minNoLining');
       });
     });
   });
