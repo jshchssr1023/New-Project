@@ -66,6 +66,22 @@ const inMemoryRateLimits = new Map<string, { count: number; windowStart: number 
 let dbAvailable = true;
 let dbCheckPending = false;
 
+// MEMORY LEAK FIX: Schedule periodic cleanup instead of relying on 1% random chance
+// The random cleanup was unreliable and could lead to unbounded memory growth
+const IN_MEMORY_CLEANUP_INTERVAL = 60 * 1000; // Every 60 seconds
+let cleanupIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function startInMemoryCleanup(windowMs: number): void {
+  if (cleanupIntervalId) return; // Already running
+  cleanupIntervalId = setInterval(() => {
+    cleanupInMemoryEntries(windowMs);
+  }, IN_MEMORY_CLEANUP_INTERVAL);
+  // Don't prevent process exit
+  if (cleanupIntervalId.unref) {
+    cleanupIntervalId.unref();
+  }
+}
+
 /**
  * Periodically check if database is available
  */
@@ -107,6 +123,8 @@ function cleanupInMemoryEntries(windowMs: number): void {
 
 /**
  * In-memory rate limit check (fallback when DB unavailable)
+ * RACE CONDITION FIX: Use atomic increment pattern to prevent concurrent requests
+ * from both seeing "no entry" and both setting count=1
  */
 function checkRateLimitInMemory(
   identifier: string,
@@ -118,20 +136,30 @@ function checkRateLimitInMemory(
   const now = Date.now();
   const windowStart = Math.floor(now / windowMs) * windowMs;
 
-  const existing = inMemoryRateLimits.get(key);
+  // Get or create entry atomically using a single operation
+  let entry = inMemoryRateLimits.get(key);
 
-  // New window or no existing entry
-  if (!existing || existing.windowStart !== windowStart) {
-    inMemoryRateLimits.set(key, { count: 1, windowStart });
-    return { allowed: true, currentCount: 1, remaining: maxRequests - 1 };
+  // If entry exists but is from old window, reset it
+  if (entry && entry.windowStart !== windowStart) {
+    entry.count = 0;
+    entry.windowStart = windowStart;
   }
 
-  // Increment existing entry
-  existing.count++;
-  const allowed = existing.count <= maxRequests;
-  const remaining = Math.max(0, maxRequests - existing.count);
+  // Create new entry if needed
+  if (!entry) {
+    entry = { count: 0, windowStart };
+    inMemoryRateLimits.set(key, entry);
+  }
 
-  return { allowed, currentCount: existing.count, remaining };
+  // Atomically increment count FIRST, then check
+  // This ensures concurrent requests don't both read 0 and set to 1
+  entry.count++;
+  const currentCount = entry.count;
+
+  const allowed = currentCount <= maxRequests;
+  const remaining = Math.max(0, maxRequests - currentCount);
+
+  return { allowed, currentCount, remaining };
 }
 
 /**
@@ -225,9 +253,10 @@ export function createRateLimit(config: RateLimitConfig) {
         maxRequests
       );
 
-      // Periodically clean up in-memory entries
-      if (Math.random() < 0.01) { // 1% chance per request
-        cleanupInMemoryEntries(windowMs);
+      // Start periodic in-memory cleanup if not using DB
+      // FIX: Use scheduled cleanup instead of unreliable 1% random chance
+      if (!dbAvailable) {
+        startInMemoryCleanup(windowMs);
       }
 
       // Set rate limit headers

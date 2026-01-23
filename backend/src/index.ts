@@ -188,12 +188,28 @@ app.use('/api/car-flow', carFlowRoutes);
 // Public REST API (v1)
 app.use('/api/v1', publicApiV1);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
+// Health check with database ping
+// FIX: Added database health check - returns degraded status if DB unreachable
+app.get('/api/health', async (req, res) => {
+  let dbStatus = 'ok';
+  try {
+    // Simple query to verify database is reachable
+    await prisma.user.findFirst({ take: 1 });
+  } catch (error) {
+    logger.error('Health check database ping failed', error);
+    dbStatus = 'unhealthy';
+  }
+
+  const overallStatus = dbStatus === 'ok' ? 'ok' : 'degraded';
+
+  res.status(overallStatus === 'ok' ? 200 : 503).json({
+    status: overallStatus,
     timestamp: new Date().toISOString(),
     correlationId: req.correlationId,
+    components: {
+      database: dbStatus,
+      server: 'ok',
+    },
   });
 });
 
@@ -255,17 +271,81 @@ httpServer.listen(PORT, async () => {
   startCleanupJobs();
 });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('Shutting down gracefully...');
+// Graceful shutdown with request draining
+// RESILIENCE FIX: Wait for in-flight requests before shutting down
+let isShuttingDown = false;
+const SHUTDOWN_TIMEOUT_MS = 30000; // 30 seconds max wait for requests to complete
+
+async function gracefulShutdown(signal: string) {
+  if (isShuttingDown) {
+    logger.warn('Shutdown already in progress, ignoring duplicate signal');
+    return;
+  }
+  isShuttingDown = true;
+
+  logger.info(`Received ${signal}. Starting graceful shutdown...`);
+
+  // Stop accepting new connections
+  httpServer.close((err) => {
+    if (err) {
+      logger.error('Error closing HTTP server', err);
+    } else {
+      logger.info('HTTP server closed - no longer accepting new connections');
+    }
+  });
+
+  // Stop background jobs
   schedulerService.stop();
   const shoppingJob = getShoppingStatusJob();
   if (shoppingJob) {
     shoppingJob.stop();
   }
+  logger.info('Background jobs stopped');
+
+  // Close WebSocket connections gracefully
+  if (io) {
+    io.close(() => {
+      logger.info('WebSocket connections closed');
+    });
+  }
+
+  // Wait for existing requests to complete (with timeout)
+  await new Promise<void>((resolve) => {
+    const shutdownTimeout = setTimeout(() => {
+      logger.warn(`Shutdown timeout after ${SHUTDOWN_TIMEOUT_MS}ms - forcing exit`);
+      resolve();
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    // Check if there are still active connections
+    httpServer.getConnections((err, count) => {
+      if (err) {
+        logger.error('Error getting connection count', err);
+        clearTimeout(shutdownTimeout);
+        resolve();
+        return;
+      }
+
+      if (count === 0) {
+        logger.info('No active connections - proceeding with shutdown');
+        clearTimeout(shutdownTimeout);
+        resolve();
+      } else {
+        logger.info(`Waiting for ${count} active connections to close...`);
+        // The timeout will eventually resolve if connections don't close
+      }
+    });
+  });
+
+  // Disconnect from database
   await prisma.$disconnect();
+  logger.info('Database connection closed');
+
+  logger.info('Graceful shutdown complete');
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection', reason as Error, { promise: String(promise) });

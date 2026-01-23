@@ -126,7 +126,8 @@ async function triggerWebhookAlert(entry: AuditLogEntry): Promise<void> {
     }
 
     // Alert on user role changes (potential security event)
-    if (entry.entityType === 'User' && entry.changes.role) {
+    // FIX: Use optional chaining to prevent TypeError if entry.changes is undefined
+    if (entry.entityType === 'User' && entry.changes?.role) {
       const oldRole = entry.changes.role.old as string;
       const newRole = entry.changes.role.new as string;
 

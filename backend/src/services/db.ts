@@ -360,10 +360,6 @@ const relationships: Record<string, Record<string, RelationshipDef>> = {
     planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
     shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
   },
-  CapacityReservation: {
-    planOption: { table: 'PlanOption', foreignKey: 'id', localKey: 'planOptionId', type: 'belongsTo' },
-    shop: { table: 'Shop', foreignKey: 'id', localKey: 'shopId', type: 'belongsTo' },
-  },
   ServicePlanAuditEvent: {
     servicePlan: { table: 'ServicePlan', foreignKey: 'id', localKey: 'servicePlanId', type: 'belongsTo' },
   },
@@ -1131,19 +1127,24 @@ export const prisma = {
   },
 
   // Transaction support - SQLite transaction with proper async handling
-  // SECURITY FIX: Removed broken array-based transaction pattern
-  // Array of promises execute BEFORE the transaction, breaking atomicity
+  // SECURITY FIX: Fixed array-based transaction to accept thunks instead of promises
+  // Previously, passing Promise<T>[] meant promises started BEFORE transaction began
+  // Now accepts (() => Promise<T>)[] - thunks that are executed INSIDE the transaction
   $transaction: async <T>(
-    fnOrOperations: ((tx: typeof prisma) => Promise<T>) | Promise<any>[]
+    fnOrOperations: ((tx: typeof prisma) => Promise<T>) | (() => Promise<any>)[]
   ): Promise<T | any[]> => {
     if (Array.isArray(fnOrOperations)) {
-      // SECURITY FIX: Array-based transactions are dangerous
-      // The promises have already started executing before this function is called
-      // This means errors in later promises won't roll back earlier ones
-      // Wrap in proper transaction to ensure atomicity
+      // ATOMICITY FIX: Array-based transactions now accept thunks (functions that return promises)
+      // Each thunk is executed sequentially INSIDE the transaction
+      // This ensures all operations are truly atomic - if any fails, all are rolled back
       try {
         db.exec('BEGIN IMMEDIATE');
-        const results = await Promise.all(fnOrOperations);
+        const results: any[] = [];
+        for (const thunk of fnOrOperations) {
+          // Execute each thunk inside the transaction
+          const result = await thunk();
+          results.push(result);
+        }
         db.exec('COMMIT');
         return results;
       } catch (error) {

@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { authenticate, generateToken, invalidateToken, getTokenFromRequest, AuthRequest } from '../middleware/auth';
-import { loginRateLimit } from '../middleware/rateLimit';
+import { loginRateLimit, strictRateLimit } from '../middleware/rateLimit';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
 
@@ -155,7 +155,9 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/refresh', authenticate, async (req: AuthRequest, res: Response) => {
+// SECURITY FIX: Add rate limit to token refresh endpoint
+// Prevents attackers from continuously refreshing to generate token storms
+router.post('/refresh', strictRateLimit, authenticate, async (req: AuthRequest, res: Response) => {
   try {
     // Invalidate the old token
     const oldToken = getTokenFromRequest(req);
