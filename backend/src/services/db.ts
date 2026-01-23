@@ -1106,7 +1106,7 @@ export const prisma = {
   // WARNING: These functions should be used sparingly and only with parameterized queries
   $queryRaw: async (query: string, ...params: any[]) => {
     // SECURITY: Log raw query usage for audit
-    logger.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', query.substring(0, 100));
+    logger.warn('[DB SECURITY] Raw query executed - ensure this is intentional:', { query: query.substring(0, 100) });
     if (query.includes('--') || query.includes(';') && params.length === 0) {
       throw new Error('SECURITY: Potential SQL injection detected in raw query');
     }
@@ -1122,7 +1122,7 @@ export const prisma = {
         throw new Error('SECURITY: Dangerous SQL pattern blocked in raw query');
       }
     }
-    logger.warn('[DB SECURITY] Unsafe raw query executed:', query.substring(0, 100));
+    logger.warn('[DB SECURITY] Unsafe raw query executed:', { query: query.substring(0, 100) });
     return db.prepare(query).all(...params);
   },
 

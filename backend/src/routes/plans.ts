@@ -930,26 +930,31 @@ router.post('/:id/assignments/bulk', async (req: AuthRequest, res: Response) => 
     const carIds = assignments.map((a: { carId: string }) => a.carId);
     const shopIds = [...new Set(assignments.map((a: { shopId: string }) => a.shopId))];
 
+    // Type definitions for validation data
+    type CarValidationData = { id: string; railcarNumber: string; isTankCar: boolean };
+    type ShopValidationData = { id: string; name: string; code: string; tankQualified: boolean; capacity: number };
+    type ExistingAssignmentData = { carId: string; scheduledMonth: string };
+
     const [cars, shops, existingAssignments] = await Promise.all([
       prisma.car.findMany({
         where: { id: { in: carIds }, companyId: req.user!.companyId },
         select: { id: true, railcarNumber: true, isTankCar: true },
-      }),
+      }) as Promise<CarValidationData[]>,
       prisma.shop.findMany({
         where: { id: { in: shopIds }, companyId: req.user!.companyId },
         select: { id: true, name: true, code: true, tankQualified: true, capacity: true },
-      }),
+      }) as Promise<ShopValidationData[]>,
       prisma.planAssignment.findMany({
         where: {
           planId: req.params.id,
           carId: { in: carIds },
         },
         select: { carId: true, scheduledMonth: true },
-      }),
+      }) as Promise<ExistingAssignmentData[]>,
     ]);
 
-    const carMap = new Map(cars.map(c => [c.id, c]));
-    const shopMap = new Map(shops.map(s => [s.id, s]));
+    const carMap = new Map<string, CarValidationData>(cars.map(c => [c.id, c]));
+    const shopMap = new Map<string, ShopValidationData>(shops.map(s => [s.id, s]));
     const existingSet = new Set(existingAssignments.map(a => `${a.carId}-${a.scheduledMonth}`));
 
     // Validate all assignments before creating any

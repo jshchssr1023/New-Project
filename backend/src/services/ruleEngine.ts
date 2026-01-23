@@ -43,6 +43,27 @@ interface ShopRule {
   actions: string;
 }
 
+// Type-safe rule conditions and actions after JSON parsing
+interface RuleConditions {
+  requireTankQualification?: boolean;
+  minAvailable?: number;
+  matchCapabilities?: boolean;
+  matchRegion?: boolean;
+  preferredCustomers?: boolean;
+  usePerformanceMetrics?: boolean;
+}
+
+interface RuleActions {
+  excludeIfNotQualified?: boolean;
+  excludeIfFull?: boolean;
+  bonusScore?: number;
+  penaltyIfMissing?: number;
+  penaltyForCritical?: number;
+  penaltyForWarning?: number;
+  performanceWeight?: number;
+  scoreWeight?: number;
+}
+
 interface ShopScore {
   shopId: string;
   shopName: string;
@@ -207,11 +228,11 @@ export async function evaluateShopForCar(
 
   // Apply each rule
   for (const rule of rules.filter(r => r.isActive).sort((a, b) => b.priority - a.priority)) {
-    let conditions: Record<string, unknown> = {};
-    let actions: Record<string, unknown> = {};
+    let conditions: RuleConditions = {};
+    let actions: RuleActions = {};
     try {
-      conditions = JSON.parse(rule.conditions);
-      actions = JSON.parse(rule.actions);
+      conditions = JSON.parse(rule.conditions) as RuleConditions;
+      actions = JSON.parse(rule.actions) as RuleActions;
     } catch {
       // Skip malformed rules
       continue;
