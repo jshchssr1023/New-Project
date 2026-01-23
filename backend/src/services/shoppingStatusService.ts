@@ -17,8 +17,11 @@
  * - "Unknown" - Data gap, needs review
  */
 
-import { PrismaClient, Prisma } from '@prisma/client';
+import { prisma } from './db';
+import { Prisma } from '../types/prismaTypes';
 import logger from '../utils/logger';
+
+type PrismaClient = typeof prisma;
 import {
   CarStatus,
   ShoppingStatus as ShoppingStatusEnum,

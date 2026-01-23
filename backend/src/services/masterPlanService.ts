@@ -20,8 +20,10 @@
  * @version 1.0.0
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import { MasterPlan, MasterPlanCommitment, Prisma } from '../types/prismaTypes';
+
+type PrismaClient = typeof prisma;
 import { z } from 'zod';
 
 // =============================================================================

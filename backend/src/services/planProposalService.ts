@@ -8,10 +8,10 @@
  * 4. Convert approved proposals to scheduled CarFlowPlans
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import { ProposalStatus } from '../types/prismaTypes';
 
-const prisma = new PrismaClient();
+type PrismaClient = typeof prisma;
 
 // =============================================================================
 // Types

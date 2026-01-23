@@ -359,10 +359,11 @@ for (const folder of migrationFolders) {
 
 // Create default company and admin user for development
 console.log('Creating default company and admin user...');
-const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
 function hashPassword(password) {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  // Use bcrypt for secure password hashing (matches auth.ts validation)
+  return bcrypt.hashSync(password, 10);
 }
 
 const defaultCompanyId = 'default-company-id';

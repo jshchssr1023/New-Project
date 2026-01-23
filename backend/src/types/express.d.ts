@@ -4,14 +4,14 @@
  * Extends Express types to include properly typed app.locals
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../services/db';
 import { Server } from 'socket.io';
 import type WebSocketService from '../services/websocketService';
 
 declare global {
   namespace Express {
     interface Locals {
-      prisma: PrismaClient;
+      prisma: typeof prisma;
       io: Server;
       websocket: typeof WebSocketService;
     }

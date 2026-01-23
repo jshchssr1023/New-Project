@@ -2,12 +2,11 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { authenticate, generateToken, invalidateToken, getTokenFromRequest, AuthRequest } from '../middleware/auth';
-import { createRateLimitMiddleware } from '../middleware/rateLimit';
+import { loginRateLimit } from '../middleware/rateLimit';
 import { prisma } from '../services/db';
 import logger from '../utils/logger';
 
-// SECURITY FIX: Apply rate limiting to login endpoint
-const loginRateLimit = createRateLimitMiddleware('login');
+// SECURITY FIX: Apply rate limiting to login endpoint (imported from middleware)
 
 const router = Router();
 

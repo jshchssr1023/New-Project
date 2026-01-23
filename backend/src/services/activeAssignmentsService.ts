@@ -11,8 +11,10 @@
  * - Track assignment sources
  */
 
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './db';
 import logger from '../utils/logger';
+
+type PrismaClient = typeof prisma;
 
 export interface ActiveAssignment {
   id: string;
