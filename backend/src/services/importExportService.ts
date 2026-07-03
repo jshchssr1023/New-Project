@@ -12,9 +12,11 @@ import {
 } from '../utils/importTransformers';
 import {
   CSV_SHOP_COLUMN_MAPPING,
+  SHOP_CODE_TO_CSV_COLUMN,
   resolveShopCodeFromCSVColumn,
   getNetworkForShopCode,
 } from '../constants/shopNetworks';
+import { ALL_CANONICAL_HEADERS } from './qualPlannerSchema';
 
 // =============================================================================
 // INTERFACES
@@ -703,6 +705,138 @@ export async function importShops(
 // =============================================================================
 
 /**
+ * Escape a value for inclusion in a CSV cell.
+ * Quotes the field when it contains a comma, quote, or newline, and doubles
+ * embedded quotes (RFC 4180). Many canonical Qual Planner headers contain commas
+ * and parentheses (e.g. "Rescar (Savanna, IL)"), so headers must be escaped too.
+ */
+function csvEscape(value: string): string {
+  if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+/**
+ * Format a stored date value as MM/DD/YYYY (the format used by the Qual Planner
+ * shop-date columns). Returns '' for empty/invalid values.
+ */
+function formatUsDate(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const d = value instanceof Date ? value : new Date(String(value));
+  if (isNaN(d.getTime())) return '';
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `${mm}/${dd}/${d.getUTCFullYear()}`;
+}
+
+/**
+ * Maps each canonical Qual Planner *attribute* header (non-shop columns) to a
+ * function that derives its value from a stored Car row. Shop columns and any
+ * header not listed here are emitted blank (or, for shop headers, filled from
+ * committed assignments — see exportQualPlannerMaster).
+ *
+ * Where a source column has no home in the live Car table (e.g. "Car Age",
+ * "Adjusted Status", "Mark2", "Cars & Year"), the header is intentionally omitted
+ * here and exports blank. See docs/PLANNINGGRID_CSV_PARITY_AUDIT.md (F6/F7) for the
+ * identity- and type-mapping caveats this reflects.
+ */
+const QUAL_PLANNER_ATTRIBUTE_MAP: Record<string, (car: Record<string, unknown>) => string> = {
+  'Lessee Name': (c) => String(c.customer ?? ''),
+  'Car Mark': (c) => String(c.railcarNumber ?? ''), // full reporting mark (unique key)
+  'FMS Lessee Number': (c) => String(c.fmsLesseeNumber ?? ''),
+  'Contract': (c) => String(c.contractNumber ?? ''),
+  'Contract Expiration': (c) => formatUsDate(c.contractExpiration),
+  'Primary Commodity': (c) => String(c.commodity ?? ''),
+  'CSR': (c) => String(c.csr ?? ''),
+  'CSL': (c) => String(c.csl ?? ''),
+  'Commericial': (c) => String(c.commercial ?? ''), // header misspelled in source
+  'Past Region': (c) => String(c.pastRegion ?? ''),
+  '2026 Region': (c) => String(c.region2026 ?? ''),
+  'Jacketed': (c) => (c.isJacketed ? 'Yes' : 'No'),
+  'Lined': (c) => (c.isLined ?? c.lined ? 'Yes' : 'No'),
+  'Lining Type': (c) => String(c.liningType ?? ''),
+  'Mark': (c) => String(c.carMark ?? ''),
+  'Number': (c) => String(c.carNumber ?? ''),
+  'Car Type Level 2': (c) => String(c.carType ?? ''),
+  'Min (no lining)': (c) => String(c.minNoLining ?? ''),
+  'Min w lining': (c) => String(c.minWLining ?? ''),
+  'Interior Lining': (c) => String(c.interiorLining ?? ''),
+  'Rule 88B ': (c) => String(c.rule88B ?? ''), // header has trailing space in source
+  'Safety Relief': (c) => String(c.safetyRelief ?? ''),
+  'Service Equipment ': (c) => String(c.serviceEquipment ?? ''), // trailing space in source
+  'Stub Sill': (c) => String(c.stubSill ?? ''),
+  'Tank Thickness': (c) => String(c.tankThickness ?? ''),
+  'Tank Qualification': (c) => String(c.tankQualification ?? ''),
+  'Portfolio': (c) => (c.portfolio ? 'On Lease' : ''),
+  'Year': (c) => (c.buildYear === null || c.buildYear === undefined ? '' : String(c.buildYear)),
+  'Full/Partial Qual': (c) => String(c.qualificationType || c.fullPartialQual || ''),
+  'Reason Shopped': (c) => String(c.reasonsShopped ?? ''),
+  'Perform Tank Qual': (c) => (c.performTankQual ?? c.performedTankQual ? 'Yes' : 'No'),
+  'Scheduled': (c) => String(c.scheduled || (c.performScheduled ? 'Planned' : '')),
+  'Current Status': (c) => String(c.status ?? ''),
+  'Plan Status': (c) => String(c.planStatus ?? ''),
+};
+
+/**
+ * Export cars in the exact Qual Planner Master CSV layout.
+ *
+ * Emits every canonical header verbatim (misspellings, trailing/double spaces,
+ * comma-bearing shop names — all preserved and CSV-escaped), one row per car.
+ * Attribute columns come from the Car row; shop columns are filled with the
+ * MM/DD/YYYY planned date of any committed (non-cancelled) CarFlowPlan assigning
+ * the car to that shop. Headers with no live source emit blank.
+ *
+ * This is the reversible bridge: downstream consumers of the Master CSV keep
+ * working after the switch to Chronos. See docs/PLANNINGGRID_CSV_PARITY_AUDIT.md.
+ */
+export async function exportQualPlannerMaster(companyId: string): Promise<string> {
+  const cars = await prisma.car.findMany({
+    where: { companyId },
+    orderBy: { railcarNumber: 'asc' },
+  });
+
+  // Resolve shopId -> canonical CSV shop-column header, via shop code.
+  const shops = await prisma.shop.findMany({ where: { companyId } });
+  const shopIdToCsvHeader = new Map<string, string>();
+  for (const shop of shops as Array<Record<string, unknown>>) {
+    const code = String(shop.code ?? '');
+    const header = SHOP_CODE_TO_CSV_COLUMN[code];
+    if (header) shopIdToCsvHeader.set(String(shop.id), header);
+  }
+
+  // Build carId -> { csvHeader: 'MM/DD/YYYY' } from committed assignments.
+  const plans = await prisma.carFlowPlan.findMany({ where: { companyId } });
+  const carShopDates = new Map<string, Record<string, string>>();
+  for (const plan of plans as Array<Record<string, unknown>>) {
+    if (String(plan.status ?? '') === 'Cancelled' || plan.cancelledAt) continue;
+    const header = shopIdToCsvHeader.get(String(plan.shopId));
+    if (!header) continue;
+    const month = Number(plan.plannedMonth);
+    const year = Number(plan.plannedYear);
+    if (!month || !year) continue;
+    const dateStr = `${String(month).padStart(2, '0')}/01/${year}`;
+    const carId = String(plan.carId);
+    const existing = carShopDates.get(carId) ?? {};
+    existing[header] = dateStr; // last committed assignment wins per shop
+    carShopDates.set(carId, existing);
+  }
+
+  const headerLine = ALL_CANONICAL_HEADERS.map(csvEscape).join(',');
+  const rows = (cars as Array<Record<string, unknown>>).map((car) => {
+    const shopDates = carShopDates.get(String(car.id)) ?? {};
+    return ALL_CANONICAL_HEADERS.map((header) => {
+      const attrFn = QUAL_PLANNER_ATTRIBUTE_MAP[header];
+      if (attrFn) return csvEscape(attrFn(car));
+      if (CSV_SHOP_COLUMN_MAPPING[header]) return csvEscape(shopDates[header] ?? '');
+      return ''; // unmapped headers (Column1, Car Age, Mark2, Adjusted Status, ...)
+    }).join(',');
+  });
+
+  return [headerLine, ...rows].join('\n');
+}
+
+/**
  * Export cars to CSV
  */
 export async function exportCars(
@@ -718,30 +852,26 @@ export async function exportCars(
 
   const cars = await prisma.car.findMany({
     where,
-    orderBy: { vehicleNumber: 'asc' },
+    orderBy: { railcarNumber: 'asc' },
   });
 
   const defaultColumns = [
-    'vehicleNumber', 'carType', 'isTankCar', 'customer', 'commodity',
-    'status', 'currentLocation', 'homeRegion', 'reasonShopped',
+    'railcarNumber', 'carType', 'isTankCar', 'customer', 'commodity',
+    'status', 'currentLocation', 'homeRegion', 'reasonsShopped',
     'projectedCost', 'daysInShop', 'lastServiceDate', 'nextServiceDue'
   ];
 
   const exportColumns = columns || defaultColumns;
 
   // Build CSV
-  const header = exportColumns.join(',');
+  const header = exportColumns.map(csvEscape).join(',');
   const rows = cars.map(car => {
     return exportColumns.map(col => {
       const value = (car as Record<string, unknown>)[col];
       if (value === null || value === undefined) return '';
       if (value instanceof Date) return value.toISOString().split('T')[0];
       if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-      const str = String(value);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
+      return csvEscape(String(value));
     }).join(',');
   });
 
@@ -901,6 +1031,7 @@ export default {
   importCars,
   importShops,
   exportCars,
+  exportQualPlannerMaster,
   exportShops,
   exportAssignments,
   generateImportTemplate,

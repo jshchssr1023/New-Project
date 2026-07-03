@@ -186,6 +186,32 @@ router.get('/cars/export', authenticateToken, async (req: Request, res: Response
 });
 
 /**
+ * Export cars in the exact Qual Planner Master CSV layout.
+ * Reversible bridge for downstream consumers of the legacy spreadsheet.
+ */
+router.get('/cars/export/qual-planner', authenticateToken, async (req: Request, res: Response) => {
+  const authReq = req as AuthRequest;
+  const companyId = authReq.user?.companyId;
+
+  if (!companyId) {
+    return res.status(403).json({ error: 'Company access required' });
+  }
+
+  try {
+    const csv = await importExportService.exportQualPlannerMaster(companyId);
+
+    const filename = `qual_planner_master_${new Date().toISOString().split('T')[0]}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (error) {
+    logger.error('Error exporting Qual Planner Master:', error);
+    res.status(500).json({ error: 'Failed to export Qual Planner Master' });
+  }
+});
+
+/**
  * Export shops to CSV
  */
 router.get('/shops/export', authenticateToken, async (req: Request, res: Response) => {
